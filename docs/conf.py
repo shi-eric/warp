@@ -40,7 +40,7 @@ extensions = [
     "sphinx.ext.extlinks",  # Markup to shorten external links
     "sphinx.ext.githubpages",
     # Third-party extensions:
-    "sphinx_copybutton"
+    "sphinx_copybutton",
     # 'sphinx_tabs.tabs',
     #    'autodocsumm'
 ]
@@ -55,8 +55,8 @@ autodoc_member_order = "bysource"
 # autodoc_typehints_format
 # add_module_names = False
 
-todo_include_todos = True
-todo_emit_warnings = True
+todo_include_todos = False
+todo_emit_warnings = False
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),

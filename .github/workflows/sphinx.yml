@@ -10,7 +10,7 @@ name: Deploy Sphinx documentation to Pages
 # Runs on pushes targeting the default branch
 on:
   push:
-    branches: [main]
+    branches: [github-pages-expt-march]
 
 jobs:
   build:
