@@ -16,14 +16,15 @@ archive
 *.pdb
 /_build
 /_repo
-examples/assets/.thumbs
-/examples/tmp
 /docs/_build
 /docs/modules/functions.rst
 /warp_lang.egg-info
 exts/omni.warp/omni/warp/ogn/tests/usd
+.vs/
+outputs/
 build/lib/
 .venv/
+.usd_cache/
 exts/omni.warp/config/extension.gen.toml
 /external/llvm-project
 /build
@@ -40,3 +41,5 @@ warp/native/cutlass/examples
 warp/native/cutlass/media
 warp/native/cutlass/python
 warp/native/cutlass/test
+warp/native/cutlass/tools/profiler
+warp/native/cutlass/tools/library

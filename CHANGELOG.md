@@ -1,5 +1,130 @@
 # CHANGELOG
 
+
+## [1.0.1] - 2024-03-15
+
+- Document Device `total_memory` and `free_memory`
+- Documentation for allocators, streams, peer access, and generics
+- Changed example output directory to current working directory
+- Added `python -m warp.examples.browse` for browsing the examples folder
+- Print where the USD stage file is being saved
+- Added `examples/optim/example_walker.py` sample
+- Make the drone example not specific to USD
+- Reduce the time taken to run some examples
+- Optimise rendering points with a single colour
+- Clarify an error message around needing USD
+- Raise exception when module is unloaded during graph capture
+- Added `wp.synchronize_event()` for blocking the host thread until a recorded event completes
+- Flush C print buffers when ending `stdout` capture
+- Remove more unneeded CUTLASS files
+- Allow setting mempool release threshold as a fractional value
+
+## [1.0.0] - 2024-03-07
+
+- Add `FeatherstoneIntegrator` which provides more stable simulation of articulated rigid body dynamics in generalized coordinates (`State.joint_q` and `State.joint_qd`)
+- Introduce `warp.sim.Control` struct to store control inputs for simulations (optional, by default the `Model` control inputs are used as before); integrators now have a different simulation signature: `integrator.simulate(model: Model, state_in: State, state_out: State, dt: float, control: Control)`
+- `joint_act` can now behave in 3 modes: with `joint_axis_mode` set to `JOINT_MODE_FORCE` it behaves as a force/torque, with `JOINT_MODE_VELOCITY` it behaves as a velocity target, and with `JOINT_MODE_POSITION` it behaves as a position target; `joint_target` has been removed
+- Add adhesive contact to Euler integrators via `Model.shape_materials.ka` which controls the contact distance at which the adhesive force is applied
+- Improve handling of visual/collision shapes in URDF importer so visual shapes are not involved in contact dynamics
+- Experimental JAX kernel callback support
+- Improve module load exception message
+- Add `wp.ScopedCapture`
+- Removing `enable_backward` warning for callables
+- Copy docstrings and annotations from wrapped kernels, functions, structs
+
+## [0.15.1] - 2024-03-05
+
+- Add examples assets to the wheel packages
+- Fix broken image link in documentation
+- Fix codegen for custom grad functions calling their respective forward functions
+- Fix custom grad function handling for functions that have no outputs
+- Fix issues when `wp.config.quiet = True`
+
+## [0.15.0] - 2024-03-04
+
+- Add thumbnails to examples gallery
+- Apply colored lighting to examples
+- Moved `examples` directory under `warp/`
+- Add example usage to `python -m warp.tests --help`
+- Adding `torch.autograd.function` example + docs
+- Add error-checking to array shapes during creation
+- Adding `example_graph_capture`
+- Add a Diffsim Example of a Drone
+- Fix `verify_fp` causing compiler errors and support CPU kernels
+- Fix to enable `matmul` to be called in CUDA graph capture
+- Enable mempools by default
+- Update `wp.launch` to support tuple args
+- Fix BiCGSTAB and GMRES producing NaNs when converging early
+- Fix warning about backward codegen being disabled in `test_fem`
+- Fix `assert_np_equal` when NaN's and tolerance are involved
+- Improve error message to discern between CUDA being disabled or not supported
+- Support cross-module functions with user-defined gradients
+- Suppress superfluous CUDA error when ending capture after errors
+- Make output during initialization atomic
+- Add `warp.config.max_unroll`, fix custom gradient unrolling
+- Support native replay snippets using `@wp.func_native(snippet, replay_snippet=replay_snippet)`
+- Look for the CUDA Toolkit in default locations if the `CUDA_PATH` environment variable or `--cuda_path` build option are not used
+- Added `wp.ones()` to efficiently create one-initialized arrays
+- Rename `wp.config.graph_capture_module_load_default` to `wp.config.enable_graph_capture_module_load_by_default`
+
+## [0.14.0] - 2024-02-19
+
+- Add support for CUDA pooled (stream-ordered) allocators
+  - Support memory allocation during graph capture
+  - Support copying non-contiguous CUDA arrays during graph capture
+  - Improved memory allocation/deallocation performance with pooled allocators
+  - Use `wp.config.enable_mempools_at_init` to enable pooled allocators during Warp initialization (if supported)
+  - `wp.is_mempool_supported()` - check if a device supports pooled allocators
+  - `wp.is_mempool_enabled()`, `wp.set_mempool_enabled()` - enable or disable pooled allocators per device
+  - `wp.set_mempool_release_threshold()`, `wp.get_mempool_release_threshold()` - configure memory pool release threshold
+- Add support for direct memory access between devices
+  - Improved peer-to-peer memory transfer performance if access is enabled
+  - Caveat: enabling peer access may impact memory allocation/deallocation performance and increase memory consumption
+  - `wp.is_peer_access_supported()` - check if the memory of a device can be accessed by a peer device
+  - `wp.is_peer_access_enabled()`, `wp.set_peer_access_enabled()` - manage peer access for memory allocated using default CUDA allocators
+  - `wp.is_mempool_access_supported()` - check if the memory pool of a device can be accessed by a peer device
+  - `wp.is_mempool_access_enabled()`, `wp.set_mempool_access_enabled()` - manage access for memory allocated using pooled CUDA allocators
+- Refined stream synchronization semantics
+  - `wp.ScopedStream` can synchronize with the previous stream on entry and/or exit (only sync on entry by default)
+  - Functions taking an optional stream argument do no implicit synchronization for max performance (e.g., `wp.copy()`, `wp.launch()`, `wp.capture_launch()`)
+- Support for passing a custom `deleter` argument when constructing arrays
+  - Deprecation of `owner` argument - use `deleter` to transfer ownership
+- Optimizations for various core API functions (e.g., `wp.zeros()`, `wp.full()`, and more)
+- Fix `wp.matmul()` to always use the correct CUDA context
+- Fix memory leak in BSR transpose
+- Fix stream synchronization issues when copying non-contiguous arrays
+- API change: `wp.matmul()` no longer accepts a device as a parameter; instead, it infers the correct device from the arrays being multiplied
+- Updated DLPack utilities to the latest published standard
+  - External arrays can be imported into Warp directly, e.g., `wp.from_dlpack(external_array)`
+  - Warp arrays can be exported to consumer frameworks directly, e.g., `jax.dlpack.from_dlpack(warp_array)`
+  - Added CUDA stream synchronization for CUDA arrays
+  - The original DLPack protocol can still be used for better performance when stream synchronization is not required, see interoperability docs for details
+  - `warp.to_dlpack()` is about 3-4x faster in common cases
+  - `warp.from_dlpack()` is about 2x faster when called with a DLPack capsule
+  - Fixed a small CPU memory leak related to DLPack interop
+- Improved performance of creating arrays
+
+## [0.13.1] - 2024-02-22
+
+- Ensure that the results from the `Noise Deform` are deterministic across different Kit sessions
+
+## [0.13.0] - 2024-02-16
+
+- Update the license to *NVIDIA Software License*, allowing commercial use (see `LICENSE.md`)
+- Add `CONTRIBUTING.md` guidelines (for NVIDIA employees)
+- Hash CUDA `snippet` and `adj_snippet` strings to fix caching
+- Fix `build_docs.py` on Windows
+- Add missing `.py` extension to `warp/tests/walkthrough_debug`
+- Allow `wp.bool` usage in vector and matrix types
+
+## [0.12.0] - 2024-02-05
+
+- Add a warning when the `enable_backward` setting is set to `False` upon calling `wp.Tape.backward()`
+- Fix kernels not being recompiled as expected when defined using a closure
+- Change the kernel cache appauthor subdirectory to just "NVIDIA"
+- Ensure that gradients attached to PyTorch tensors have compatible strides when calling `wp.from_torch()`
+- Add a `Noise Deform` node for OmniGraph that deforms points using a perlin/curl noise
+
 ## [0.11.0] - 2024-01-23
 
 - Re-release 1.0.0-beta.7 as a non-pre-release 0.11.0 version so it gets selected by `pip install warp-lang`.

@@ -7,6 +7,7 @@
 
 import ctypes
 import ctypes.util
+import math
 import os
 import sys
 import time
@@ -101,6 +102,11 @@ def get_test_devices(mode=None):
     return devices
 
 
+def get_cuda_test_devices(mode=None):
+    devices = get_test_devices(mode=mode)
+    return [d for d in devices if d.is_cuda]
+
+
 # redirects and captures all stdout output (including from C-libs)
 class StdOutCapture:
     def begin(self):
@@ -133,6 +139,9 @@ class StdOutCapture:
         #    # the output of CUDA's `printf` is not being immediately flushed
         #    # despite the context synchronisation.
         #    time.sleep(0.01)
+
+        if LIBC is not None:
+            LIBC.fflush(None)
 
         os.dup2(self.target, self.saved.fileno())
         os.close(self.target)
@@ -186,9 +195,9 @@ def assert_np_equal(result, expect, tol=0.0):
     else:
         delta = a - b
         err = np.max(np.abs(delta))
-        if err > tol:
+        if err > tol or math.isnan(err):
             raise AssertionError(
-                f"Maximum expected error exceeds tolerance got: {a}, expected: {b}, with err: {err} > {tol}"
+                f"Maximum expected error exceeds absolute tolerance got: {a}, expected: {b}, with err: {err} > {tol}"
             )
 
 

@@ -23,6 +23,7 @@ NAN = wp.constant(-1.0e8)
 def compute_contact_points(
     body_q: wp.array(dtype=wp.transform),
     shape_body: wp.array(dtype=int),
+    contact_count: wp.array(dtype=int),
     contact_shape0: wp.array(dtype=int),
     contact_shape1: wp.array(dtype=int),
     contact_point0: wp.array(dtype=wp.vec3),
@@ -32,6 +33,11 @@ def compute_contact_points(
     contact_pos1: wp.array(dtype=wp.vec3),
 ):
     tid = wp.tid()
+    count = contact_count[0]
+    if tid >= count:
+        contact_pos0[tid] = wp.vec3(NAN, NAN, NAN)
+        contact_pos1[tid] = wp.vec3(NAN, NAN, NAN)
+        return
     shape_a = contact_shape0[tid]
     shape_b = contact_shape1[tid]
     if shape_a == shape_b:
@@ -124,11 +130,12 @@ def CreateSimRenderer(renderer):
                 shape_geo_thickness = model.shape_geo.thickness.numpy()
                 shape_geo_is_solid = model.shape_geo.is_solid.numpy()
                 shape_transform = model.shape_transform.numpy()
+                shape_visible = model.shape_visible.numpy()
 
                 p = np.zeros(3, dtype=np.float32)
                 q = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32)
                 scale = np.ones(3)
-                color = np.ones(3)
+                color = (1.0, 1.0, 1.0)
                 # loop over shapes excluding the ground plane
                 for s in range(model.shape_count - 1):
                     geo_type = shape_geo_type[s]
@@ -136,8 +143,6 @@ def CreateSimRenderer(renderer):
                     geo_thickness = float(shape_geo_thickness[s])
                     geo_is_solid = bool(shape_geo_is_solid[s])
                     geo_src = shape_geo_src[s]
-                    if self.use_unique_colors:
-                        color = self._get_new_color()
                     name = f"shape_{s}"
 
                     # shape transform in body frame
@@ -146,6 +151,9 @@ def CreateSimRenderer(renderer):
                         body = self.body_names[body]
                     else:
                         body = None
+
+                    if self.use_unique_colors and body is not None:
+                        color = self._get_new_color()
 
                     # shape transform in body frame
                     X_bs = wp.transform_expand(shape_transform[s])
@@ -167,25 +175,25 @@ def CreateSimRenderer(renderer):
                             )
 
                         elif geo_type == warp.sim.GEO_SPHERE:
-                            shape = self.render_sphere(name, p, q, geo_scale[0], parent_body=body, is_template=True)
+                            shape = self.render_sphere(name, p, q, geo_scale[0], parent_body=body, is_template=True, color=color)
 
                         elif geo_type == warp.sim.GEO_CAPSULE:
                             shape = self.render_capsule(
-                                name, p, q, geo_scale[0], geo_scale[1], parent_body=body, is_template=True
+                                name, p, q, geo_scale[0], geo_scale[1], parent_body=body, is_template=True, color=color
                             )
 
                         elif geo_type == warp.sim.GEO_CYLINDER:
                             shape = self.render_cylinder(
-                                name, p, q, geo_scale[0], geo_scale[1], parent_body=body, is_template=True
+                                name, p, q, geo_scale[0], geo_scale[1], parent_body=body, is_template=True, color=color
                             )
 
                         elif geo_type == warp.sim.GEO_CONE:
                             shape = self.render_cone(
-                                name, p, q, geo_scale[0], geo_scale[1], parent_body=body, is_template=True
+                                name, p, q, geo_scale[0], geo_scale[1], parent_body=body, is_template=True, color=color
                             )
 
                         elif geo_type == warp.sim.GEO_BOX:
-                            shape = self.render_box(name, p, q, geo_scale, parent_body=body, is_template=True)
+                            shape = self.render_box(name, p, q, geo_scale, parent_body=body, is_template=True, color=color)
 
                         elif geo_type == warp.sim.GEO_MESH:
                             if not geo_is_solid:
@@ -210,7 +218,9 @@ def CreateSimRenderer(renderer):
 
                         self.geo_shape[geo_hash] = shape
 
-                    self.add_shape_instance(name, shape, body, X_bs.p, X_bs.q, scale)
+                    if shape_visible[s]:
+                        # TODO support dynamic visibility
+                        self.add_shape_instance(name, shape, body, X_bs.p, X_bs.q, scale, custom_index=s, visible=shape_visible[s])
                     self.instance_count += 1
 
                 if self.show_joints and model.joint_count:
@@ -274,7 +284,7 @@ def CreateSimRenderer(renderer):
                             self.instance_count += 1
 
             if model.ground:
-                self.render_ground()
+                self.render_ground(plane=model.ground_plane_params)
 
             if hasattr(self, "complete_setup"):
                 self.complete_setup()
@@ -283,6 +293,12 @@ def CreateSimRenderer(renderer):
             return tab10_color_map(self.instance_count)
 
         def render(self, state: warp.sim.State):
+            """
+            Updates the renderer with the given simulation state.
+
+            Args:
+                state (warp.sim.State): The simulation state to render.
+            """
             if self.skip_rendering:
                 return
 
@@ -290,15 +306,20 @@ def CreateSimRenderer(renderer):
                 particle_q = state.particle_q.numpy()
 
                 # render particles
-                self.render_points("particles", particle_q, radius=self.model.particle_radius.numpy())
+                self.render_points("particles", particle_q, radius=self.model.particle_radius.numpy(), colors=(0.8, 0.3, 0.2))
 
                 # render tris
                 if self.model.tri_count:
-                    self.render_mesh("surface", particle_q, self.model.tri_indices.numpy().flatten())
+                    self.render_mesh(
+                        "surface",
+                        particle_q,
+                        self.model.tri_indices.numpy().flatten(),
+                        colors=(((0.75, 0.25, 0.0),) * len(particle_q)),
+                    )
 
                 # render springs
                 if self.model.spring_count:
-                    self.render_line_list("springs", particle_q, self.model.spring_indices.numpy().flatten(), [], 0.05)
+                    self.render_line_list("springs", particle_q, self.model.spring_indices.numpy().flatten(), (0.25, 0.5, 0.25), 0.02)
 
             # render muscles
             if self.model.muscle_count:
@@ -348,6 +369,7 @@ def CreateSimRenderer(renderer):
                         inputs=[
                             state.body_q,
                             self.model.shape_body,
+                            self.model.rigid_contact_count,
                             self.model.rigid_contact_shape0,
                             self.model.rigid_contact_shape1,
                             self.model.rigid_contact_point0,

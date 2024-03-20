@@ -28,14 +28,15 @@ from warp.types import spatial_matrix, spatial_matrixh, spatial_matrixf, spatial
 from warp.types import Bvh, Mesh, HashGrid, Volume, MarchingCubes
 from warp.types import bvh_query_t, hash_grid_query_t, mesh_query_aabb_t, mesh_query_point_t, mesh_query_ray_t
 
-
-
 # device-wide gemms
 from warp.types import matmul, adj_matmul, batched_matmul, adj_batched_matmul, from_ptr
 
 # deprecated
 from warp.types import vector as vec
 from warp.types import matrix as mat
+
+# numpy interop
+from warp.types import dtype_from_numpy, dtype_to_numpy
 
 from warp.context import init, func, func_grad, func_replay, func_native, kernel, struct, overload
 from warp.context import is_cpu_available, is_cuda_available, is_device_available
@@ -45,6 +46,8 @@ from warp.context import get_device, set_device, synchronize_device
 from warp.context import (
     zeros,
     zeros_like,
+    ones,
+    ones_like,
     full,
     full_like,
     clone,
@@ -60,19 +63,27 @@ from warp.context import (
 from warp.context import set_module_options, get_module_options, get_module
 from warp.context import capture_begin, capture_end, capture_launch
 from warp.context import Kernel, Function, Launch
-from warp.context import Stream, get_stream, set_stream, synchronize_stream
-from warp.context import Event, record_event, wait_event, wait_stream
+from warp.context import Stream, get_stream, set_stream, wait_stream, synchronize_stream
+from warp.context import Event, record_event, wait_event, synchronize_event
 from warp.context import RegisteredGLBuffer
+from warp.context import is_mempool_supported, is_mempool_enabled, set_mempool_enabled
+from warp.context import set_mempool_release_threshold, get_mempool_release_threshold
+from warp.context import is_mempool_access_supported, is_mempool_access_enabled, set_mempool_access_enabled
+from warp.context import is_peer_access_supported, is_peer_access_enabled, set_peer_access_enabled
 
 from warp.tape import Tape
 from warp.utils import ScopedTimer, ScopedDevice, ScopedStream
+from warp.utils import ScopedMempool, ScopedMempoolAccess, ScopedPeerAccess
+from warp.utils import ScopedCapture
 from warp.utils import transform_expand, quat_between_vectors
 
 from warp.torch import from_torch, to_torch
+from warp.torch import dtype_from_torch, dtype_to_torch
 from warp.torch import device_from_torch, device_to_torch
 from warp.torch import stream_from_torch, stream_to_torch
 
 from warp.jax import from_jax, to_jax
+from warp.jax import dtype_from_jax, dtype_to_jax
 from warp.jax import device_from_jax, device_to_jax
 
 from warp.dlpack import from_dlpack, to_dlpack

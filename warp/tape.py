@@ -95,16 +95,17 @@ class Tape:
         # existing code before we added wp.array.grad attribute
         if grads:
             for a, g in grads.items():
-                a.grad = g
+                if a.grad is None:
+                    a.grad = g
+                else:
+                    # ensure we can capture this backward pass in a CUDA graph
+                    a.grad.assign(g)
                 self.const_gradients.add(a)
 
         # run launches backwards
         for launch in reversed(self.launches):
             if callable(launch):
-                module_enable_backward = wp.get_module(launch.__module__).options.get("enable_backward")
-                if module_enable_backward is False:
-                    msg = f"Running the tape backwards may produce incorrect gradients because recorded kernel {launch.__name__} is defined in a module with the option 'enable_backward=False' set."
-                    wp.utils.warn(msg)
+                launch()
 
             else:
                 # kernel option takes precedence over module option
@@ -118,10 +119,6 @@ class Tape:
                         msg = f"Running the tape backwards may produce incorrect gradients because recorded kernel {launch[0].key} is defined in a module with the option 'enable_backward=False' set."
                         wp.utils.warn(msg)
 
-            if callable(launch):
-                launch()
-
-            else:
                 kernel = launch[0]
                 dim = launch[1]
                 max_blocks = launch[2]

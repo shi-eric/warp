@@ -16,9 +16,10 @@ if sys.version_info[0] < 3:
 
 import argparse
 import os
+import glob
+import shutil
 
-import warp.config
-from warp.build_dll import build_dll, find_host_compiler, set_msvc_compiler
+from warp.build_dll import build_dll, find_host_compiler, set_msvc_env, verbose_cmd
 from warp.context import export_builtins
 
 parser = argparse.ArgumentParser(description="Warp build script")
@@ -76,41 +77,61 @@ build_path = os.path.join(base_path, "warp")
 
 print(args)
 
-warp.config.verbose = args.verbose
-warp.config.mode = args.mode
-warp.config.verify_fp = args.verify_fp
-warp.config.fast_math = args.fast_math
+verbose_cmd = args.verbose
 
 
-# See PyTorch for reference on how to find nvcc.exe more robustly
-# https://pytorch.org/docs/stable/_modules/torch/utils/cpp_extension.html#CppExtension
-def find_cuda():
-    # Guess #1
-    cuda_home = os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH")
-    return cuda_home
+def find_cuda_sdk():
+    # check environment variables
+    for env in ["WARP_CUDA_PATH", "CUDA_HOME", "CUDA_PATH"]:
+        cuda_sdk = os.environ.get(env)
+        if cuda_sdk is not None:
+            print(f"Using CUDA Toolkit path '{cuda_sdk}' provided through the '{env}' environment variable")
+            return cuda_sdk
+
+    # use which/where to locate the nvcc compiler program
+    nvcc = shutil.which("nvcc")
+    if nvcc is not None:
+        cuda_sdk = os.path.dirname(os.path.dirname(nvcc))  # strip the executable name and bin folder
+        print(f"Using CUDA Toolkit path '{cuda_sdk}' found through 'which nvcc'")
+        return cuda_sdk
+
+    # check default paths
+    if os.name == "nt":
+        cuda_paths = glob.glob("C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v*.*")
+        if len(cuda_paths) >= 1:
+            cuda_sdk = cuda_paths[0]
+            print(f"Using CUDA Toolkit path '{cuda_sdk}' found at default path")
+            return cuda_sdk
+
+    else:
+        usr_local_cuda = "/usr/local/cuda"
+        if os.path.exists(usr_local_cuda):
+            cuda_sdk = usr_local_cuda
+            print(f"Using CUDA Toolkit path '{cuda_sdk}' found at default path")
+            return cuda_sdk
+
+    return None
 
 
-# setup CUDA paths
+# setup CUDA Toolkit path
 if sys.platform == "darwin":
-    warp.config.cuda_path = None
+    args.cuda_path = None
 
 else:
-    if args.cuda_path:
-        warp.config.cuda_path = args.cuda_path
-    else:
-        warp.config.cuda_path = find_cuda()
+    if not args.cuda_path:
+        args.cuda_path = find_cuda_sdk()
 
 
 # setup MSVC and WinSDK paths
 if os.name == "nt":
     if args.sdk_path and args.msvc_path:
         # user provided MSVC
-        set_msvc_compiler(msvc_path=args.msvc_path, sdk_path=args.sdk_path)
+        args.host_compiler = set_msvc_env(msvc_path=args.msvc_path, sdk_path=args.sdk_path)
     else:
         # attempt to find MSVC in environment (will set vcvars)
-        warp.config.host_compiler = find_host_compiler()
+        args.host_compiler = find_host_compiler()
 
-        if not warp.config.host_compiler:
+        if not args.host_compiler:
             print("Warp build error: Could not find MSVC compiler")
             sys.exit(1)
 
@@ -154,6 +175,7 @@ try:
     cpp_sources = [
         "native/warp.cpp",
         "native/crt.cpp",
+        "native/error.cpp",
         "native/cuda_util.cpp",
         "native/mesh.cpp",
         "native/hashgrid.cpp",
@@ -167,7 +189,7 @@ try:
     ]
     warp_cpp_paths = [os.path.join(build_path, cpp) for cpp in cpp_sources]
 
-    if warp.config.cuda_path is None:
+    if args.cuda_path is None:
         print("Warning: CUDA toolchain not found, building without CUDA support")
         warp_cu_path = None
     else:
@@ -175,15 +197,7 @@ try:
 
     warp_dll_path = os.path.join(build_path, f"bin/{lib_name('warp')}")
 
-    build_dll(
-        dll_path=warp_dll_path,
-        cpp_paths=warp_cpp_paths,
-        cu_path=warp_cu_path,
-        mode=warp.config.mode,
-        verify_fp=warp.config.verify_fp,
-        fast_math=args.fast_math,
-        quick=args.quick,
-    )
+    build_dll(args, dll_path=warp_dll_path, cpp_paths=warp_cpp_paths, cu_path=warp_cu_path)
 
     # build warp-clang.dll
     if args.standalone:

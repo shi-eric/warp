@@ -418,7 +418,10 @@ def compute_type_str(base_name, template_params):
         if isinstance(p, int):
             return str(p)
         elif hasattr(p, "_type_"):
-            return f"wp::{p.__name__}"
+            if p.__name__ == "bool":
+                return "bool"
+            else:
+                return f"wp::{p.__name__}"
         return p.__name__
 
     return f"{base_name}<{','.join(map(param2str, template_params))}>"
@@ -595,11 +598,16 @@ class Adjoint:
         adj.skip_build = False
 
     # generate function ssa form and adjoint
-    def build(adj, builder):
+    def build(adj, builder, default_builder_options={}):
         if adj.skip_build:
             return
 
         adj.builder = builder
+
+        if adj.builder:
+            adj.builder_options = adj.builder.options
+        else:
+            adj.builder_options = default_builder_options
 
         adj.symbols = {}  # map from symbols to adjoint variables
         adj.variables = []  # list of local variables (in order)
@@ -911,8 +919,16 @@ class Adjoint:
                     break
 
         # if it is a user-function then build it recursively
-        if not func.is_builtin():
+        if not func.is_builtin() and func not in adj.builder.functions:
             adj.builder.build_function(func)
+            # add custom grad, replay functions to the list of functions
+            # to be built later (invalid code could be generated if we built them now)
+            # so that they are not missed when only the forward function is imported
+            # from another module
+            if func.custom_grad_func:
+                adj.builder.deferred_functions.append(func.custom_grad_func)
+            if func.custom_replay_func:
+                adj.builder.deferred_functions.append(func.custom_replay_func)
 
         # evaluate the function type based on inputs
         arg_types = [strip_reference(a.type) for a in args if not isinstance(a, warp.context.Function)]
@@ -924,9 +940,11 @@ class Adjoint:
         use_initializer_list = func.initializer_list_func(args, templates)
 
         args_var = [
-            adj.load(a)
-            if not ((param_types[i] == Reference or param_types[i] == Callable) if i < len(param_types) else False)
-            else a
+            (
+                adj.load(a)
+                if not ((param_types[i] == Reference or param_types[i] == Callable) if i < len(param_types) else False)
+                else a
+            )
             for i, a in enumerate(args)
         ]
 
@@ -940,7 +958,7 @@ class Adjoint:
                 f"{func.namespace}{func_name}({adj.format_forward_call_args(args_var, use_initializer_list)});"
             )
             replay_call = forward_call
-            if func.custom_replay_func is not None:
+            if func.custom_replay_func is not None or func.replay_snippet is not None:
                 replay_call = f"{func.namespace}replay_{func_name}({adj.format_forward_call_args(args_var, use_initializer_list)});"
 
         elif not isinstance(return_type, list) or len(return_type) == 1:
@@ -1539,7 +1557,11 @@ class Adjoint:
 
             # test if we're above max unroll count
             max_iters = abs(end - start) // abs(step)
-            max_unroll = adj.builder.options["max_unroll"]
+
+            if "max_unroll" in adj.builder_options:
+                max_unroll = adj.builder_options["max_unroll"]
+            else:
+                max_unroll = warp.config.max_unroll
 
             ok_to_unroll = True
 
@@ -1722,9 +1744,7 @@ class Adjoint:
 
         target = adj.eval(node.value)
         if not is_local_value(target):
-            raise RuntimeError(
-                "Cannot reference a global variable from a kernel unless `wp.constant()` is being used"
-            )
+            raise RuntimeError("Cannot reference a global variable from a kernel unless `wp.constant()` is being used")
 
         indices = []
 
@@ -2008,11 +2028,9 @@ class Adjoint:
         # Look up the closure info and append it to adj.func.__globals__
         # in case you want to define a kernel inside a function and refer
         # to variables you've declared inside that function:
-        extract_contents = (
-            lambda contents: contents
-            if isinstance(contents, warp.context.Function) or not callable(contents)
-            else contents
-        )
+        def extract_contents(contents):
+            return contents if isinstance(contents, warp.context.Function) or not callable(contents) else contents
+
         capturedvars = dict(
             zip(
                 adj.func.__code__.co_freevars,
@@ -2343,9 +2361,12 @@ def constant_str(value):
         initlist = []
         for i in range(value._length_):
             x = ctypes.Array.__getitem__(value, i)
-            initlist.append(str(scalar_value(x)))
+            initlist.append(str(scalar_value(x)).lower())
 
-        dtypestr = f"wp::initializer_array<{value._length_},wp::{value._wp_scalar_type_.__name__}>"
+        if value._wp_scalar_type_ is bool:
+            dtypestr = f"wp::initializer_array<{value._length_},{value._wp_scalar_type_.__name__}>"
+        else:
+            dtypestr = f"wp::initializer_array<{value._length_},wp::{value._wp_scalar_type_.__name__}>"
 
         # construct value from initializer array, e.g. wp::initializer_array<4,wp::float32>{1.0, 2.0, 3.0, 4.0}
         return f"{dtypestr}{{{', '.join(initlist)}}}"
@@ -2614,7 +2635,7 @@ def codegen_func(adj, c_func_name: str, device="cpu", options={}):
     return s
 
 
-def codegen_snippet(adj, name, snippet, adj_snippet):
+def codegen_snippet(adj, name, snippet, adj_snippet, replay_snippet):
     forward_args = []
     reverse_args = []
 
@@ -2633,6 +2654,7 @@ def codegen_snippet(adj, name, snippet, adj_snippet):
             reverse_args.append(arg.ctype() + " & adj_" + arg.label)
 
     forward_template = cuda_forward_function_template
+    replay_template = cuda_forward_function_template
     reverse_template = cuda_reverse_function_template
 
     s = ""
@@ -2644,6 +2666,16 @@ def codegen_snippet(adj, name, snippet, adj_snippet):
         filename=adj.filename,
         lineno=adj.fun_lineno,
     )
+
+    if replay_snippet is not None:
+        s += replay_template.format(
+            name="replay_" + name,
+            return_type="void",
+            forward_args=indent(forward_args),
+            forward_body=replay_snippet,
+            filename=adj.filename,
+            lineno=adj.fun_lineno,
+        )
 
     if adj_snippet:
         reverse_body = adj_snippet

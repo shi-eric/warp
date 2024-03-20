@@ -36,7 +36,6 @@ extensions = [
     "sphinx.ext.napoleon",  # Convert docstrings to reStructuredText
     "sphinx.ext.intersphinx",
     "sphinx.ext.autosummary",
-    "sphinx.ext.todo",
     "sphinx.ext.extlinks",  # Markup to shorten external links
     "sphinx.ext.githubpages",
     # Third-party extensions:
@@ -54,9 +53,6 @@ autodoc_member_order = "bysource"
 
 # autodoc_typehints_format
 # add_module_names = False
-
-todo_include_todos = False
-todo_emit_warnings = False
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),

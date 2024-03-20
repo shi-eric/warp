@@ -168,6 +168,7 @@ Additionally, arrays can be copied directly between memory spaces: ::
 .. autoclass:: array
     :members:
     :undoc-members:
+    :exclude-members: vars
 
 Multi-dimensional Arrays
 ########################
@@ -550,7 +551,7 @@ Transforms can be constructed inside kernels from translation and rotation parts
         # create a transform from a vector/quaternion:
         t = wp.transform(
                 wp.vec3(1.0, 2.0, 3.0),
-                wp.quat_from_axis_angle(0.0, 1.0, 0.0, wp.degrees(30.0)))
+                wp.quat_from_axis_angle(wp.vec3(0.0, 1.0, 0.0), wp.degrees(30.0)))
 
         # transform a point
         p = wp.transform_point(t, wp.vec3(10.0, 0.5, 1.0))
@@ -780,7 +781,7 @@ To record a series of kernel launches use the :func:`wp.capture_begin() <capture
 .. code:: python
 
     # begin capture
-    wp.capture_begin()
+    wp.capture_begin(device="cuda")
 
     try:
         # record launches
@@ -788,16 +789,27 @@ To record a series of kernel launches use the :func:`wp.capture_begin() <capture
             wp.launch(kernel=compute1, inputs=[a, b], device="cuda")
     finally:
         # end capture and return a graph object
-        graph = wp.capture_end()
+        graph = wp.capture_end(device="cuda")
 
-We strongly recommend the use of the the try-finally pattern when capturing graphs because
-:func:`wp.capture_begin <capture_begin>` disables Python garbage collection so that Warp objects are not
-garbage-collected during graph capture (CUDA does not allow memory to be deallocated during graph capture).
-:func:`wp.capture_end <capture_end>` reenables garbage collection.
+We strongly recommend the use of the the try-finally pattern when capturing graphs because the `finally`
+statement will ensure :func:`wp.capture_end <capture_end>` gets called, even if an exception occurs during
+capture, which would otherwise trap the stream in a capturing state.
 
 Once a graph has been constructed it can be executed: ::
 
     wp.capture_launch(graph)
+
+The :class:`wp.ScopedCapture <ScopedCapture>` context manager can be used to simplify the code and
+ensure that :func:`wp.capture_end <capture_end>` is called regardless of exceptions:
+
+.. code:: python
+
+    with wp.ScopedCapture(device="cuda") as capture:
+        # record launches
+        for i in range(100):
+            wp.launch(kernel=compute1, inputs=[a, b], device="cuda")
+
+    wp.capture_launch(capture.graph)
 
 Note that only launch calls are recorded in the graph, any Python executed outside of the kernel code will not be recorded.
 Typically it is only beneficial to use CUDA graphs when the graph will be reused or launched multiple times.
@@ -805,6 +817,10 @@ Typically it is only beneficial to use CUDA graphs when the graph will be reused
 .. autofunction:: capture_begin
 .. autofunction:: capture_end
 .. autofunction:: capture_launch
+
+.. autoclass:: ScopedCapture
+    :members:
+
 
 Bounding Value Hierarchies (BVH)
 --------------------------------
@@ -1451,6 +1467,52 @@ alongside your snippet as an additional input to the decorator, as in the follow
         wp.launch(kernel=saxpy_kernel, dim=N, inputs=[a, x, y], outputs=[out], device=device)
 
     tape.backward(grads={out: adj_out})
+
+You may also include a custom replay snippet, to be executed as part of the adjoint (see `Custom Gradient Functions`_ for a full explanation).
+Consider the following example::
+
+    def test_custom_replay_grad():
+        num_threads = 8
+        counter = wp.zeros(1, dtype=wp.int32)
+        thread_values = wp.zeros(num_threads, dtype=wp.int32)
+        inputs = wp.array(np.arange(num_threads, dtype=np.float32), requires_grad=True)
+        outputs = wp.zeros_like(inputs)
+
+    snippet = """
+        int next_index = atomicAdd(counter, 1);
+        thread_values[tid] = next_index;
+        """
+    replay_snippet = ""
+
+    @wp.func_native(snippet, replay_snippet=replay_snippet)
+    def reversible_increment(
+        counter: wp.array(dtype=int), thread_values: wp.array(dtype=int), tid: int
+    ):
+        ...
+
+    @wp.kernel
+    def run_atomic_add(
+        input: wp.array(dtype=float),
+        counter: wp.array(dtype=int),
+        thread_values: wp.array(dtype=int),
+        output: wp.array(dtype=float),
+    ):
+        tid = wp.tid()
+        reversible_increment(counter, thread_values, tid)
+        idx = thread_values[tid]
+        output[idx] = input[idx] ** 2.0
+
+    tape = wp.Tape()
+    with tape:
+        wp.launch(
+            run_atomic_add, dim=num_threads, inputs=[inputs, counter, thread_values], outputs=[outputs]
+        )
+
+    tape.backward(grads={outputs: wp.array(np.ones(num_threads, dtype=np.float32))})
+
+By default, ``snippet`` would be called in the backward pass, but in this case, we have a custom replay snippet defined, which is called instead.
+In this case, ``replay_snippet`` is a no-op, which is all that we require, since ``thread_values`` are cached in the forward pass.
+If we did not have a ``replay_snippet`` defined, ``thread_values`` would be overwritten with counter values that exceed the input array size in the backward pass.
 
 Profiling
 ---------

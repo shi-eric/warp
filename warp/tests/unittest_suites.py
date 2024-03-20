@@ -91,6 +91,7 @@ def default_suite(test_loader: unittest.TestLoader):
     from warp.tests.test_arithmetic import TestArithmetic
     from warp.tests.test_array import TestArray
     from warp.tests.test_array_reduce import TestArrayReduce
+    from warp.tests.test_async import TestAsync
     from warp.tests.test_atomic import TestAtomic
     from warp.tests.test_bool import TestBool
     from warp.tests.test_builtins_resolution import TestBuiltinsResolution
@@ -104,7 +105,12 @@ def default_suite(test_loader: unittest.TestLoader):
     from warp.tests.test_dense import TestDense
     from warp.tests.test_devices import TestDevices
     from warp.tests.test_dlpack import TestDLPack
-    from warp.tests.test_examples import TestExamples, TestFemExamples, TestSimExamples
+    from warp.tests.test_examples import (
+        TestExamples,
+        TestFemDiffusionExamples,
+        TestFemExamples,
+        TestSimExamples,
+    )
     from warp.tests.test_fabricarray import TestFabricArray
     from warp.tests.test_fast_math import TestFastMath
     from warp.tests.test_fem import TestFem, TestFemShapeFunctions
@@ -117,6 +123,7 @@ def default_suite(test_loader: unittest.TestLoader):
     from warp.tests.test_import import TestImport
     from warp.tests.test_indexedarray import TestIndexedArray
     from warp.tests.test_intersect import TestIntersect
+    from warp.tests.test_jax import TestJax
     from warp.tests.test_large import TestLarge
     from warp.tests.test_launch import TestLaunch
     from warp.tests.test_lerp import TestLerp
@@ -129,6 +136,7 @@ def default_suite(test_loader: unittest.TestLoader):
     from warp.tests.test_math import TestMath
     from warp.tests.test_matmul import TestMatmul
     from warp.tests.test_matmul_lite import TestMatmulLite
+    from warp.tests.test_mempool import TestMempool
     from warp.tests.test_mesh import TestMesh
     from warp.tests.test_mesh_query_aabb import TestMeshQueryAABBMethods
     from warp.tests.test_mesh_query_point import TestMeshQueryPoint
@@ -140,6 +148,7 @@ def default_suite(test_loader: unittest.TestLoader):
     from warp.tests.test_noise import TestNoise
     from warp.tests.test_operators import TestOperators
     from warp.tests.test_options import TestOptions
+    from warp.tests.test_peer import TestPeer
     from warp.tests.test_pinned import TestPinned
     from warp.tests.test_print import TestPrint
     from warp.tests.test_quat import TestQuat
@@ -147,6 +156,7 @@ def default_suite(test_loader: unittest.TestLoader):
     from warp.tests.test_reload import TestReload
     from warp.tests.test_rounding import TestRounding
     from warp.tests.test_runlength_encode import TestRunlengthEncode
+    from warp.tests.test_sim_kinematics import TestSimKinematics
     from warp.tests.test_smoothstep import TestSmoothstep
     from warp.tests.test_snippet import TestSnippets
     from warp.tests.test_sparse import TestSparse
@@ -161,6 +171,7 @@ def default_suite(test_loader: unittest.TestLoader):
     from warp.tests.test_vec import TestVec
     from warp.tests.test_vec_lite import TestVecLite
     from warp.tests.test_vec_scalar_ops import TestVecScalarOps
+    from warp.tests.test_verify_fp import TestVerifyFP
     from warp.tests.test_volume import TestVolume
     from warp.tests.test_volume_write import TestVolumeWrite
 
@@ -169,6 +180,7 @@ def default_suite(test_loader: unittest.TestLoader):
         TestArithmetic,
         TestArray,
         TestArrayReduce,
+        TestAsync,
         TestAtomic,
         TestBool,
         TestBuiltinsResolution,
@@ -183,6 +195,7 @@ def default_suite(test_loader: unittest.TestLoader):
         TestDevices,
         TestDLPack,
         TestExamples,
+        TestFemDiffusionExamples,
         TestFemExamples,
         TestSimExamples,
         TestFabricArray,
@@ -198,6 +211,7 @@ def default_suite(test_loader: unittest.TestLoader):
         TestImport,
         TestIndexedArray,
         TestIntersect,
+        TestJax,
         TestLarge,
         TestLaunch,
         TestLerp,
@@ -210,6 +224,7 @@ def default_suite(test_loader: unittest.TestLoader):
         TestMath,
         TestMatmul,
         TestMatmulLite,
+        TestMempool,
         TestMesh,
         TestMeshQueryAABBMethods,
         TestMeshQueryPoint,
@@ -221,6 +236,7 @@ def default_suite(test_loader: unittest.TestLoader):
         TestNoise,
         TestOperators,
         TestOptions,
+        TestPeer,
         TestPinned,
         TestPrint,
         TestQuat,
@@ -228,6 +244,7 @@ def default_suite(test_loader: unittest.TestLoader):
         TestReload,
         TestRounding,
         TestRunlengthEncode,
+        TestSimKinematics,
         TestSmoothstep,
         TestSparse,
         TestSnippets,
@@ -242,6 +259,7 @@ def default_suite(test_loader: unittest.TestLoader):
         TestVec,
         TestVecLite,
         TestVecScalarOps,
+        TestVerifyFP,
         TestVolume,
         TestVolumeWrite,
     ]

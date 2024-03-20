@@ -30,39 +30,56 @@ For example, the location of the user kernel cache can be changed with:
 Basic Global Settings
 ^^^^^^^^^^^^^^^^^^^^^
 
-+--------------------+---------+-------------+--------------------------------------------------------------------------+
-| Field              | Type    |Default Value| Description                                                              |
-+====================+=========+=============+==========================================================================+
-|``verify_fp``       | Boolean | ``False``   | If ``True``, Warp will check that inputs and outputs are finite before   |
-|                    |         |             | and/or after various operations. **Has performance implications.**       |
-+--------------------+---------+-------------+--------------------------------------------------------------------------+
-|``verify_cuda``     | Boolean | ``False``   | If ``True``, Warp will check for CUDA errors after every launch and      |
-|                    |         |             | memory operation. CUDA error verification cannot be used during graph    |
-|                    |         |             | capture. **Has performance implications.**                               |              
-+--------------------+---------+-------------+--------------------------------------------------------------------------+
-|``print_launches``  | Boolean | ``False``   | If ``True``, Warp will print details of every kernel launch to standard  |
-|                    |         |             | out (e.g. launch dimensions, inputs, outputs, device, etc.).             |
-|                    |         |             | **Has performance implications.**                                        |
-+--------------------+---------+-------------+--------------------------------------------------------------------------+
-|``mode``            | String  |``"release"``| Controls whether to compile Warp kernels in debug or release mode.       |
-|                    |         |             | Valid choices are ``"release"`` or ``"debug"``.                          |
-|                    |         |             | **Has performance implications.**                                        |
-+--------------------+---------+-------------+--------------------------------------------------------------------------+
-|``verbose``         | Boolean | ``False``   | If ``True``, additional information will be printed to standard out      |
-|                    |         |             | during code generation, compilation, etc.                                |
-+--------------------+---------+-------------+--------------------------------------------------------------------------+
-|``quiet``           | Boolean | ``False``   | If ``True``, Warp module initialization messages will be disabled.       |
-|                    |         |             | This setting does not affect error messages and warnings.                |
-+--------------------+---------+-------------+--------------------------------------------------------------------------+
-|``kernel_cache_dir``| String  | ``None``    | The path to the directory used for the user kernel cache. Subdirectories |
-|                    |         |             | named ``gen`` and ``bin`` will be created in this directory. If ``None``,|
-|                    |         |             | a directory will be automatically determined using                       |
-|                    |         |             | `appdirs.user_cache_directory <https://github.com/ActiveState/appdirs>`_ |
-|                    |         |             |                                                                          |
-+--------------------+---------+-------------+--------------------------------------------------------------------------+
-|``enable_backward`` | Boolean | ``True``    | If ``True``, backward passes of kernels will be compiled by default.     |
-|                    |         |             | Disabling this setting can reduce kernel compilation times.              |
-+--------------------+---------+-------------+--------------------------------------------------------------------------+
+
++------------------------------------------------+---------+-------------+--------------------------------------------------------------------------+
+| Field                                          | Type    |Default Value| Description                                                              |
++================================================+=========+=============+==========================================================================+
+|``verify_fp``                                   | Boolean | ``False``   | If ``True``, Warp will check that inputs and outputs are finite before   |
+|                                                |         |             | and/or after various operations. **Has performance implications.**       |
++------------------------------------------------+---------+-------------+--------------------------------------------------------------------------+
+|``verify_cuda``                                 | Boolean | ``False``   | If ``True``, Warp will check for CUDA errors after every launch and      |
+|                                                |         |             | memory operation. CUDA error verification cannot be used during graph    |
+|                                                |         |             | capture. **Has performance implications.**                               |              
++------------------------------------------------+---------+-------------+--------------------------------------------------------------------------+
+|``print_launches``                              | Boolean | ``False``   | If ``True``, Warp will print details of every kernel launch to standard  |
+|                                                |         |             | out (e.g. launch dimensions, inputs, outputs, device, etc.).             |
+|                                                |         |             | **Has performance implications.**                                        |
++------------------------------------------------+---------+-------------+--------------------------------------------------------------------------+
+|``mode``                                        | String  |``"release"``| Controls whether to compile Warp kernels in debug or release mode.       |
+|                                                |         |             | Valid choices are ``"release"`` or ``"debug"``.                          |
+|                                                |         |             | **Has performance implications.**                                        |
++------------------------------------------------+---------+-------------+--------------------------------------------------------------------------+
+|``max_unroll``                                  | Integer | Global      | The maximum fixed-size loop to unroll. Note that ``max_unroll`` does not |
+|                                                |         | setting     | consider the total number of iterations in nested loops. This can result |
+|                                                |         |             | in a large amount of automatically generated code if each nested loop is |
+|                                                |         |             | below the ``max_unroll`` threshold.                                      |
++------------------------------------------------+---------+-------------+--------------------------------------------------------------------------+
+|``verbose``                                     | Boolean | ``False``   | If ``True``, additional information will be printed to standard out      |
+|                                                |         |             | during code generation, compilation, etc.                                |
++------------------------------------------------+---------+-------------+--------------------------------------------------------------------------+
+|``verbose_warnings``                            | Boolean | ``False``   | If ``True``, Warp warnings will include extra information such as        |
+|                                                |         |             | the source file and line number.                                         |
++------------------------------------------------+---------+-------------+--------------------------------------------------------------------------+
+|``quiet``                                       | Boolean | ``False``   | If ``True``, Warp module initialization messages will be disabled.       |
+|                                                |         |             | This setting does not affect error messages and warnings.                |
++------------------------------------------------+---------+-------------+--------------------------------------------------------------------------+
+|``kernel_cache_dir``                            | String  | ``None``    | The path to the directory used for the user kernel cache. Subdirectories |
+|                                                |         |             | named ``gen`` and ``bin`` will be created in this directory. If ``None``,|
+|                                                |         |             | a directory will be automatically determined using                       |
+|                                                |         |             | `appdirs.user_cache_directory <https://github.com/ActiveState/appdirs>`_ |
++------------------------------------------------+---------+-------------+--------------------------------------------------------------------------+
+|``enable_backward``                             | Boolean | ``True``    | If ``True``, backward passes of kernels will be compiled by default.     |
+|                                                |         |             | Disabling this setting can reduce kernel compilation times.              |
++------------------------------------------------+---------+-------------+--------------------------------------------------------------------------+
+|``enable_graph_capture_module_load_by_default`` | Boolean | ``True``    | If ``True``, ``wp.capture_begin()`` will call ``wp.force_load()`` to     |
+|                                                |         |             | compile and load Warp kernels from all imported modules before capture.  |
++------------------------------------------------+---------+-------------+--------------------------------------------------------------------------+
+|``enable_mempools_at_init``                     | Boolean | ``False``   | If ``True``, ``wp.init()`` will enable pooled allocators on all CUDA     |
+|                                                |         |             | devices that support memory pools.                                       |
+|                                                |         |             | Pooled allocators are generally faster and can be used during CUDA graph |
+|                                                |         |             | capture.  For the caveats, see CUDA Pooled Allocators documentation.     |
++------------------------------------------------+---------+-------------+--------------------------------------------------------------------------+
+
 
 Advanced Global Settings
 ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -103,8 +120,8 @@ The options for a module can also be queried using ``wp.get_module_options()``.
 |``mode``            | String  | Global      | Controls whether to compile the module's kernels in debug or release     |
 |                    |         | setting     | mode by default. Valid choices are ``"release"`` or ``"debug"``.         |
 +--------------------+---------+-------------+--------------------------------------------------------------------------+
-|``max_unroll``      | Integer | 16          | The maximum fixed-size loop to unroll. Note that ``max_unroll`` does not |
-|                    |         |             | consider the total number of iterations in nested loops. This can result |
+|``max_unroll``      | Integer | Global      | The maximum fixed-size loop to unroll. Note that ``max_unroll`` does not |
+|                    |         | setting     | consider the total number of iterations in nested loops. This can result |
 |                    |         |             | in a large amount of automatically generated code if each nested loop is |
 |                    |         |             | below the ``max_unroll`` threshold.                                      |
 +--------------------+---------+-------------+--------------------------------------------------------------------------+
