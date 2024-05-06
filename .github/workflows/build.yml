@@ -54,7 +54,7 @@ jobs:
       - name: Run Tests
         run: python -m warp.tests --junit-report-xml rspec.xml --coverage --coverage-xml coverage.xml -s autodetect
       - name: Test Summary
-        uses: test-summary/action@v2
+        uses: test-summary/action@v2.3
         with:
           paths: "rspec.xml"
           show: "all"
