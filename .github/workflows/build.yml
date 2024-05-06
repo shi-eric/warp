@@ -52,4 +52,10 @@ jobs:
           pip install --upgrade numpy
           pip install .
       - name: Run tests
-        run: python -m warp.tests
+        run: python -m warp.tests --junit-report-xml rspec.xml --coverage --coverage-xml coverage.xml -s autodetect
+      - name: Test Summary
+        uses: test-summary/action@v2
+        with:
+          paths: "coverage.xml"
+          show: "fail, skip"
+        if: always()
