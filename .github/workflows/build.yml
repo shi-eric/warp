@@ -19,12 +19,6 @@ jobs:
           pip install --upgrade numpy
       - name: Build
         run: |
-          g++ --version
-          sudo apt-get update
-          sudo apt-get install gcc-9 g++-9
-          sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-9 90
-          sudo update-alternatives --set g++ /usr/bin/g++-9
-          g++ --version
           tools/packman/packman install -l _build/target-deps/cuda cuda 11.8.0_520.61-d8963068-linux-x86_64
           python build_lib.py --cuda_path=_build/target-deps/cuda
       - name: Upload build artifact
