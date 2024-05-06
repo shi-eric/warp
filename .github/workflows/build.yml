@@ -63,5 +63,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: test-summary
-          path: test-summary.md
+          path: |
+            test-summary.md
+            rspec.xml
+            coverage.xml
         if: always()
