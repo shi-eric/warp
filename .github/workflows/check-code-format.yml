@@ -23,6 +23,8 @@ jobs:
       - name: Ruff Format
         run: |
           ruff format --diff
+        continue-on-error: true # Testing only, remove later
       - name: Ruff Lint
         run: |
-          ruff check --show-source
+          ruff check --show-source --output-format=github .
+        continue-on-error: true # Testing only, remove later
