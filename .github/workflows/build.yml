@@ -56,6 +56,6 @@ jobs:
       - name: Test Summary
         uses: test-summary/action@v2
         with:
-          paths: "coverage.xml"
+          paths: "rspec.xml"
           show: "fail, skip"
         if: always()
