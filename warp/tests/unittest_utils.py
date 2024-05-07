@@ -368,7 +368,7 @@ def write_junit_results(
     import xml.etree.ElementTree as ET
 
     root = ET.Element(
-        "testsuites",
+        "testsuite",
         name="Warp Tests",
         failures=str(tests_failed),
         errors=str(tests_errored),
