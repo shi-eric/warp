@@ -21,17 +21,22 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install --upgrade numpy
+          pip install --upgrade numpy build
       - name: Build
         run: |
           tools/packman/packman install -l _build/target-deps/cuda cuda 11.8.0_522.06-abe3d9d7-windows-x86_64
           python build_lib.py --cuda_path=_build/target-deps/cuda
+      - name: Build Wheel
+        run: |
+          mkdir -p warp/bin/windows-x86_64
+          mv warp/bin/warp.dll warp/bin/windows-x86_64/
+          mv warp/bin/warp-clang.dll warp/bin/windows-x86_64/
+          python -m build --wheel -C--build-option=-Pwindows-x86_64
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact-windows
-          path: |
-            warp/bin/**/*.dll
+          path: ./dist/*.whl
 
   build-warp-ubuntu:
     runs-on: ubuntu-latest
@@ -45,18 +50,22 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install --upgrade numpy
-      - name: Build
+          pip install --upgrade numpy build
+      - name: Build Warp
         run: |
           tools/packman/packman install -l _build/target-deps/cuda cuda 11.8.0_520.61-d8963068-linux-x86_64
           python build_lib.py --cuda_path=_build/target-deps/cuda
+      - name: Build Wheel
+        run: |
+          mkdir -p warp/bin/linux-x86_64
+          mv warp/bin/warp.so warp/bin/linux-x86_64
+          mv warp/bin/warp-clang.so warp/bin/linux-x86_64
+          python -m build --wheel -C--build-option=-Plinux-x86_64
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact-ubuntu
-          path: |
-            warp/bin/**/*.so
-            warp/bin/**/*.dylib
+          path: ./dist/*.whl
 
   build-warp-macos:
     runs-on: macos-latest
@@ -70,17 +79,21 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install --upgrade numpy
+          pip install --upgrade numpy build
       - name: Build
         run: |
           python build_lib.py
+      - name: Build Wheel
+        run: |
+          mkdir -p warp/bin/macos-universal
+          mv warp/bin/libwarp.dylib warp/bin/macos-universal/
+          mv warp/bin/libwarp-clang.dylib warp/bin/macos-universal/
+          python -m build --wheel -C--build-option=-Pmacos-universal
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: build-artifact-macos
-          path: |
-            warp/bin/**/*.so
-            warp/bin/**/*.dylib
+          path: ./dist/*.whl
 
   test-warp-windows:
     runs-on: windows-latest
@@ -98,12 +111,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-artifact-windows
-          path: warp/bin/
+          path: ./dist/
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install --upgrade numpy coverage[toml] usd-core
-          pip install .
+          pip install ./dist/*.whl
       - name: Run Tests
         run: python -m warp.tests --junit-report-xml rspec.xml -s autodetect
       - name: Test Summary
@@ -129,12 +142,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-artifact-ubuntu
-          path: warp/bin/
+          path: ./dist/
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install --upgrade numpy coverage[toml] usd-core
-          pip install .
+          pip install ./dist/*.whl
       - name: Run Tests
         run: python -m warp.tests --junit-report-xml rspec.xml -s autodetect
       - name: Test Summary
@@ -160,12 +173,12 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-artifact-macos
-          path: warp/bin/
+          path: ./dist/
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install --upgrade numpy coverage[toml] usd-core
-          pip install .
+          pip install ./dist/*.whl
       - name: Run Tests
         run: python -m warp.tests --junit-report-xml rspec.xml -s autodetect
       - name: Test Summary
