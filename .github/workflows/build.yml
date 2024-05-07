@@ -106,6 +106,12 @@ jobs:
           pip install .
       - name: Run Tests
         run: python -m warp.tests --junit-report-xml rspec.xml -s autodetect
+      - name: Test Summary
+        uses: test-summary/action@v2.3
+        with:
+          paths: "rspec.xml"
+          show: "fail"
+        if: always()
 
   test-warp-ubuntu:
     runs-on: ubuntu-latest
@@ -135,15 +141,7 @@ jobs:
         uses: test-summary/action@v2.3
         with:
           paths: "rspec.xml"
-          show: "all"
-        if: always()
-      - name: Upload Test Summary
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-summary
-          path: |
-            test-summary.md
-            rspec.xml
+          show: "fail"
         if: always()
 
   test-warp-macos:
@@ -170,3 +168,9 @@ jobs:
           pip install .
       - name: Run Tests
         run: python -m warp.tests --junit-report-xml rspec.xml -s autodetect
+      - name: Test Summary
+        uses: test-summary/action@v2.3
+        with:
+          paths: "rspec.xml"
+          show: "fail"
+        if: always()
