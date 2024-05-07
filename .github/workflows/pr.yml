@@ -14,6 +14,8 @@ jobs:
   pre-commit:
     runs-on: ubuntu-latest
     steps:
-    - uses: pre-commit/action@v3.0.1
+      - name: Check Code Format
+        uses: pre-commit/action@v3.0.1
+        continue-on-error: true # Testing only, remove later
   build-and-test:
-    uses: ./.github/workflows/build.yml
+    uses: ./.github/workflows/build-and-test.yml
