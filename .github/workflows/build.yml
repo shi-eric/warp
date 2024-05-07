@@ -57,6 +57,30 @@ jobs:
             warp/bin/**/*.so
             warp/bin/**/*.dylib
 
+  build-warp-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade numpy
+      - name: Build
+        run: |
+          python build_lib.py
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifact-macos
+          path: |
+            warp/bin/**/*.so
+            warp/bin/**/*.dylib
+
   test-warp-windows:
     runs-on: windows-latest
     needs: build-warp-windows
