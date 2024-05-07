@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "pull-request/[0-9]+"
+  pull_request: # Remove when using nv-gha-runners
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
