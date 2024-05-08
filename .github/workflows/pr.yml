@@ -1,4 +1,4 @@
-name: pr
+name: pull_request
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   pull_request: # Remove when using nv-gha-runners
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-on-${{ github.event_name }}-from-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
