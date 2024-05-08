@@ -5,24 +5,18 @@
 # distribution of this software and related documentation without an express
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
+import math
+import os
 import unittest
 
 import warp as wp
-from warp.tests.unittest_utils import *
-
-import math
-import os
-
-import numpy as np
-
-import warp as wp
 import warp.sim
+from warp.tests.unittest_utils import *
 
 wp.init()
 
 
 def test_fk_ik(test, device):
-
     builder = wp.sim.ModelBuilder()
 
     num_envs = 1
@@ -60,7 +54,7 @@ def test_fk_ik(test, device):
         builder.joint_qd[dof_start + 6 : dof_start + dof_count] = [1.0, 1.0, 1.0, -1.0, 1.0, -1.0, 1.0, 1.0]
 
     # finalize model
-    model = builder.finalize()
+    model = builder.finalize(device=device)
     model.ground = True
     model.joint_attach_ke *= 16.0
     model.joint_attach_kd *= 4.0
@@ -73,8 +67,8 @@ def test_fk_ik(test, device):
 
     wp.sim.eval_fk(model, model.joint_q, model.joint_qd, None, state)
 
-    q_ik = wp.zeros_like(model.joint_q)
-    qd_ik = wp.zeros_like(model.joint_qd)
+    q_ik = wp.zeros_like(model.joint_q, device=device)
+    qd_ik = wp.zeros_like(model.joint_qd, device=device)
 
     wp.sim.eval_ik(model, state, q_ik, qd_ik)
 

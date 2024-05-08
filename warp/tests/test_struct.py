@@ -11,9 +11,8 @@ from typing import Any
 import numpy as np
 
 import warp as wp
-from warp.tests.unittest_utils import *
-
 from warp.fem import Sample as StructFromAnotherModule
+from warp.tests.unittest_utils import *
 
 wp.init()
 
@@ -362,13 +361,6 @@ def check_default_attributes_kernel(data: DefaultAttribStruct):
     check_default_attributes_func(data)
 
 
-# check structs default initialized in Python correctly
-def test_struct_default_attributes_python(test, device):
-    s = DefaultAttribStruct()
-
-    wp.launch(check_default_attributes_kernel, dim=1, inputs=[s])
-
-
 # check structs default initialized in kernels correctly
 @wp.kernel
 def test_struct_default_attributes_kernel():
@@ -420,6 +412,40 @@ def test_nested_array_struct(test, device):
     struct.array = wp.array([var1, var2], dtype=InnerStruct, device=device)
 
     wp.launch(struct2_reader, dim=2, inputs=[struct], device=device)
+
+
+@wp.struct
+class VecStruct:
+    value: wp.vec3
+
+
+@wp.struct
+class Bar2:
+    z: wp.array(dtype=float)
+
+
+@wp.struct
+class Foo2:
+    x: wp.array(dtype=float)
+    y: Bar2
+
+
+def test_convert_to_device(test, device):
+    foo = Foo2()
+    foo.x = wp.array((1.23, 2.34), dtype=float, device=device)
+    foo.y = Bar2()
+    foo.y.z = wp.array((3.45, 4.56), dtype=float, device=device)
+
+    if device.is_cpu and wp.is_cuda_available():
+        dst_device = "cuda:0"
+    elif device.is_cuda and wp.is_cpu_available():
+        dst_device = "cpu"
+    else:
+        return
+
+    result = foo.to(dst_device)
+    assert result.x.device == dst_device
+    assert result.y.z.device == dst_device
 
 
 @wp.struct
@@ -569,7 +595,21 @@ devices = get_test_devices()
 
 
 class TestStruct(unittest.TestCase):
-    pass
+    # check structs default initialized in Python correctly
+    def test_struct_default_attributes_python(self):
+        s = DefaultAttribStruct()
+
+        wp.launch(check_default_attributes_kernel, dim=1, inputs=[s])
+
+    def test_nested_vec_assignment(self):
+        v = VecStruct()
+        v.value[0] = 1.0
+        v.value[1] = 2.0
+        v.value[2] = 3.0
+
+        arr = wp.array([v], dtype=VecStruct)
+        expected = np.array(([1.0, 2.0, 3.0],))
+        assert np.all(arr.numpy().tolist() == expected)
 
 
 add_function_test(TestStruct, "test_step", test_step, devices=devices)
@@ -586,11 +626,9 @@ add_kernel_test(
 add_kernel_test(TestStruct, kernel=test_return, name="test_return", dim=1, inputs=[], devices=devices)
 add_function_test(TestStruct, "test_nested_struct", test_nested_struct, devices=devices)
 add_function_test(TestStruct, "test_nested_array_struct", test_nested_array_struct, devices=devices)
+add_function_test(TestStruct, "test_convert_to_device", test_convert_to_device, devices=devices)
 add_function_test(TestStruct, "test_nested_empty_struct", test_nested_empty_struct, devices=devices)
 add_function_test(TestStruct, "test_struct_math_conversions", test_struct_math_conversions, devices=devices)
-add_function_test(
-    TestStruct, "test_struct_default_attributes_python", test_struct_default_attributes_python, devices=devices
-)
 add_kernel_test(
     TestStruct,
     name="test_struct_default_attributes",
@@ -621,9 +659,6 @@ add_function_test(TestStruct, "test_nested_struct", test_nested_struct, devices=
 add_function_test(TestStruct, "test_nested_array_struct", test_nested_array_struct, devices=devices)
 add_function_test(TestStruct, "test_nested_empty_struct", test_nested_empty_struct, devices=devices)
 add_function_test(TestStruct, "test_struct_math_conversions", test_struct_math_conversions, devices=devices)
-add_function_test(
-    TestStruct, "test_struct_default_attributes_python", test_struct_default_attributes_python, devices=devices
-)
 add_kernel_test(
     TestStruct,
     name="test_struct_default_attributes",

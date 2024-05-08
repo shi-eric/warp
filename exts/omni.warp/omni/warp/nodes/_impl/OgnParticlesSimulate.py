@@ -7,17 +7,16 @@
 
 """Node simulating particles."""
 
-from math import inf
 import traceback
+from math import inf
 
 import numpy as np
 import omni.graph.core as og
 import omni.timeline
-import warp as wp
-
 import omni.warp.nodes
 from omni.warp.nodes.ogn.OgnParticlesSimulateDatabase import OgnParticlesSimulateDatabase
 
+import warp as wp
 
 USE_GRAPH = True
 
@@ -550,7 +549,7 @@ class OgnParticlesSimulate:
 
     @staticmethod
     def compute(db: OgnParticlesSimulateDatabase) -> None:
-        device = wp.get_device("cuda:0")
+        device = omni.warp.nodes.device_get_cuda_compute()
 
         try:
             with wp.ScopedDevice(device):

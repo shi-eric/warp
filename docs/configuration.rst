@@ -1,8 +1,10 @@
-Runtime Settings
-================
+.. _Configuration:
+
+Configuration
+=============
 
 Warp has settings at the global, module, and kernel level that can be used to fine-tune the compilation and verbosity
-of Warp programs. In cases in which a setting can be changed at multiple levels (e.g ``enable_backward``),
+of Warp programs. In cases in which a setting can be changed at multiple levels (e.g.: ``enable_backward``),
 the setting at the more-specific scope takes precedence.
 
 Global Settings
@@ -72,7 +74,10 @@ Basic Global Settings
 |                                                |         |             | Disabling this setting can reduce kernel compilation times.              |
 +------------------------------------------------+---------+-------------+--------------------------------------------------------------------------+
 |``enable_graph_capture_module_load_by_default`` | Boolean | ``True``    | If ``True``, ``wp.capture_begin()`` will call ``wp.force_load()`` to     |
-|                                                |         |             | compile and load Warp kernels from all imported modules before capture.  |
+|                                                |         |             | compile and load Warp kernels from all imported modules before graph     |
+|                                                |         |             | capture if the ``force_module_load`` argument is not explicitly provided |
+|                                                |         |             | to ``wp.capture_begin()``. This setting is ignored if the CUDA driver    |
+|                                                |         |             | supports CUDA 12.3 or newer.                                             |
 +------------------------------------------------+---------+-------------+--------------------------------------------------------------------------+
 |``enable_mempools_at_init``                     | Boolean | ``False``   | If ``True``, ``wp.init()`` will enable pooled allocators on all CUDA     |
 |                                                |         |             | devices that support memory pools.                                       |

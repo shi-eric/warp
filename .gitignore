@@ -16,8 +16,9 @@ archive
 *.pdb
 /_build
 /_repo
+/_conan
+/_deps
 /docs/_build
-/docs/modules/functions.rst
 /warp_lang.egg-info
 exts/omni.warp/omni/warp/ogn/tests/usd
 .vs/

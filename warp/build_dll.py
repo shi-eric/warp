@@ -5,10 +5,10 @@
 # distribution of this software and related documentation without an express
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
-import sys
 import os
-import subprocess
 import platform
+import subprocess
+import sys
 
 from warp.utils import ScopedTimer
 
@@ -246,11 +246,13 @@ def build_dll_for_arch(args, dll_path, cpp_paths, cu_path, libs, arch, mode=None
             iter_dbg = "_ITERATOR_DEBUG_LEVEL=2"
             debug = "_DEBUG"
 
+        cpp_flags = f'/nologo /std:c++17 /GR- {runtime} /D "{debug}" /D "{cuda_enabled}" /D "{cutlass_enabled}" /D "{cuda_compat_enabled}" /D "{iter_dbg}" /I"{native_dir}" /I"{nanovdb_home}" {includes} '
+
         if args.mode == "debug":
-            cpp_flags = f'/nologo {runtime} /Zi /Od /D "{debug}" /D WP_ENABLE_DEBUG=1 /D "{cuda_enabled}" /D "{cutlass_enabled}" /D "{cuda_compat_enabled}" /D "{iter_dbg}" /I"{native_dir}" /I"{nanovdb_home}" {includes}'
+            cpp_flags += "/Zi /Od /D WP_ENABLE_DEBUG=1"
             linkopts = ["/DLL", "/DEBUG"]
         elif args.mode == "release":
-            cpp_flags = f'/nologo {runtime} /Ox /D "{debug}" /D WP_ENABLE_DEBUG=0 /D "{cuda_enabled}" /D "{cutlass_enabled}" /D "{cuda_compat_enabled}" /D "{iter_dbg}" /I"{native_dir}" /I"{nanovdb_home}" {includes}'
+            cpp_flags += "/Ox /D WP_ENABLE_DEBUG=0"
             linkopts = ["/DLL"]
         else:
             raise RuntimeError(f"Unrecognized build configuration (debug, release), got: {args.mode}")
@@ -296,15 +298,17 @@ def build_dll_for_arch(args, dll_path, cpp_paths, cu_path, libs, arch, mode=None
         includes = cpp_includes + cuda_includes
 
         if sys.platform == "darwin":
-            target = f"--target={arch}-apple-macos11"
+            version = f"--target={arch}-apple-macos11"
         else:
-            target = ""
+            version = "-fabi-version=13"  # GCC 8.2+
+
+        cpp_flags = f'{version} --std=c++17 -fno-rtti -D{cuda_enabled} -D{cutlass_enabled} -D{cuda_compat_enabled} -fPIC -fvisibility=hidden -D_GLIBCXX_USE_CXX11_ABI=0 -I"{native_dir}" {includes} '
 
         if mode == "debug":
-            cpp_flags = f'{target} -O0 -g -fno-rtti -D_DEBUG -DWP_ENABLE_DEBUG=1 -D{cuda_enabled} -D{cutlass_enabled} -D{cuda_compat_enabled} -fPIC -fvisibility=hidden --std=c++14 -D_GLIBCXX_USE_CXX11_ABI=0 -fkeep-inline-functions -I"{native_dir}" {includes}'
+            cpp_flags += "-O0 -g -D_DEBUG -DWP_ENABLE_DEBUG=1 -fkeep-inline-functions"
 
         if mode == "release":
-            cpp_flags = f'{target} -O3 -DNDEBUG -DWP_ENABLE_DEBUG=0 -D{cuda_enabled} -D{cutlass_enabled} -D{cuda_compat_enabled} -fPIC -fvisibility=hidden --std=c++14 -D_GLIBCXX_USE_CXX11_ABI=0 -I"{native_dir}" {includes}'
+            cpp_flags += "-O3 -DNDEBUG -DWP_ENABLE_DEBUG=0"
 
         if args.verify_fp:
             cpp_flags += " -DWP_VERIFY_FP"
@@ -348,20 +352,24 @@ def build_dll_for_arch(args, dll_path, cpp_paths, cu_path, libs, arch, mode=None
 
         with ScopedTimer("link", active=args.verbose):
             origin = "@loader_path" if (sys.platform == "darwin") else "$ORIGIN"
-            link_cmd = f"g++ {target} -shared -Wl,-rpath,'{origin}' {opt_no_undefined} {opt_exclude_libs} -o '{dll_path}' {' '.join(ld_inputs + libs)}"
+            link_cmd = f"g++ {version} -shared -Wl,-rpath,'{origin}' {opt_no_undefined} {opt_exclude_libs} -o '{dll_path}' {' '.join(ld_inputs + libs)}"
             run_cmd(link_cmd)
 
             # Strip symbols to reduce the binary size
-            if sys.platform == "darwin":
-                run_cmd(f"strip -x {dll_path}")  # Strip all local symbols
-            else:  # Linux
-                # Strip all symbols except for those needed to support debugging JIT-compiled code
-                run_cmd(
-                    f"strip --strip-all --keep-symbol=__jit_debug_register_code --keep-symbol=__jit_debug_descriptor {dll_path}"
-                )
+            if mode == "release":
+                if sys.platform == "darwin":
+                    run_cmd(f"strip -x {dll_path}")  # Strip all local symbols
+                else:  # Linux
+                    # Strip all symbols except for those needed to support debugging JIT-compiled code
+                    run_cmd(
+                        f"strip --strip-all --keep-symbol=__jit_debug_register_code --keep-symbol=__jit_debug_descriptor {dll_path}"
+                    )
 
 
-def build_dll(args, dll_path, cpp_paths, cu_path, libs=[]):
+def build_dll(args, dll_path, cpp_paths, cu_path, libs=None):
+    if libs is None:
+        libs = []
+
     if sys.platform == "darwin":
         # create a universal binary by combining x86-64 and AArch64 builds
         build_dll_for_arch(args, dll_path + "-x86_64", cpp_paths, cu_path, libs, "x86_64")

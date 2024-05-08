@@ -20,6 +20,7 @@ import numpy as np
 import warp
 
 # type hints
+T = TypeVar("T")
 Length = TypeVar("Length", bound=int)
 Rows = TypeVar("Rows")
 Cols = TypeVar("Cols")
@@ -28,15 +29,27 @@ DType = TypeVar("DType")
 Int = TypeVar("Int")
 Float = TypeVar("Float")
 Scalar = TypeVar("Scalar")
-Vector = Generic[Length, Scalar]
-Matrix = Generic[Rows, Cols, Scalar]
-Quaternion = Generic[Float]
-Transformation = Generic[Float]
 
-DType = TypeVar("DType")
-Array = Generic[DType]
 
-T = TypeVar("T")
+class Vector(Generic[Length, Scalar]):
+    pass
+
+
+class Matrix(Generic[Rows, Cols, Scalar]):
+    pass
+
+
+class Quaternion(Generic[Float]):
+    pass
+
+
+class Transformation(Generic[Float]):
+    pass
+
+
+class Array(Generic[DType]):
+    pass
+
 
 # shared hash for all constants
 _constant_hash = hashlib.sha256()
@@ -93,6 +106,8 @@ def vector(length, dtype):
         dtype = int32
     elif dtype == float:
         dtype = float32
+    elif dtype == builtins.bool:
+        dtype = bool
 
     class vec_t(ctypes.Array):
         # ctypes.Array data for length, shape and c type:
@@ -110,6 +125,7 @@ def vector(length, dtype):
         _wp_scalar_type_ = dtype
         _wp_type_params_ = [length, dtype]
         _wp_generic_type_str_ = "vec_t"
+        _wp_generic_type_hint_ = Vector
         _wp_constructor_ = "vector"
 
         # special handling for float16 type: in this case, data is stored
@@ -273,6 +289,8 @@ def matrix(shape, dtype):
         dtype = int32
     elif dtype == float:
         dtype = float32
+    elif dtype == builtins.bool:
+        dtype = bool
 
     class mat_t(ctypes.Array):
         _length_ = 0 if shape[0] == Any or shape[1] == Any else shape[0] * shape[1]
@@ -290,6 +308,7 @@ def matrix(shape, dtype):
         _wp_scalar_type_ = dtype
         _wp_type_params_ = [shape[0], shape[1], dtype]
         _wp_generic_type_str_ = "mat_t"
+        _wp_generic_type_hint_ = Matrix
         _wp_constructor_ = "matrix"
 
         _wp_row_type_ = vector(0 if shape[1] == Any else shape[1], dtype)
@@ -428,7 +447,7 @@ def matrix(shape, dtype):
                 if len(key) != 2:
                     raise KeyError(f"Invalid key, expected one or two indices, got {len(key)}")
                 if any(isinstance(x, slice) for x in key):
-                    raise KeyError(f"Slices are not supported when indexing matrices using the `m[i, j]` notation")
+                    raise KeyError("Slices are not supported when indexing matrices using the `m[i, j]` notation")
                 return mat_t.scalar_export(super().__getitem__(key[0] * self._shape_[1] + key[1]))
             elif isinstance(key, int):
                 # row vector indexing m[r]
@@ -442,7 +461,7 @@ def matrix(shape, dtype):
                 if len(key) != 2:
                     raise KeyError(f"Invalid key, expected one or two indices, got {len(key)}")
                 if any(isinstance(x, slice) for x in key):
-                    raise KeyError(f"Slices are not supported when indexing matrices using the `m[i, j]` notation")
+                    raise KeyError("Slices are not supported when indexing matrices using the `m[i, j]` notation")
                 try:
                     return super().__setitem__(key[0] * self._shape_[1] + key[1], mat_t.scalar_import(value))
                 except (TypeError, ctypes.ArgumentError):
@@ -454,7 +473,7 @@ def matrix(shape, dtype):
                 # row vector indexing m[r] = v
                 return self.set_row(key, value)
             elif isinstance(key, slice):
-                raise KeyError(f"Slices are not supported when indexing matrices using the `m[start:end]` notation")
+                raise KeyError("Slices are not supported when indexing matrices using the `m[start:end]` notation")
             else:
                 raise KeyError(f"Invalid key {key}, expected int or pair of ints")
 
@@ -714,6 +733,7 @@ def quaternion(dtype=Any):
     ret = quat_t
     ret._wp_type_params_ = [dtype]
     ret._wp_generic_type_str_ = "quat_t"
+    ret._wp_generic_type_hint_ = Quaternion
     ret._wp_constructor_ = "quaternion"
 
     return ret
@@ -749,11 +769,12 @@ def transformation(dtype=Any):
         )
         _wp_type_params_ = [dtype]
         _wp_generic_type_str_ = "transform_t"
+        _wp_generic_type_hint_ = Transformation
         _wp_constructor_ = "transformation"
 
         def __init__(self, *args, **kwargs):
             if len(args) == 1 and len(kwargs) == 0:
-                if getattr(args[0], "_wp_generic_type_str_") == self._wp_generic_type_str_:
+                if args[0]._wp_generic_type_str_ == self._wp_generic_type_str_:
                     # Copy constructor.
                     super().__init__(*args[0])
                     return
@@ -1011,11 +1032,12 @@ spatial_vector = spatial_vectorf
 spatial_matrix = spatial_matrixf
 
 
-int_types = [int8, uint8, int16, uint16, int32, uint32, int64, uint64]
-float_types = [float16, float32, float64]
+int_types = (int8, uint8, int16, uint16, int32, uint32, int64, uint64)
+float_types = (float16, float32, float64)
 scalar_types = int_types + float_types
+scalar_and_bool_types = scalar_types + (bool,)
 
-vector_types = [
+vector_types = (
     vec2b,
     vec2ub,
     vec2s,
@@ -1070,7 +1092,7 @@ vector_types = [
     spatial_matrixh,
     spatial_matrixf,
     spatial_matrixd,
-]
+)
 
 np_dtype_to_warp_type = {
     # Numpy scalar types
@@ -1316,7 +1338,7 @@ def type_size_in_bytes(dtype):
         elif isinstance(dtype, warp.codegen.Struct):
             size = ctypes.sizeof(dtype.ctype)
         elif dtype == Any:
-            raise TypeError(f"A concrete type is required")
+            raise TypeError("A concrete type is required")
         else:
             raise TypeError(f"Invalid data type: {dtype}")
         _type_size_cache[dtype] = size
@@ -1329,6 +1351,8 @@ def type_to_warp(dtype):
         return float32
     elif dtype == int:
         return int32
+    elif dtype == builtins.bool:
+        return bool
     else:
         return dtype
 
@@ -1379,10 +1403,7 @@ def type_repr(t):
     if t in scalar_types:
         return t.__name__
 
-    try:
-        return t.__module__ + "." + t.__qualname__
-    except AttributeError:
-        return str(t)
+    return t.__module__ + "." + t.__qualname__
 
 
 def type_is_int(t):
@@ -1401,26 +1422,20 @@ def type_is_float(t):
 
 # returns True if the passed *type* is a vector
 def type_is_vector(t):
-    if hasattr(t, "_wp_generic_type_str_") and t._wp_generic_type_str_ == "vec_t":
-        return True
-    else:
-        return False
+    return getattr(t, "_wp_generic_type_hint_", None) is Vector
 
 
 # returns True if the passed *type* is a matrix
 def type_is_matrix(t):
-    if hasattr(t, "_wp_generic_type_str_") and t._wp_generic_type_str_ == "mat_t":
-        return True
-    else:
-        return False
+    return getattr(t, "_wp_generic_type_hint_", None) is Matrix
+
+
+value_types = (int, float, builtins.bool) + scalar_types
 
 
 # returns true for all value types (int, float, bool, scalars, vectors, matrices)
 def type_is_value(x):
-    if (x == int) or (x == float) or (x == builtins.bool) or (x in scalar_types) or issubclass(x, ctypes.Array):
-        return True
-    else:
-        return False
+    return x in value_types or issubclass(x, ctypes.Array)
 
 
 # equivalent of the above but for values
@@ -1441,63 +1456,68 @@ def is_array(a):
     return isinstance(a, array_types)
 
 
+def scalars_equal(a, b, match_generic):
+    if match_generic:
+        if a == Any or b == Any:
+            return True
+        if a == Scalar and b in scalar_and_bool_types:
+            return True
+        if b == Scalar and a in scalar_and_bool_types:
+            return True
+        if a == Scalar and b == Scalar:
+            return True
+        if a == Float and b in float_types:
+            return True
+        if b == Float and a in float_types:
+            return True
+        if a == Float and b == Float:
+            return True
+
+    # convert to canonical types
+    if a == float:
+        a = float32
+    elif a == int:
+        a = int32
+    elif a == builtins.bool:
+        a = bool
+
+    if b == float:
+        b = float32
+    elif b == int:
+        b = int32
+    elif b == builtins.bool:
+        b = bool
+
+    return a == b
+
+
 def types_equal(a, b, match_generic=False):
     # convert to canonical types
     if a == float:
         a = float32
     elif a == int:
         a = int32
+    elif a == builtins.bool:
+        a = bool
 
     if b == float:
         b = float32
     elif b == int:
         b = int32
+    elif b == builtins.bool:
+        b = bool
 
-    compatible_bool_types = [builtins.bool, bool]
+    if getattr(a, "_wp_generic_type_hint_", "a") is getattr(b, "_wp_generic_type_hint_", "b"):
+        for p1, p2 in zip(a._wp_type_params_, b._wp_type_params_):
+            if not scalars_equal(p1, p2, match_generic):
+                return False
 
-    def are_equal(p1, p2):
-        if match_generic:
-            if p1 == Any or p2 == Any:
-                return True
-            if p1 == Scalar and p2 in scalar_types + [bool]:
-                return True
-            if p2 == Scalar and p1 in scalar_types + [bool]:
-                return True
-            if p1 == Scalar and p2 == Scalar:
-                return True
-            if p1 == Float and p2 in float_types:
-                return True
-            if p2 == Float and p1 in float_types:
-                return True
-            if p1 == Float and p2 == Float:
-                return True
+        return True
 
-        # convert to canonical types
-        if p1 == float:
-            p1 = float32
-        elif p1 == int:
-            p1 = int32
-
-        if p2 == float:
-            p2 = float32
-        elif b == int:
-            p2 = int32
-
-        if p1 in compatible_bool_types and p2 in compatible_bool_types:
-            return True
-        else:
-            return p1 == p2
-
-    if (
-        hasattr(a, "_wp_generic_type_str_")
-        and hasattr(b, "_wp_generic_type_str_")
-        and a._wp_generic_type_str_ == b._wp_generic_type_str_
-    ):
-        return all([are_equal(p1, p2) for p1, p2 in zip(a._wp_type_params_, b._wp_type_params_)])
     if is_array(a) and type(a) is type(b):
         return True
-    else:
-        return are_equal(a, b)
+
+    return scalars_equal(a, b, match_generic)
 
 
 def strides_from_shape(shape: Tuple, dtype):
@@ -1521,14 +1541,21 @@ def check_array_shape(shape: Tuple):
         if dim_size < 0:
             raise ValueError(f"Array shapes must be non-negative, got {dim_size} in dimension {dim_index}")
         if dim_size >= 2**31:
-            raise ValueError("Array shapes must not exceed the maximum representable value of a signed 32-bit integer, "
-                            f"got {dim_size} in dimension {dim_index}.")
+            raise ValueError(
+                "Array shapes must not exceed the maximum representable value of a signed 32-bit integer, "
+                f"got {dim_size} in dimension {dim_index}."
+            )
 
 
 class array(Array):
     # member attributes available during code-gen (e.g.: d = array.shape[0])
     # (initialized when needed)
     _vars = None
+
+    def __new__(cls, *args, **kwargs):
+        instance = super(array, cls).__new__(cls)
+        instance.deleter = None
+        return instance
 
     def __init__(
         self,
@@ -1568,7 +1595,7 @@ class array(Array):
         are taken into account and no memory is allocated for the array.
 
         Args:
-            data (Union[list, tuple, ndarray]) An object to construct the array from, can be a Tuple, List, or generally any type convertible to an np.array
+            data (Union[list, tuple, ndarray]): An object to construct the array from, can be a Tuple, List, or generally any type convertible to an np.array
             dtype (Union): One of the built-in types, e.g.: :class:`warp.mat33`, if dtype is Any and data an ndarray then it will be inferred from the array data type
             shape (tuple): Dimensions of the array
             strides (tuple): Number of bytes in each dimension between successive elements of the array
@@ -1585,7 +1612,6 @@ class array(Array):
 
         """
 
-        self.deleter = None
         self.ctype = None
 
         # properties
@@ -1600,6 +1626,8 @@ class array(Array):
             dtype = int32
         elif dtype == float:
             dtype = float32
+        elif dtype == builtins.bool:
+            dtype = bool
 
         # convert shape to tuple (or leave shape=None if neither shape nor length were specified)
         if shape is not None:
@@ -1643,6 +1671,31 @@ class array(Array):
         if not hasattr(data, "__len__"):
             raise RuntimeError(f"Data must be a sequence or array, got scalar {data}")
 
+        if hasattr(data, "__cuda_array_interface__"):
+            try:
+                # Performance note: try first, ask questions later
+                device = warp.context.runtime.get_device(device)
+            except:
+                warp.context.assert_initialized()
+                raise
+
+            if device.is_cuda:
+                desc = data.__cuda_array_interface__
+                shape = desc.get("shape")
+                strides = desc.get("strides")
+                dtype = np_dtype_to_warp_type[np.dtype(desc.get("typestr"))]
+                ptr = desc.get("data")[0]
+
+                self._init_from_ptr(ptr, dtype, shape, strides, None, device, False, None)
+
+                # keep a ref to the source data to keep allocation alive
+                self._ref = data
+                return
+            else:
+                raise RuntimeError(
+                    f"Trying to construct a Warp array from data argument's __cuda_array_interface__ but {device} is not CUDA-capable"
+                )
+
         if hasattr(dtype, "_wp_scalar_type_"):
             dtype_shape = dtype._shape_
             dtype_ndim = len(dtype_shape)
@@ -1658,7 +1711,7 @@ class array(Array):
             try:
                 arr = np.array(data, copy=False, ndmin=1)
             except Exception as e:
-                raise RuntimeError(f"Failed to convert input data to an array: {e}")
+                raise RuntimeError(f"Failed to convert input data to an array: {e}") from e
             dtype = np_dtype_to_warp_type.get(arr.dtype)
             if dtype is None:
                 raise RuntimeError(f"Unsupported input data dtype: {arr.dtype}")
@@ -1682,7 +1735,7 @@ class array(Array):
                 except Exception as e:
                     raise RuntimeError(
                         f"Error while trying to construct Warp array from a sequence of Warp structs: {e}"
-                    )
+                    ) from e
             else:
                 raise RuntimeError(
                     "Invalid data argument for array of structs, expected a sequence of structs or a NumPy structured array"
@@ -1697,7 +1750,7 @@ class array(Array):
             try:
                 arr = np.array(data, dtype=npdtype, copy=False, ndmin=1)
             except Exception as e:
-                raise RuntimeError(f"Failed to convert input data to an array with type {npdtype}: {e}")
+                raise RuntimeError(f"Failed to convert input data to an array with type {npdtype}: {e}") from e
 
         # determine whether the input needs reshaping
         target_npshape = None
@@ -1729,7 +1782,7 @@ class array(Array):
             except Exception as e:
                 raise RuntimeError(
                     f"Failed to reshape the input data to the given shape {shape} and type {warp.context.type_str(dtype)}: {e}"
-                )
+                ) from e
 
         # determine final shape and strides
         if dtype_ndim > 0:
@@ -1884,7 +1937,6 @@ class array(Array):
         self.is_contiguous = False
 
     def __del__(self):
-
         if self.deleter is None:
             return
 
@@ -1893,7 +1945,6 @@ class array(Array):
 
     @property
     def __array_interface__(self):
-
         # raising an AttributeError here makes hasattr() return False
         if self.device is None or not self.device.is_cpu:
             raise AttributeError(f"__array_interface__ not supported because device is {self.device}")
@@ -1930,7 +1981,6 @@ class array(Array):
 
     @property
     def __cuda_array_interface__(self):
-
         # raising an AttributeError here makes hasattr() return False
         if self.device is None or not self.device.is_cuda:
             raise AttributeError(f"__cuda_array_interface__ is not supported because device is {self.device}")
@@ -2030,7 +2080,7 @@ class array(Array):
         new_key = []
         for i in range(0, len(key)):
             new_key.append(key[i])
-        for i in range(len(key), self.ndim):
+        for _i in range(len(key), self.ndim):
             new_key.append(slice(None, None, None))
         key = tuple(new_key)
 
@@ -2267,7 +2317,7 @@ class array(Array):
                 else:
                     cvalue = self.dtype._type_(value)
         except Exception as e:
-            raise ValueError(f"Failed to convert the value to the array data type: {e}")
+            raise ValueError(f"Failed to convert the value to the array data type: {e}") from e
 
         cvalue_ptr = ctypes.pointer(cvalue)
         cvalue_size = ctypes.sizeof(cvalue)
@@ -2557,8 +2607,12 @@ def array4d(*args, **kwargs):
     return array(*args, **kwargs)
 
 
-# TODO: Rewrite so that we take only shape, not length and optional shape
 def from_ptr(ptr, length, dtype=None, shape=None, device=None):
+    warp.utils.warn(
+        "This version of wp.from_ptr() is deprecated. OmniGraph applications should use from_omni_graph_ptr() instead. In the future, wp.from_ptr() will work only with regular pointers.",
+        category=DeprecationWarning,
+    )
+
     return array(
         dtype=dtype,
         length=length,
@@ -2641,7 +2695,7 @@ class noncontiguous_array_base(Generic[T]):
                 else:
                     cvalue = self.dtype._type_(value)
         except Exception as e:
-            raise ValueError(f"Failed to convert the value to the array data type: {e}")
+            raise ValueError(f"Failed to convert the value to the array data type: {e}") from e
 
         cvalue_ptr = ctypes.pointer(cvalue)
         cvalue_size = ctypes.sizeof(cvalue)
@@ -2854,7 +2908,6 @@ class Bvh:
             )
 
     def __del__(self):
-
         if not self.id:
             return
 
@@ -2943,7 +2996,6 @@ class Mesh:
             )
 
     def __del__(self):
-
         if not self.id:
             return
 
@@ -3000,7 +3052,6 @@ class Volume:
             raise RuntimeError("Failed to create volume from input array")
 
     def __del__(self):
-
         if not self.id:
             return
 
@@ -3780,7 +3831,7 @@ def adj_batched_matmul(
     beta: float = 0.0,
     allow_tf32x3_arith: builtins.bool = False,
 ):
-    """Computes a batched generic matrix-matrix multiplication (GEMM) of the form: `d = alpha * (a @ b) + beta * c`.
+    """Computes the adjoint of a batched generic matrix-matrix multiplication (GEMM) of the form: `d = alpha * (a @ b) + beta * c`.
 
     Args:
         a (array3d): three-dimensional array containing A matrices. Overall array dimension is {batch_count, M, K}
@@ -4101,18 +4152,19 @@ class HashGrid:
                             the radius used when performing queries.
         """
 
+        if not warp.types.types_equal(points.dtype, warp.vec3):
+            raise TypeError("Hash grid points should have type warp.vec3")
+
+        if points.ndim > 1:
+            points = points.contiguous().flatten()
+
         if self.device.is_cpu:
-            self.runtime.core.hash_grid_update_host(
-                self.id, radius, ctypes.cast(points.ptr, ctypes.c_void_p), len(points)
-            )
+            self.runtime.core.hash_grid_update_host(self.id, radius, ctypes.byref(points.__ctype__()))
         else:
-            self.runtime.core.hash_grid_update_device(
-                self.id, radius, ctypes.cast(points.ptr, ctypes.c_void_p), len(points)
-            )
+            self.runtime.core.hash_grid_update_device(self.id, radius, ctypes.byref(points.__ctype__()))
         self.reserved = True
 
     def reserve(self, num_points):
-
         if self.device.is_cpu:
             self.runtime.core.hash_grid_reserve_host(self.id, num_points)
         else:
@@ -4120,7 +4172,6 @@ class HashGrid:
         self.reserved = True
 
     def __del__(self):
-
         if not self.id:
             return
 
@@ -4134,7 +4185,6 @@ class HashGrid:
 
 class MarchingCubes:
     def __init__(self, nx: int, ny: int, nz: int, max_verts: int, max_tris: int, device=None):
-
         self.id = 0
 
         self.runtime = warp.context.runtime
@@ -4166,7 +4216,6 @@ class MarchingCubes:
         self.id = ctypes.c_uint64(self.alloc(self.device.context))
 
     def __del__(self):
-
         if not self.id:
             return
 
@@ -4207,7 +4256,7 @@ class MarchingCubes:
 
         if error:
             raise RuntimeError(
-                "Buffers may not be large enough, marching cubes required at least {num_verts} vertices, and {num_tris} triangles."
+                f"Buffers may not be large enough, marching cubes required at least {num_verts} vertices, and {num_tris} triangles."
             )
 
         # resize the geometry arrays
@@ -4218,12 +4267,17 @@ class MarchingCubes:
         self.indices.size = num_tris.value * 3
 
 
+generic_types = (Any, Scalar, Float, Int)
+
+
 def type_is_generic(t):
-    if t in (Any, Scalar, Float, Int):
+    if t in generic_types:
         return True
-    elif is_array(t):
+
+    if is_array(t):
         return type_is_generic(t.dtype)
-    elif hasattr(t, "_wp_scalar_type_"):
+
+    if hasattr(t, "_wp_scalar_type_"):
         # vector/matrix type, check if dtype is generic
         if type_is_generic(t._wp_scalar_type_):
             return True
@@ -4231,8 +4285,8 @@ def type_is_generic(t):
         for d in t._shape_:
             if d == 0:
                 return True
-    else:
-        return False
+
+    return False
 
 
 def type_is_generic_scalar(t):
@@ -4306,9 +4360,9 @@ def infer_argument_types(args, template_types, arg_names=None):
         arg_name = arg_names[i] if arg_names else str(i)
         if arg_type in warp.types.array_types:
             arg_types.append(arg_type(dtype=arg.dtype, ndim=arg.ndim))
-        elif arg_type in warp.types.scalar_types + [bool]:
+        elif arg_type in warp.types.scalar_and_bool_types:
             arg_types.append(arg_type)
-        elif arg_type in [int, float]:
+        elif arg_type in (int, float):
             # canonicalize type
             arg_types.append(warp.types.type_to_warp(arg_type))
         elif hasattr(arg_type, "_wp_scalar_type_"):
@@ -4441,7 +4495,7 @@ def get_signature(arg_types, func_name=None, arg_names=None):
                 func_str = f" of function {func_name}"
             else:
                 func_str = ""
-            raise RuntimeError(f"Failed to determine type code for argument {arg_str}{func_str}: {e}")
+            raise RuntimeError(f"Failed to determine type code for argument {arg_str}{func_str}: {e}") from e
 
     return "_".join(type_codes)
 

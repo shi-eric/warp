@@ -11,11 +11,10 @@ import hashlib
 import traceback
 
 import omni.graph.core as og
-import warp as wp
-
 import omni.warp.nodes
 from omni.warp.nodes.ogn.OgnNoiseDeformDatabase import OgnNoiseDeformDatabase
 
+import warp as wp
 
 USE_GRAPH = True
 
@@ -197,7 +196,7 @@ class OgnNoiseDeform:
 
     @staticmethod
     def compute(db: OgnNoiseDeformDatabase) -> None:
-        device = wp.get_device("cuda:0")
+        device = omni.warp.nodes.device_get_cuda_compute()
 
         try:
             with wp.ScopedDevice(device):

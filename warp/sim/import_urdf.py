@@ -14,13 +14,11 @@ import numpy as np
 import warp as wp
 from warp.sim.model import Mesh
 
-from typing import Union
-
 
 def parse_urdf(
     urdf_filename,
     builder,
-    xform=wp.transform(),
+    xform=None,
     floating=False,
     base_joint: Union[dict, str] = None,
     density=1000.0,
@@ -80,19 +78,21 @@ def parse_urdf(
         static_link_mass (float): The mass to assign to links with zero mass (if `ensure_nonstatic_links` is set to True).
         collapse_fixed_joints (bool): If True, fixed joints are removed and the respective bodies are merged.
     """
+    if xform is None:
+        xform = wp.transform()
 
     file = ET.parse(urdf_filename)
     root = file.getroot()
 
-    contact_vars = dict(
-        ke=contact_ke,
-        kd=contact_kd,
-        kf=contact_kf,
-        ka=contact_ka,
-        mu=contact_mu,
-        restitution=contact_restitution,
-        thickness=contact_thickness,
-    )
+    contact_vars = {
+        "ke": contact_ke,
+        "kd": contact_kd,
+        "kf": contact_kf,
+        "ka": contact_ka,
+        "mu": contact_mu,
+        "restitution": contact_restitution,
+        "thickness": contact_thickness,
+    }
 
     def parse_transform(element):
         if element is None or element.find("origin") is None:
@@ -129,6 +129,7 @@ def parse_urdf(
                     density=density,
                     is_visible=visible,
                     has_ground_collision=not just_visual,
+                    has_shape_collision=not just_visual,
                     **contact_vars,
                 )
                 shapes.append(s)
@@ -142,6 +143,7 @@ def parse_urdf(
                     density=density,
                     is_visible=visible,
                     has_ground_collision=not just_visual,
+                    has_shape_collision=not just_visual,
                     **contact_vars,
                 )
                 shapes.append(s)
@@ -157,6 +159,7 @@ def parse_urdf(
                     up_axis=2,  # cylinders in URDF are aligned with z-axis
                     is_visible=visible,
                     has_ground_collision=not just_visual,
+                    has_shape_collision=not just_visual,
                     **contact_vars,
                 )
                 shapes.append(s)
@@ -165,7 +168,19 @@ def parse_urdf(
                 filename = mesh.get("filename")
                 if filename is None:
                     continue
-                if filename.startswith("http://") or filename.startswith("https://"):
+                if filename.startswith("package://"):
+                    fn = filename.replace("package://", "")
+                    package_name = fn.split("/")[0]
+                    urdf_folder = os.path.dirname(urdf_filename)
+                    # resolve file path from package name, i.e. find
+                    # the package folder from the URDF folder
+                    if package_name in urdf_folder:
+                        filename = os.path.join(urdf_folder[: urdf_folder.index(package_name)], fn)
+                    else:
+                        wp.utils.warn(
+                            f'Warning: package "{package_name}" not found in URDF folder while loading mesh at "{filename}"'
+                        )
+                elif filename.startswith("http://") or filename.startswith("https://"):
                     # download mesh
                     import shutil
                     import tempfile
@@ -188,7 +203,9 @@ def parse_urdf(
 
                 import trimesh
 
-                m = trimesh.load_mesh(filename)
+                # use force='mesh' to load the mesh as a trimesh object
+                # with baked in transforms, e.g. from COLLADA files
+                m = trimesh.load(filename, force="mesh")
                 scaling = mesh.get("scale") or "1 1 1"
                 scaling = np.array([float(x) * scale for x in scaling.split()])
                 if hasattr(m, "geometry"):
@@ -205,6 +222,7 @@ def parse_urdf(
                             density=density,
                             is_visible=visible,
                             has_ground_collision=not just_visual,
+                            has_shape_collision=not just_visual,
                             **contact_vars,
                         )
                         shapes.append(s)
@@ -215,12 +233,13 @@ def parse_urdf(
                     mesh = Mesh(vertices, faces)
                     s = builder.add_shape_mesh(
                         body=link,
-                        pos=tf.p,
-                        rot=tf.q,
+                        pos=wp.vec3(tf.p),
+                        rot=wp.quat(tf.q),
                         mesh=mesh,
                         density=density,
                         is_visible=visible,
                         has_ground_collision=not just_visual,
+                        has_shape_collision=not just_visual,
                         **contact_vars,
                     )
                     shapes.append(s)
@@ -237,7 +256,7 @@ def parse_urdf(
     start_shape_count = len(builder.shape_geo_type)
 
     # add links
-    for i, urdf_link in enumerate(root.findall("link")):
+    for _i, urdf_link in enumerate(root.findall("link")):
         name = urdf_link.get("name")
         link = builder.add_body(origin=wp.transform_identity(), armature=armature, name=name)
 
@@ -439,13 +458,14 @@ def parse_urdf(
         if stiffness > 0.0:
             joint_mode = wp.sim.JOINT_MODE_TARGET_POSITION
 
-        joint_params = dict(
-            parent=parent,
-            child=child,
-            parent_xform=parent_xform,
-            child_xform=child_xform,
-            name=joint["name"],
-        )
+        joint_params = {
+            "parent": parent,
+            "child": child,
+            "parent_xform": parent_xform,
+            "child_xform": child_xform,
+            "name": joint["name"],
+            "armature": armature,
+        }
 
         if joint["type"] == "revolute" or joint["type"] == "continuous":
             builder.add_joint_revolute(

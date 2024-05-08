@@ -429,6 +429,37 @@ def test_view(test, device):
     assert_array_equal(wp_arr_e.view(dtype=wp.quat), wp_arr_f)
 
 
+def test_clone_adjoint(test, device):
+    state_in = wp.from_numpy(
+        np.array([1.0, 2.0, 3.0]).astype(np.float32), dtype=wp.float32, requires_grad=True, device=device
+    )
+
+    tape = wp.Tape()
+    with tape:
+        state_out = wp.clone(state_in)
+
+    grads = {state_out: wp.from_numpy(np.array([1.0, 1.0, 1.0]).astype(np.float32), dtype=wp.float32, device=device)}
+    tape.backward(grads=grads)
+
+    assert_np_equal(state_in.grad.numpy(), np.array([1.0, 1.0, 1.0]).astype(np.float32))
+
+
+def test_assign_adjoint(test, device):
+    state_in = wp.from_numpy(
+        np.array([1.0, 2.0, 3.0]).astype(np.float32), dtype=wp.float32, requires_grad=True, device=device
+    )
+    state_out = wp.zeros(state_in.shape, dtype=wp.float32, requires_grad=True, device=device)
+
+    tape = wp.Tape()
+    with tape:
+        state_out.assign(state_in)
+
+    grads = {state_out: wp.from_numpy(np.array([1.0, 1.0, 1.0]).astype(np.float32), dtype=wp.float32, device=device)}
+    tape.backward(grads=grads)
+
+    assert_np_equal(state_in.grad.numpy(), np.array([1.0, 1.0, 1.0]).astype(np.float32))
+
+
 @wp.kernel
 def compare_2darrays(x: wp.array2d(dtype=float), y: wp.array2d(dtype=float), z: wp.array2d(dtype=int)):
     i, j = wp.tid()
@@ -1540,7 +1571,6 @@ def test_ones_like_scalar(test, device):
         shape = (dim,) * ndim
 
         for nptype, wptype in wp.types.np_dtype_to_warp_type.items():
-
             # source array
             a = wp.zeros(shape, dtype=wptype, device=device)
             na = a.numpy()
@@ -2122,11 +2152,11 @@ def test_array_of_structs_roundtrip(test, device):
 def test_array_from_numpy(test, device):
     arr = np.array((1.0, 2.0, 3.0), dtype=float)
 
-    result = wp.from_numpy(arr)
+    result = wp.from_numpy(arr, device=device)
     expected = wp.array((1.0, 2.0, 3.0), dtype=wp.float32, shape=(3,))
     assert_np_equal(result.numpy(), expected.numpy())
 
-    result = wp.from_numpy(arr, dtype=wp.vec3)
+    result = wp.from_numpy(arr, dtype=wp.vec3, device=device)
     expected = wp.array(((1.0, 2.0, 3.0),), dtype=wp.vec3, shape=(1,))
     assert_np_equal(result.numpy(), expected.numpy())
 
@@ -2134,15 +2164,15 @@ def test_array_from_numpy(test, device):
 
     arr = np.array(((1.0, 2.0, 3.0), (4.0, 5.0, 6.0)), dtype=float)
 
-    result = wp.from_numpy(arr)
+    result = wp.from_numpy(arr, device=device)
     expected = wp.array(((1.0, 2.0, 3.0), (4.0, 5.0, 6.0)), dtype=wp.vec3, shape=(2,))
     assert_np_equal(result.numpy(), expected.numpy())
 
-    result = wp.from_numpy(arr, dtype=wp.float32)
+    result = wp.from_numpy(arr, dtype=wp.float32, device=device)
     expected = wp.array(((1.0, 2.0, 3.0), (4.0, 5.0, 6.0)), dtype=wp.float32, shape=(2, 3))
     assert_np_equal(result.numpy(), expected.numpy())
 
-    result = wp.from_numpy(arr, dtype=wp.float32, shape=(6,))
+    result = wp.from_numpy(arr, dtype=wp.float32, shape=(6,), device=device)
     expected = wp.array((1.0, 2.0, 3.0, 4.0, 5.0, 6.0), dtype=wp.float32, shape=(6,))
     assert_np_equal(result.numpy(), expected.numpy())
 
@@ -2166,7 +2196,7 @@ def test_array_from_numpy(test, device):
         dtype=float,
     )
 
-    result = wp.from_numpy(arr)
+    result = wp.from_numpy(arr, device=device)
     expected = wp.array(
         (
             (
@@ -2187,7 +2217,7 @@ def test_array_from_numpy(test, device):
     )
     assert_np_equal(result.numpy(), expected.numpy())
 
-    result = wp.from_numpy(arr, dtype=wp.float32)
+    result = wp.from_numpy(arr, dtype=wp.float32, device=device)
     expected = wp.array(
         (
             (
@@ -2208,7 +2238,7 @@ def test_array_from_numpy(test, device):
     )
     assert_np_equal(result.numpy(), expected.numpy())
 
-    result = wp.from_numpy(arr, dtype=wp.vec4).reshape((8,))  # Reshape from (2, 4)
+    result = wp.from_numpy(arr, dtype=wp.vec4, device=device).reshape((8,))  # Reshape from (2, 4)
     expected = wp.array(
         (
             (1.0, 2.0, 3.0, 4.0),
@@ -2225,7 +2255,7 @@ def test_array_from_numpy(test, device):
     )
     assert_np_equal(result.numpy(), expected.numpy())
 
-    result = wp.from_numpy(arr, dtype=wp.float32, shape=(32,))
+    result = wp.from_numpy(arr, dtype=wp.float32, shape=(32,), device=device)
     expected = wp.array(
         (
             1.0,
@@ -2267,11 +2297,47 @@ def test_array_from_numpy(test, device):
     assert_np_equal(result.numpy(), expected.numpy())
 
 
+def test_array_from_cai(test, device):
+    import torch
+
+    @wp.kernel
+    def first_row_plus_one(x: wp.array2d(dtype=float)):
+        i, j = wp.tid()
+        if i == 0:
+            x[i, j] += 1.0
+
+    # start with torch tensor
+    arr = torch.zeros((3, 3))
+    torch_device = wp.device_to_torch(device)
+    arr_torch = arr.to(torch_device)
+
+    # wrap as warp array via __cuda_array_interface__
+    arr_warp = wp.array(arr_torch, device=device)
+
+    wp.launch(kernel=first_row_plus_one, dim=(3, 3), inputs=[arr_warp], device=device)
+
+    # re-wrap as torch array
+    arr_torch = wp.to_torch(arr_warp)
+
+    # transpose
+    arr_torch = torch.as_strided(arr_torch, size=(3, 3), stride=(arr_torch.stride(1), arr_torch.stride(0)))
+
+    # re-wrap as warp array with new strides
+    arr_warp = wp.array(arr_torch, device=device)
+
+    wp.launch(kernel=first_row_plus_one, dim=(3, 3), inputs=[arr_warp], device=device)
+
+    assert_np_equal(arr_warp.numpy(), np.array([[2, 1, 1], [1, 0, 0], [1, 0, 0]]))
+
+
 devices = get_test_devices()
 
 
 class TestArray(unittest.TestCase):
-    pass
+    def test_array_new_del(self):
+        # test the scenario in which an array instance is created but not initalized before gc
+        instance = wp.array.__new__(wp.array)
+        instance.__del__()
 
 
 add_function_test(TestArray, "test_shape", test_shape, devices=devices)
@@ -2281,6 +2347,8 @@ add_function_test(TestArray, "test_reshape", test_reshape, devices=devices)
 add_function_test(TestArray, "test_slicing", test_slicing, devices=devices)
 add_function_test(TestArray, "test_transpose", test_transpose, devices=devices)
 add_function_test(TestArray, "test_view", test_view, devices=devices)
+add_function_test(TestArray, "test_clone_adjoint", test_clone_adjoint, devices=devices)
+add_function_test(TestArray, "test_assign_adjoint", test_assign_adjoint, devices=devices)
 
 add_function_test(TestArray, "test_1d_array", test_1d, devices=devices)
 add_function_test(TestArray, "test_2d_array", test_2d, devices=devices)
@@ -2319,6 +2387,29 @@ add_function_test(TestArray, "test_array_of_structs_grad", test_array_of_structs
 add_function_test(TestArray, "test_array_of_structs_from_numpy", test_array_of_structs_from_numpy, devices=devices)
 add_function_test(TestArray, "test_array_of_structs_roundtrip", test_array_of_structs_roundtrip, devices=devices)
 add_function_test(TestArray, "test_array_from_numpy", test_array_from_numpy, devices=devices)
+
+try:
+    import torch
+
+    # check which Warp devices work with Torch
+    # CUDA devices may fail if Torch was not compiled with CUDA support
+    torch_compatible_devices = []
+    torch_compatible_cuda_devices = []
+
+    for d in devices:
+        try:
+            t = torch.arange(10, device=wp.device_to_torch(d))
+            t += 1
+            torch_compatible_devices.append(d)
+            if d.is_cuda:
+                torch_compatible_cuda_devices.append(d)
+        except Exception as e:
+            print(f"Skipping Array tests that use Torch on device '{d}' due to exception: {e}")
+
+    add_function_test(TestArray, "test_array_from_cai", test_array_from_cai, devices=torch_compatible_cuda_devices)
+
+except Exception as e:
+    print(f"Skipping Array tests that use Torch due to exception: {e}")
 
 
 if __name__ == "__main__":

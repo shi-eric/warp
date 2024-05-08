@@ -11,18 +11,14 @@
 # Shows how to implement a apic fluid simulation.
 ###########################################################################
 
-import warp as wp
 import numpy as np
 
-from warp.sim import Model, State
-import warp.sim.render
-
+import warp as wp
 import warp.fem as fem
-
-from warp.fem import integrand, lookup, normal, grad, at_node, div
-from warp.fem import Field, Sample, Domain
-
-from warp.sparse import bsr_mv, bsr_copy, bsr_mm, bsr_transposed, bsr_zeros, BsrMatrix
+import warp.sim.render
+from warp.fem import Domain, Field, Sample, at_node, div, grad, integrand, lookup, normal
+from warp.sim import Model, State
+from warp.sparse import BsrMatrix, bsr_copy, bsr_mm, bsr_mv, bsr_transposed, bsr_zeros
 
 try:
     from .bsr_utils import bsr_cg
@@ -160,14 +156,13 @@ def solve_incompressibility(divergence_mat: BsrMatrix, inv_volume, pressure, vel
 
 
 class Example:
-    def __init__(self, stage, num_frames=1000, res=[32, 64, 16], quiet=False):
-        self.frame_dt = 1.0 / 60
-        self.num_frames = num_frames
+    def __init__(self, quiet=False, stage_path="example_apic_fluid.usd", res=(32, 64, 16)):
+        fps = 60
+        self.frame_dt = 1.0 / fps
         self.current_frame = 0
 
         self.sim_substeps = 1
         self.sim_dt = self.frame_dt / self.sim_substeps
-        self.sim_steps = self.num_frames * self.sim_substeps
 
         self._quiet = quiet
 
@@ -258,18 +253,20 @@ class Example:
         self.state_1: State = self.model.state()
         self.state_1.particle_qd_grad = wp.zeros(shape=(self.model.particle_count), dtype=wp.mat33)
 
-        self.renderer = None
         try:
-            self.renderer = warp.sim.render.SimRenderer(self.model, stage, scaling=20.0)
+            if stage_path:
+                self.renderer = warp.sim.render.SimRenderer(self.model, stage_path, scaling=20.0)
+            else:
+                self.renderer = None
         except Exception as err:
-            print(f"Could not initialize SimRenderer for stage '{stage}': {err}.")
+            print(f"Could not initialize SimRenderer for stage '{stage_path}': {err}.")
 
     def step(self):
         fem.set_default_temporary_store(self.temporary_store)
 
         self.current_frame = self.current_frame + 1
         with wp.ScopedTimer(f"simulate frame {self.current_frame}", active=True):
-            for s in range(self.sim_substeps):
+            for _s in range(self.sim_substeps):
                 # Bin particles to grid cells
                 pic = fem.PicQuadrature(
                     domain=fem.Cells(self.grid), positions=self.state_0.particle_q, measures=self.model.particle_mass
@@ -376,14 +373,35 @@ class Example:
 
 
 if __name__ == "__main__":
+    import argparse
+
     wp.set_module_options({"enable_backward": False})
 
-    stage_path = "example_apic_fluid.usd"
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--device", type=str, default=None, help="Override the default Warp device.")
+    parser.add_argument(
+        "--stage_path",
+        type=lambda x: None if x == "None" else str(x),
+        default="example_apic_fluid.usd",
+        help="Path to the output USD file.",
+    )
+    parser.add_argument("--num_frames", type=int, default=1000, help="Total number of frames.")
+    parser.add_argument("--quiet", action="store_true")
+    parser.add_argument(
+        "--res",
+        type=lambda s: [int(item) for item in s.split(",")],
+        default="32,64,16",
+        help="Delimited list specifying resolution in x, y, and z.",
+    )
 
-    example = Example(stage_path)
+    args = parser.parse_known_args()[0]
 
-    for i in range(example.num_frames):
-        example.step()
-        example.render()
+    with wp.ScopedDevice(args.device):
+        example = Example(quiet=args.quiet, stage_path=args.stage_path, res=args.res)
 
-    example.renderer.save()
+        for _ in range(args.num_frames):
+            example.step()
+            example.render()
+
+        if example.renderer:
+            example.renderer.save()

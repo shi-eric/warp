@@ -5,8 +5,7 @@
 # distribution of this software and related documentation without an express
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
-"""A module for building simulation models and state.
-"""
+"""A module for building simulation models and state."""
 
 import copy
 import math
@@ -163,11 +162,11 @@ class SDF:
         com (Vec3): The center of mass of the SDF
     """
 
-    def __init__(self, volume=None, I=wp.mat33(np.eye(3)), mass=1.0, com=wp.vec3()):
+    def __init__(self, volume=None, I=None, mass=1.0, com=None):
         self.volume = volume
-        self.I = I
+        self.I = I if I is not None else wp.mat33(np.eye(3))
         self.mass = mass
-        self.com = com
+        self.com = com if com is not None else wp.vec3()
 
         # Need to specify these for now
         self.has_inertia = True
@@ -514,6 +513,7 @@ class Model:
         shape_collision_filter_pairs (set): Pairs of shape indices that should not collide
         shape_collision_radius (array): Collision radius of each shape used for bounding sphere broadphase collision checking, shape [shape_count], float
         shape_ground_collision (list): Indicates whether each shape should collide with the ground, shape [shape_count], bool
+        shape_shape_collision (list): Indicates whether each shape should collide with any other shape, shape [shape_count], bool
         shape_contact_pairs (array): Pairs of shape indices that may collide, shape [contact_pair_count, 2], int
         shape_ground_contact_pairs (array): Pairs of shape, ground indices that may collide, shape [ground_contact_pair_count, 2], int
 
@@ -680,6 +680,7 @@ class Model:
         self.shape_collision_filter_pairs = None
         self.shape_collision_radius = None
         self.shape_ground_collision = None
+        self.shape_shape_collision = None
         self.shape_contact_pairs = None
         self.shape_ground_contact_pairs = None
 
@@ -899,6 +900,10 @@ class Model:
         # iterate over collision groups (islands)
         for group, shapes in self.shape_collision_group_map.items():
             for shape_a, shape_b in itertools.product(shapes, shapes):
+                if not self.shape_shape_collision[shape_a]:
+                    continue
+                if not self.shape_shape_collision[shape_b]:
+                    continue
                 if shape_a < shape_b and (shape_a, shape_b) not in filters:
                     contact_pairs.append((shape_a, shape_b))
             if group != -1 and -1 in self.shape_collision_group_map:
@@ -1046,9 +1051,9 @@ class ModelBuilder:
         builder.add_particle((0, 1.0, 0.0), (0.0, 0.0, 0.0), 0.0)
 
         # build chain
-        for i in range(1,10):
+        for i in range(1, 10):
             builder.add_particle((i, 1.0, 0.0), (0.0, 0.0, 0.0), 1.0)
-            builder.add_spring(i-1, i, 1.e+3, 0.0, 0)
+            builder.add_spring(i - 1, i, 1.0e3, 0.0, 0)
 
         # create model
         model = builder.finalize("cuda")
@@ -1058,9 +1063,8 @@ class ModelBuilder:
         integrator = wp.sim.SemiImplicitIntegrator()
 
         for i in range(100):
-
-           state.clear_forces()
-           integrator.simulate(model, state, state, dt=1.0/60.0, control=control)
+            state.clear_forces()
+            integrator.simulate(model, state, state, dt=1.0 / 60.0, control=control)
 
     Note:
         It is strongly recommended to use the ModelBuilder to construct a simulation rather
@@ -1136,6 +1140,8 @@ class ModelBuilder:
         self.shape_collision_radius = []
         # whether the shape collides with the ground
         self.shape_ground_collision = []
+        # whether the shape collides with any other shape
+        self.shape_shape_collision = []
 
         # filtering to ignore certain collision pairs
         self.shape_collision_filter_pairs = set()
@@ -1232,16 +1238,16 @@ class ModelBuilder:
         # indicates whether a ground plane has been created
         self._ground_created = False
         # constructor parameters for ground plane shape
-        self._ground_params = dict(
-            plane=(*up_vector, 0.0),
-            width=0.0,
-            length=0.0,
-            ke=self.default_shape_ke,
-            kd=self.default_shape_kd,
-            kf=self.default_shape_kf,
-            mu=self.default_shape_mu,
-            restitution=self.default_shape_restitution,
-        )
+        self._ground_params = {
+            "plane": (*up_vector, 0.0),
+            "width": 0.0,
+            "length": 0.0,
+            "ke": self.default_shape_ke,
+            "kd": self.default_shape_kd,
+            "kf": self.default_shape_kf,
+            "mu": self.default_shape_mu,
+            "restitution": self.default_shape_restitution,
+        }
 
         # Maximum number of soft contacts that can be registered
         self.soft_contact_max = 64 * 1024
@@ -1462,6 +1468,7 @@ class ModelBuilder:
             "shape_material_restitution",
             "shape_collision_radius",
             "shape_ground_collision",
+            "shape_shape_collision",
             "particle_qd",
             "particle_mass",
             "particle_radius",
@@ -1497,10 +1504,10 @@ class ModelBuilder:
     # register a rigid body and return its index.
     def add_body(
         self,
-        origin: Transform = wp.transform(),
+        origin: Optional[Transform] = None,
         armature: float = 0.0,
-        com: Vec3 = wp.vec3(),
-        I_m: Mat33 = wp.mat33(),
+        com: Optional[Vec3] = None,
+        I_m: Optional[Mat33] = None,
         m: float = 0.0,
         name: str = None,
     ) -> int:
@@ -1521,6 +1528,15 @@ class ModelBuilder:
             If the mass (m) is zero then the body is treated as kinematic with no dynamics
 
         """
+
+        if origin is None:
+            origin = wp.transform()
+
+        if com is None:
+            com = wp.vec3()
+
+        if I_m is None:
+            I_m = wp.mat33()
 
         body_id = len(self.body_mass)
 
@@ -1552,11 +1568,11 @@ class ModelBuilder:
         joint_type: wp.constant,
         parent: int,
         child: int,
-        linear_axes: List[JointAxis] = [],
-        angular_axes: List[JointAxis] = [],
+        linear_axes: Optional[List[JointAxis]] = None,
+        angular_axes: Optional[List[JointAxis]] = None,
         name: str = None,
-        parent_xform: wp.transform = wp.transform(),
-        child_xform: wp.transform = wp.transform(),
+        parent_xform: Optional[wp.transform] = None,
+        child_xform: Optional[wp.transform] = None,
         linear_compliance: float = 0.0,
         angular_compliance: float = 0.0,
         armature: float = 1e-2,
@@ -1577,13 +1593,25 @@ class ModelBuilder:
             child_xform (:ref:`transform <transform>`): The transform of the joint in the child body's local frame
             linear_compliance (float): The linear compliance of the joint
             angular_compliance (float): The angular compliance of the joint
-            armature (float): Artificial inertia added around the joint axis (only considered by :class:`FeatherstoneIntegrator`)
+            armature (float): Artificial inertia added around the joint axes (only considered by :class:`FeatherstoneIntegrator`)
             collision_filter_parent (bool): Whether to filter collisions between shapes of the parent and child bodies
             enabled (bool): Whether the joint is enabled (not considered by :class:`FeatherstoneIntegrator`)
 
         Returns:
             The index of the added joint
         """
+        if linear_axes is None:
+            linear_axes = []
+
+        if angular_axes is None:
+            angular_axes = []
+
+        if parent_xform is None:
+            parent_xform = wp.transform()
+
+        if child_xform is None:
+            child_xform = wp.transform()
+
         if len(self.articulation_start) == 0:
             # automatically add an articulation if none exists
             self.add_articulation()
@@ -1652,10 +1680,10 @@ class ModelBuilder:
             dof_count = len(linear_axes) + len(angular_axes)
             coord_count = dof_count
 
-        for i in range(coord_count):
+        for _i in range(coord_count):
             self.joint_q.append(0.0)
 
-        for i in range(dof_count):
+        for _i in range(dof_count):
             self.joint_qd.append(0.0)
             self.joint_armature.append(armature)
 
@@ -1680,8 +1708,8 @@ class ModelBuilder:
         self,
         parent: int,
         child: int,
-        parent_xform: wp.transform = wp.transform(),
-        child_xform: wp.transform = wp.transform(),
+        parent_xform: Optional[wp.transform] = None,
+        child_xform: Optional[wp.transform] = None,
         axis: Vec3 = (1.0, 0.0, 0.0),
         target: float = None,
         target_ke: float = 0.0,
@@ -1693,6 +1721,7 @@ class ModelBuilder:
         limit_kd: float = default_joint_limit_kd,
         linear_compliance: float = 0.0,
         angular_compliance: float = 0.0,
+        armature: float = 1e-2,
         name: str = None,
         collision_filter_parent: bool = True,
         enabled: bool = True,
@@ -1714,6 +1743,7 @@ class ModelBuilder:
             limit_kd: The damping of the joint limit
             linear_compliance: The linear compliance of the joint
             angular_compliance: The angular compliance of the joint
+            armature: Artificial inertia added around the joint axis
             name: The name of the joint
             collision_filter_parent: Whether to filter collisions between shapes of the parent and child bodies
             enabled: Whether the joint is enabled
@@ -1722,6 +1752,12 @@ class ModelBuilder:
             The index of the added joint
 
         """
+        if parent_xform is None:
+            parent_xform = wp.transform()
+
+        if child_xform is None:
+            child_xform = wp.transform()
+
         action = 0.0
         if target is None and mode == JOINT_MODE_TARGET_POSITION:
             action = 0.5 * (limit_lower + limit_upper)
@@ -1749,6 +1785,7 @@ class ModelBuilder:
             angular_axes=[ax],
             linear_compliance=linear_compliance,
             angular_compliance=angular_compliance,
+            armature=armature,
             name=name,
             collision_filter_parent=collision_filter_parent,
             enabled=enabled,
@@ -1758,8 +1795,8 @@ class ModelBuilder:
         self,
         parent: int,
         child: int,
-        parent_xform: wp.transform = wp.transform(),
-        child_xform: wp.transform = wp.transform(),
+        parent_xform: Optional[wp.transform] = None,
+        child_xform: Optional[wp.transform] = None,
         axis: Vec3 = (1.0, 0.0, 0.0),
         target: float = None,
         target_ke: float = 0.0,
@@ -1771,6 +1808,7 @@ class ModelBuilder:
         limit_kd: float = default_joint_limit_kd,
         linear_compliance: float = 0.0,
         angular_compliance: float = 0.0,
+        armature: float = 1e-2,
         name: str = None,
         collision_filter_parent: bool = True,
         enabled: bool = True,
@@ -1792,6 +1830,7 @@ class ModelBuilder:
             limit_kd: The damping of the joint limit
             linear_compliance: The linear compliance of the joint
             angular_compliance: The angular compliance of the joint
+            armature: Artificial inertia added around the joint axis
             name: The name of the joint
             collision_filter_parent: Whether to filter collisions between shapes of the parent and child bodies
             enabled: Whether the joint is enabled
@@ -1800,6 +1839,12 @@ class ModelBuilder:
             The index of the added joint
 
         """
+        if parent_xform is None:
+            parent_xform = wp.transform()
+
+        if child_xform is None:
+            child_xform = wp.transform()
+
         action = 0.0
         if target is None and mode == JOINT_MODE_TARGET_POSITION:
             action = 0.5 * (limit_lower + limit_upper)
@@ -1827,6 +1872,7 @@ class ModelBuilder:
             linear_axes=[ax],
             linear_compliance=linear_compliance,
             angular_compliance=angular_compliance,
+            armature=armature,
             name=name,
             collision_filter_parent=collision_filter_parent,
             enabled=enabled,
@@ -1836,8 +1882,8 @@ class ModelBuilder:
         self,
         parent: int,
         child: int,
-        parent_xform: wp.transform = wp.transform(),
-        child_xform: wp.transform = wp.transform(),
+        parent_xform: Optional[wp.transform] = None,
+        child_xform: Optional[wp.transform] = None,
         linear_compliance: float = 0.0,
         angular_compliance: float = 0.0,
         armature: float = 1e-2,
@@ -1863,6 +1909,12 @@ class ModelBuilder:
             The index of the added joint
 
         """
+        if parent_xform is None:
+            parent_xform = wp.transform()
+
+        if child_xform is None:
+            child_xform = wp.transform()
+
         return self.add_joint(
             JOINT_BALL,
             parent,
@@ -1881,10 +1933,11 @@ class ModelBuilder:
         self,
         parent: int,
         child: int,
-        parent_xform: wp.transform = wp.transform(),
-        child_xform: wp.transform = wp.transform(),
+        parent_xform: Optional[wp.transform] = None,
+        child_xform: Optional[wp.transform] = None,
         linear_compliance: float = 0.0,
         angular_compliance: float = 0.0,
+        armature: float = 1e-2,
         name: str = None,
         collision_filter_parent: bool = True,
         enabled: bool = True,
@@ -1899,6 +1952,7 @@ class ModelBuilder:
             child_xform (:ref:`transform <transform>`): The transform of the joint in the child body's local frame
             linear_compliance: The linear compliance of the joint
             angular_compliance: The angular compliance of the joint
+            armature (float): Artificial inertia added around the joint axis (only considered by FeatherstoneIntegrator)
             name: The name of the joint
             collision_filter_parent: Whether to filter collisions between shapes of the parent and child bodies
             enabled: Whether the joint is enabled
@@ -1907,6 +1961,12 @@ class ModelBuilder:
             The index of the added joint
 
         """
+        if parent_xform is None:
+            parent_xform = wp.transform()
+
+        if child_xform is None:
+            child_xform = wp.transform()
+
         return self.add_joint(
             JOINT_FIXED,
             parent,
@@ -1915,6 +1975,7 @@ class ModelBuilder:
             child_xform=child_xform,
             linear_compliance=linear_compliance,
             angular_compliance=angular_compliance,
+            armature=armature,
             name=name,
             collision_filter_parent=collision_filter_parent,
             enabled=enabled,
@@ -1923,8 +1984,8 @@ class ModelBuilder:
     def add_joint_free(
         self,
         child: int,
-        parent_xform: wp.transform = wp.transform(),
-        child_xform: wp.transform = wp.transform(),
+        parent_xform: Optional[wp.transform] = None,
+        child_xform: Optional[wp.transform] = None,
         armature: float = 0.0,
         parent: int = -1,
         name: str = None,
@@ -1948,6 +2009,12 @@ class ModelBuilder:
             The index of the added joint
 
         """
+        if parent_xform is None:
+            parent_xform = wp.transform()
+
+        if child_xform is None:
+            child_xform = wp.transform()
+
         return self.add_joint(
             JOINT_FREE,
             parent,
@@ -1964,8 +2031,8 @@ class ModelBuilder:
         self,
         parent: int,
         child: int,
-        parent_xform: wp.transform = wp.transform(),
-        child_xform: wp.transform = wp.transform(),
+        parent_xform: Optional[wp.transform] = None,
+        child_xform: Optional[wp.transform] = None,
         min_distance: float = -1.0,
         max_distance: float = 1.0,
         compliance: float = 0.0,
@@ -1992,6 +2059,12 @@ class ModelBuilder:
         .. note:: Distance joints are currently only supported in the :class:`XPBDIntegrator` at the moment.
 
         """
+        if parent_xform is None:
+            parent_xform = wp.transform()
+
+        if child_xform is None:
+            child_xform = wp.transform()
+
         ax = JointAxis(
             axis=(1.0, 0.0, 0.0),
             limit_lower=min_distance,
@@ -2015,10 +2088,11 @@ class ModelBuilder:
         child: int,
         axis_0: JointAxis,
         axis_1: JointAxis,
-        parent_xform: wp.transform = wp.transform(),
-        child_xform: wp.transform = wp.transform(),
+        parent_xform: Optional[wp.transform] = None,
+        child_xform: Optional[wp.transform] = None,
         linear_compliance: float = 0.0,
         angular_compliance: float = 0.0,
+        armature: float = 1e-2,
         name: str = None,
         collision_filter_parent: bool = True,
         enabled: bool = True,
@@ -2034,6 +2108,7 @@ class ModelBuilder:
             child_xform (:ref:`transform <transform>`): The transform of the joint in the child body's local frame
             linear_compliance: The linear compliance of the joint
             angular_compliance: The angular compliance of the joint
+            armature: Artificial inertia added around the joint axes
             name: The name of the joint
             collision_filter_parent: Whether to filter collisions between shapes of the parent and child bodies
             enabled: Whether the joint is enabled
@@ -2042,6 +2117,12 @@ class ModelBuilder:
             The index of the added joint
 
         """
+        if parent_xform is None:
+            parent_xform = wp.transform()
+
+        if child_xform is None:
+            child_xform = wp.transform()
+
         return self.add_joint(
             JOINT_UNIVERSAL,
             parent,
@@ -2051,6 +2132,7 @@ class ModelBuilder:
             child_xform=child_xform,
             linear_compliance=linear_compliance,
             angular_compliance=angular_compliance,
+            armature=armature,
             name=name,
             collision_filter_parent=collision_filter_parent,
             enabled=enabled,
@@ -2063,8 +2145,11 @@ class ModelBuilder:
         axis_0: JointAxis,
         axis_1: JointAxis,
         axis_2: JointAxis,
-        parent_xform: wp.transform = wp.transform(),
-        child_xform: wp.transform = wp.transform(),
+        parent_xform: Optional[wp.transform] = None,
+        child_xform: Optional[wp.transform] = None,
+        linear_compliance: float = 0.0,
+        angular_compliance: float = 0.0,
+        armature: float = 1e-2,
         name: str = None,
         collision_filter_parent: bool = True,
         enabled: bool = True,
@@ -2082,6 +2167,9 @@ class ModelBuilder:
             axis_2 (3D vector or JointAxis): The third axis of the joint, can be a JointAxis object whose settings will be used instead of the other arguments
             parent_xform (:ref:`transform <transform>`): The transform of the joint in the parent body's local frame
             child_xform (:ref:`transform <transform>`): The transform of the joint in the child body's local frame
+            linear_compliance: The linear compliance of the joint
+            angular_compliance: The angular compliance of the joint
+            armature: Artificial inertia added around the joint axes
             name: The name of the joint
             collision_filter_parent: Whether to filter collisions between shapes of the parent and child bodies
             enabled: Whether the joint is enabled
@@ -2090,6 +2178,12 @@ class ModelBuilder:
             The index of the added joint
 
         """
+        if parent_xform is None:
+            parent_xform = wp.transform()
+
+        if child_xform is None:
+            child_xform = wp.transform()
+
         return self.add_joint(
             JOINT_COMPOUND,
             parent,
@@ -2097,6 +2191,9 @@ class ModelBuilder:
             angular_axes=[JointAxis(axis_0), JointAxis(axis_1), JointAxis(axis_2)],
             parent_xform=parent_xform,
             child_xform=child_xform,
+            linear_compliance=linear_compliance,
+            angular_compliance=angular_compliance,
+            armature=armature,
             name=name,
             collision_filter_parent=collision_filter_parent,
             enabled=enabled,
@@ -2106,13 +2203,14 @@ class ModelBuilder:
         self,
         parent: int,
         child: int,
-        linear_axes: List[JointAxis] = [],
-        angular_axes: List[JointAxis] = [],
+        linear_axes: Optional[List[JointAxis]] = None,
+        angular_axes: Optional[List[JointAxis]] = None,
         name: str = None,
-        parent_xform: wp.transform = wp.transform(),
-        child_xform: wp.transform = wp.transform(),
+        parent_xform: Optional[wp.transform] = None,
+        child_xform: Optional[wp.transform] = None,
         linear_compliance: float = 0.0,
         angular_compliance: float = 0.0,
+        armature: float = 1e-2,
         collision_filter_parent: bool = True,
         enabled: bool = True,
     ):
@@ -2128,6 +2226,7 @@ class ModelBuilder:
             child_xform (:ref:`transform <transform>`): The transform of the joint in the child body's local frame
             linear_compliance: The linear compliance of the joint
             angular_compliance: The angular compliance of the joint
+            armature: Artificial inertia added around the joint axes
             collision_filter_parent: Whether to filter collisions between shapes of the parent and child bodies
             enabled: Whether the joint is enabled
 
@@ -2135,6 +2234,18 @@ class ModelBuilder:
             The index of the added joint
 
         """
+        if linear_axes is None:
+            linear_axes = []
+
+        if angular_axes is None:
+            angular_axes = []
+
+        if parent_xform is None:
+            parent_xform = wp.transform()
+
+        if child_xform is None:
+            child_xform = wp.transform()
+
         return self.add_joint(
             JOINT_D6,
             parent,
@@ -2145,6 +2256,7 @@ class ModelBuilder:
             angular_axes=[JointAxis(a) for a in angular_axes],
             linear_compliance=linear_compliance,
             angular_compliance=angular_compliance,
+            armature=armature,
             name=name,
             collision_filter_parent=collision_filter_parent,
             enabled=enabled,
@@ -2483,6 +2595,7 @@ class ModelBuilder:
         restitution: float = None,
         thickness: float = None,
         has_ground_collision: bool = False,
+        has_shape_collision: bool = True,
         is_visible: bool = True,
         collision_group: int = -1,
     ):
@@ -2505,7 +2618,8 @@ class ModelBuilder:
             mu: The coefficient of friction (None to use the default value :attr:`default_shape_mu`)
             restitution: The coefficient of restitution (None to use the default value :attr:`default_shape_restitution`)
             thickness: The thickness of the plane (0 by default) for collision handling (None to use the default value :attr:`default_shape_thickness`)
-            has_ground_collision: If True, the mesh will collide with the ground plane if `Model.ground` is True
+            has_ground_collision: If True, the shape will collide with the ground plane if `Model.ground` is True
+            has_shape_collision: If True, the shape will collide with other shapes
             is_visible: Whether the plane is visible
             collision_group: The collision group of the shape
 
@@ -2544,6 +2658,7 @@ class ModelBuilder:
             restitution,
             thickness,
             has_ground_collision=has_ground_collision,
+            has_shape_collision=has_shape_collision,
             is_visible=is_visible,
             collision_group=collision_group,
         )
@@ -2564,6 +2679,7 @@ class ModelBuilder:
         is_solid: bool = True,
         thickness: float = None,
         has_ground_collision: bool = True,
+        has_shape_collision: bool = True,
         collision_group: int = -1,
         is_visible: bool = True,
     ):
@@ -2583,7 +2699,8 @@ class ModelBuilder:
             restitution: The coefficient of restitution (None to use the default value :attr:`default_shape_restitution`)
             is_solid: Whether the sphere is solid or hollow
             thickness: Thickness to use for computing inertia of a hollow sphere, and for collision handling (None to use the default value :attr:`default_shape_thickness`)
-            has_ground_collision: If True, the mesh will collide with the ground plane if `Model.ground` is True
+            has_ground_collision: If True, the shape will collide with the ground plane if `Model.ground` is True
+            has_shape_collision: If True, the shape will collide with other shapes
             collision_group: The collision group of the shape
             is_visible: Whether the sphere is visible
 
@@ -2610,6 +2727,7 @@ class ModelBuilder:
             thickness + radius,
             is_solid,
             has_ground_collision=has_ground_collision,
+            has_shape_collision=has_shape_collision,
             collision_group=collision_group,
             is_visible=is_visible,
         )
@@ -2632,6 +2750,7 @@ class ModelBuilder:
         is_solid: bool = True,
         thickness: float = None,
         has_ground_collision: bool = True,
+        has_shape_collision: bool = True,
         collision_group: int = -1,
         is_visible: bool = True,
     ):
@@ -2653,7 +2772,8 @@ class ModelBuilder:
             restitution: The coefficient of restitution (None to use the default value :attr:`default_shape_restitution`)
             is_solid: Whether the box is solid or hollow
             thickness: Thickness to use for computing inertia of a hollow box, and for collision handling (None to use the default value :attr:`default_shape_thickness`)
-            has_ground_collision: If True, the mesh will collide with the ground plane if `Model.ground` is True
+            has_ground_collision: If True, the shape will collide with the ground plane if `Model.ground` is True
+            has_shape_collision: If True, the shape will collide with other shapes
             collision_group: The collision group of the shape
             is_visible: Whether the box is visible
 
@@ -2679,6 +2799,7 @@ class ModelBuilder:
             thickness,
             is_solid,
             has_ground_collision=has_ground_collision,
+            has_shape_collision=has_shape_collision,
             collision_group=collision_group,
             is_visible=is_visible,
         )
@@ -2701,6 +2822,7 @@ class ModelBuilder:
         is_solid: bool = True,
         thickness: float = None,
         has_ground_collision: bool = True,
+        has_shape_collision: bool = True,
         collision_group: int = -1,
         is_visible: bool = True,
     ):
@@ -2722,7 +2844,8 @@ class ModelBuilder:
             restitution: The coefficient of restitution (None to use the default value :attr:`default_shape_restitution`)
             is_solid: Whether the capsule is solid or hollow
             thickness: Thickness to use for computing inertia of a hollow capsule, and for collision handling (None to use the default value :attr:`default_shape_thickness`)
-            has_ground_collision: If True, the mesh will collide with the ground plane if `Model.ground` is True
+            has_ground_collision: If True, the shape will collide with the ground plane if `Model.ground` is True
+            has_shape_collision: If True, the shape will collide with other shapes
             collision_group: The collision group of the shape
             is_visible: Whether the capsule is visible
 
@@ -2756,6 +2879,7 @@ class ModelBuilder:
             thickness + radius,
             is_solid,
             has_ground_collision=has_ground_collision,
+            has_shape_collision=has_shape_collision,
             collision_group=collision_group,
             is_visible=is_visible,
         )
@@ -2778,6 +2902,7 @@ class ModelBuilder:
         is_solid: bool = True,
         thickness: float = None,
         has_ground_collision: bool = True,
+        has_shape_collision: bool = True,
         collision_group: int = -1,
         is_visible: bool = True,
     ):
@@ -2799,7 +2924,8 @@ class ModelBuilder:
             restitution: The coefficient of restitution (None to use the default value :attr:`default_shape_restitution`)
             is_solid: Whether the cylinder is solid or hollow
             thickness: Thickness to use for computing inertia of a hollow cylinder, and for collision handling (None to use the default value :attr:`default_shape_thickness`)
-            has_ground_collision: If True, the mesh will collide with the ground plane if `Model.ground` is True
+            has_ground_collision: If True, the shape will collide with the ground plane if `Model.ground` is True
+            has_shape_collision: If True, the shape will collide with other shapes
             collision_group: The collision group of the shape
             is_visible: Whether the cylinder is visible
 
@@ -2835,6 +2961,7 @@ class ModelBuilder:
             thickness,
             is_solid,
             has_ground_collision=has_ground_collision,
+            has_shape_collision=has_shape_collision,
             collision_group=collision_group,
             is_visible=is_visible,
         )
@@ -2857,6 +2984,7 @@ class ModelBuilder:
         is_solid: bool = True,
         thickness: float = None,
         has_ground_collision: bool = True,
+        has_shape_collision: bool = True,
         collision_group: int = -1,
         is_visible: bool = True,
     ):
@@ -2878,7 +3006,8 @@ class ModelBuilder:
             restitution: The coefficient of restitution (None to use the default value :attr:`default_shape_restitution`)
             is_solid: Whether the cone is solid or hollow
             thickness: Thickness to use for computing inertia of a hollow cone, and for collision handling (None to use the default value :attr:`default_shape_thickness`)
-            has_ground_collision: If True, the mesh will collide with the ground plane if `Model.ground` is True
+            has_ground_collision: If True, the shape will collide with the ground plane if `Model.ground` is True
+            has_shape_collision: If True, the shape will collide with other shapes
             collision_group: The collision group of the shape
             is_visible: Whether the cone is visible
 
@@ -2914,6 +3043,7 @@ class ModelBuilder:
             thickness,
             is_solid,
             has_ground_collision=has_ground_collision,
+            has_shape_collision=has_shape_collision,
             collision_group=collision_group,
             is_visible=is_visible,
         )
@@ -2921,10 +3051,10 @@ class ModelBuilder:
     def add_shape_mesh(
         self,
         body: int,
-        pos: Vec3 = wp.vec3(0.0, 0.0, 0.0),
-        rot: Quat = wp.quat(0.0, 0.0, 0.0, 1.0),
-        mesh: Mesh = None,
-        scale: Vec3 = wp.vec3(1.0, 1.0, 1.0),
+        pos: Optional[Vec3] = None,
+        rot: Optional[Quat] = None,
+        mesh: Optional[Mesh] = None,
+        scale: Optional[Vec3] = None,
         density: float = None,
         ke: float = None,
         kd: float = None,
@@ -2935,6 +3065,7 @@ class ModelBuilder:
         is_solid: bool = True,
         thickness: float = None,
         has_ground_collision: bool = True,
+        has_shape_collision: bool = True,
         collision_group: int = -1,
         is_visible: bool = True,
     ):
@@ -2943,9 +3074,11 @@ class ModelBuilder:
         Args:
             body: The index of the parent body this shape belongs to (use -1 for static shapes)
             pos: The location of the shape with respect to the parent frame
+              (None to use the default value ``wp.vec3(0.0, 0.0, 0.0)``)
             rot: The rotation of the shape with respect to the parent frame
+              (None to use the default value ``wp.quat(0.0, 0.0, 0.0, 1.0)``)
             mesh: The mesh object
-            scale: Scale to use for the collider
+            scale: Scale to use for the collider. (None to use the default value ``wp.vec3(1.0, 1.0, 1.0)``)
             density: The density of the shape (None to use the default value :attr:`default_shape_density`)
             ke: The contact elastic stiffness (None to use the default value :attr:`default_shape_ke`)
             kd: The contact damping stiffness (None to use the default value :attr:`default_shape_kd`)
@@ -2955,7 +3088,8 @@ class ModelBuilder:
             restitution: The coefficient of restitution (None to use the default value :attr:`default_shape_restitution`)
             is_solid: If True, the mesh is solid, otherwise it is a hollow surface with the given wall thickness
             thickness: Thickness to use for computing inertia of a hollow mesh, and for collision handling (None to use the default value :attr:`default_shape_thickness`)
-            has_ground_collision: If True, the mesh will collide with the ground plane if `Model.ground` is True
+            has_ground_collision: If True, the shape will collide with the ground plane if `Model.ground` is True
+            has_shape_collision: If True, the shape will collide with other shapes
             collision_group: The collision group of the shape
             is_visible: Whether the mesh is visible
 
@@ -2963,6 +3097,15 @@ class ModelBuilder:
             The index of the added shape
 
         """
+
+        if pos is None:
+            pos = wp.vec3(0.0, 0.0, 0.0)
+
+        if rot is None:
+            rot = wp.quat(0.0, 0.0, 0.0, 1.0)
+
+        if scale is None:
+            scale = wp.vec3(1.0, 1.0, 1.0)
 
         return self._add_shape(
             body,
@@ -2981,6 +3124,7 @@ class ModelBuilder:
             thickness,
             is_solid,
             has_ground_collision=has_ground_collision,
+            has_shape_collision=has_shape_collision,
             collision_group=collision_group,
             is_visible=is_visible,
         )
@@ -3002,6 +3146,7 @@ class ModelBuilder:
         is_solid: bool = True,
         thickness: float = None,
         has_ground_collision: bool = True,
+        has_shape_collision: bool = True,
         collision_group: int = -1,
         is_visible: bool = True,
     ):
@@ -3023,6 +3168,7 @@ class ModelBuilder:
             is_solid: If True, the SDF is solid, otherwise it is a hollow surface with the given wall thickness
             thickness: Thickness to use for collision handling (None to use the default value :attr:`default_shape_thickness`)
             has_ground_collision: If True, the shape will collide with the ground plane if `Model.ground` is True
+            has_shape_collision: If True, the shape will collide with other shapes
             collision_group: The collision group of the shape
             is_visible: Whether the shape is visible
 
@@ -3047,6 +3193,7 @@ class ModelBuilder:
             thickness,
             is_solid,
             has_ground_collision=has_ground_collision,
+            has_shape_collision=has_shape_collision,
             collision_group=collision_group,
             is_visible=is_visible,
         )
@@ -3093,6 +3240,7 @@ class ModelBuilder:
         collision_group=-1,
         collision_filter_parent=True,
         has_ground_collision=True,
+        has_shape_collision=True,
         is_visible=True,
     ):
         self.shape_body.append(body)
@@ -3139,6 +3287,7 @@ class ModelBuilder:
         if body == -1:
             has_ground_collision = False
         self.shape_ground_collision.append(has_ground_collision)
+        self.shape_shape_collision.append(has_shape_collision)
 
         (m, c, I) = compute_shape_mass(type, scale, src, density, is_solid, thickness)
 
@@ -3155,8 +3304,8 @@ class ModelBuilder:
             pos: The initial position of the particle
             vel: The initial velocity of the particle
             mass: The mass of the particle
+            radius: The radius of the particle used in collision handling. If None, the radius is set to the default value (:attr:`default_particle_radius`).
             flags: The flags that control the dynamical behavior of the particle, see PARTICLE_FLAG_* constants
-            radius: The radius of the particle used in collision handling. If None, the radius is set to the default value (default_particle_radius).
 
         Note:
             Set the mass equal to zero to create a 'kinematic' particle that does is not subject to dynamics.
@@ -3636,7 +3785,7 @@ class ModelBuilder:
 
         spring_indices = set()
 
-        for k, e in adj.edges.items():
+        for _k, e in adj.edges.items():
             # skip open edges
             if e.f0 == -1 or e.f1 == -1:
                 continue
@@ -3920,7 +4069,7 @@ class ModelBuilder:
                         add_tet(v5, v2, v7, v0)
 
         # add triangles
-        for k, v in faces.items():
+        for _k, v in faces.items():
             self.add_triangle(v[0], v[1], v[2], tri_ke, tri_ka, tri_kd, tri_drag, tri_lift)
 
     def add_soft_mesh(
@@ -3947,8 +4096,8 @@ class ModelBuilder:
             pos: The position of the solid in world space
             rot: The orientation of the solid in world space
             vel: The velocity of the solid in world space
-            vertices: A list of vertex positions
-            indices: A list of tetrahedron indices, 4 entries per-element
+            vertices: A list of vertex positions, array of 3D points
+            indices: A list of tetrahedron indices, 4 entries per-element, flattened array
             density: The density per-area of the mesh
             k_mu: The first elastic Lame parameter
             k_lambda: The second elastic Lame parameter
@@ -3969,9 +4118,11 @@ class ModelBuilder:
             else:
                 del faces[key]
 
+        pos = wp.vec3(pos[0], pos[1], pos[2])
         # add particles
         for v in vertices:
-            p = wp.quat_rotate(rot, v * scale) + np.array(pos)
+            v = wp.vec3(v[0], v[1], v[2])
+            p = wp.quat_rotate(rot, v * scale) + pos
 
             self.add_particle(p, vel, 0.0)
 
@@ -3998,7 +4149,7 @@ class ModelBuilder:
                 add_face(v0, v3, v2)
 
         # add triangles
-        for k, v in faces.items():
+        for _k, v in faces.items():
             try:
                 self.add_triangle(v[0], v[1], v[2], tri_ke, tri_ka, tri_kd, tri_drag, tri_lift)
             except np.linalg.LinAlgError:
@@ -4055,9 +4206,16 @@ class ModelBuilder:
         """
         if normal is None:
             normal = self.up_vector
-        self._ground_params = dict(
-            plane=(*normal, offset), width=0.0, length=0.0, ke=ke, kd=kd, kf=kf, mu=mu, restitution=restitution
-        )
+        self._ground_params = {
+            "plane": (*normal, offset),
+            "width": 0.0,
+            "length": 0.0,
+            "ke": ke,
+            "kd": kd,
+            "kf": kf,
+            "mu": mu,
+            "restitution": restitution,
+        }
 
     def _create_ground_plane(self):
         ground_id = self.add_shape_plane(**self._ground_params)
@@ -4167,6 +4325,7 @@ class ModelBuilder:
                 self.shape_collision_radius, dtype=wp.float32, requires_grad=requires_grad
             )
             m.shape_ground_collision = self.shape_ground_collision
+            m.shape_shape_collision = self.shape_shape_collision
 
             # ---------------------
             # springs

@@ -5,9 +5,9 @@
 # distribution of this software and related documentation without an express
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
-import warp as wp
 import numpy as np
-import math
+
+import warp as wp
 
 
 def _usd_add_xform(prim):
@@ -16,13 +16,13 @@ def _usd_add_xform(prim):
     prim = UsdGeom.Xform(prim)
     prim.ClearXformOpOrder()
 
-    t = prim.AddTranslateOp()
-    r = prim.AddOrientOp()
-    s = prim.AddScaleOp()
+    prim.AddTranslateOp()
+    prim.AddOrientOp()
+    prim.AddScaleOp()
 
 
 def _usd_set_xform(xform, pos: tuple, rot: tuple, scale: tuple, time):
-    from pxr import UsdGeom, Gf
+    from pxr import Gf, UsdGeom
 
     xform = UsdGeom.Xform(xform)
 
@@ -67,9 +67,9 @@ class UsdRenderer:
             scaling: Scaling factor to use for the entities in the scene
         """
         try:
-            from pxr import Usd, UsdGeom, UsdLux, Sdf, Gf
-        except ImportError:
-            raise ImportError("Failed to import pxr. Please install USD (e.g. via `pip install usd-core`).")
+            from pxr import Gf, Sdf, Usd, UsdGeom, UsdLux
+        except ImportError as e:
+            raise ImportError("Failed to import pxr. Please install USD (e.g. via `pip install usd-core`).") from e
 
         if isinstance(stage, str):
             self.stage = stage = Usd.Stage.CreateNew(stage)
@@ -195,7 +195,7 @@ class UsdRenderer:
             parent_body: Name of the parent body
             is_template: Whether the plane is a template
         """
-        from pxr import UsdGeom, Sdf
+        from pxr import Sdf, UsdGeom
 
         if is_template:
             prim_path = self._resolve_path(name, parent_body, is_template)
@@ -240,13 +240,13 @@ class UsdRenderer:
         mesh.CreateDoubleSidedAttr().Set(True)
 
         if self.up_axis == "X":
-            points = ((0.0, -size, -size), (0.0, size, -size), (0.0, size, size), (0.0, -size, size))
+            points = ((0.0, size, -size), (0.0, -size, -size), (0.0, size, size), (0.0, -size, size))
             normals = ((1.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 0.0, 0.0), (1.0, 0.0, 0.0))
         elif self.up_axis == "Y":
-            points = ((-size, 0.0, -size), (size, 0.0, -size), (size, 0.0, size), (-size, 0.0, size))
+            points = ((-size, 0.0, -size), (size, 0.0, -size), (-size, 0.0, size), (size, 0.0, size))
             normals = ((0.0, 1.0, 0.0), (0.0, 1.0, 0.0), (0.0, 1.0, 0.0), (0.0, 1.0, 0.0))
         elif self.up_axis == "Z":
-            points = ((-size, -size, 0.0), (size, -size, 0.0), (size, size, 0.0), (-size, size, 0.0))
+            points = ((-size, size, 0.0), (size, size, 0.0), (-size, -size, 0.0), (size, -size, 0.0))
             normals = ((0.0, 0.0, 1.0), (0.0, 0.0, 1.0), (0.0, 0.0, 1.0), (0.0, 0.0, 1.0))
         if plane is not None:
             normal = np.array(plane[:3])
@@ -263,10 +263,10 @@ class UsdRenderer:
                 axis = np.abs(c) / np.linalg.norm(c)
                 q = wp.quat_from_axis_angle(axis, angle)
             tf = wp.transform(pos, q)
-            points = [wp.transform_point(tf, p) for p in points]
-            normals = [wp.transform_vector(tf, n) for n in normals]
+            points = [wp.transform_point(tf, wp.vec3(p)) for p in points]
+            normals = [wp.transform_vector(tf, wp.vec3(n)) for n in normals]
         counts = (4,)
-        indices = [0, 1, 2, 3]
+        indices = [0, 2, 3, 1]
 
         mesh.GetPointsAttr().Set(points)
         mesh.GetNormalsAttr().Set(normals)
@@ -274,7 +274,14 @@ class UsdRenderer:
         mesh.GetFaceVertexIndicesAttr().Set(indices)
 
     def render_sphere(
-        self, name: str, pos: tuple, rot: tuple, radius: float, parent_body: str = None, is_template: bool = False, color: tuple = None
+        self,
+        name: str,
+        pos: tuple,
+        rot: tuple,
+        radius: float,
+        parent_body: str = None,
+        is_template: bool = False,
+        color: tuple = None,
     ):
         """Debug helper to add a sphere for visualization
 
@@ -285,7 +292,7 @@ class UsdRenderer:
             color: The color of the sphere
         """
 
-        from pxr import Gf, UsdGeom, Sdf
+        from pxr import Gf, Sdf, UsdGeom
 
         if is_template:
             prim_path = self._resolve_path(name, parent_body, is_template)
@@ -337,7 +344,7 @@ class UsdRenderer:
             color: The color of the capsule
         """
 
-        from pxr import Gf, UsdGeom, Sdf
+        from pxr import Gf, Sdf, UsdGeom
 
         if is_template:
             prim_path = self._resolve_path(name, parent_body, is_template)
@@ -391,7 +398,7 @@ class UsdRenderer:
             color: The color of the cylinder
         """
 
-        from pxr import Gf, UsdGeom, Sdf
+        from pxr import Gf, Sdf, UsdGeom
 
         if is_template:
             prim_path = self._resolve_path(name, parent_body, is_template)
@@ -445,7 +452,7 @@ class UsdRenderer:
             color: The color of the cone
         """
 
-        from pxr import Gf, UsdGeom, Sdf
+        from pxr import Gf, Sdf, UsdGeom
 
         if is_template:
             prim_path = self._resolve_path(name, parent_body, is_template)
@@ -478,7 +485,14 @@ class UsdRenderer:
         return prim_path
 
     def render_box(
-        self, name: str, pos: tuple, rot: tuple, extents: tuple, parent_body: str = None, is_template: bool = False, color: tuple = None
+        self,
+        name: str,
+        pos: tuple,
+        rot: tuple,
+        extents: tuple,
+        parent_body: str = None,
+        is_template: bool = False,
+        color: tuple = None,
     ):
         """Debug helper to add a box for visualization
 
@@ -489,7 +503,7 @@ class UsdRenderer:
             color: The color of the box
         """
 
-        from pxr import UsdGeom, Sdf, Gf
+        from pxr import Gf, Sdf, UsdGeom
 
         if is_template:
             prim_path = self._resolve_path(name, parent_body, is_template)
@@ -518,8 +532,8 @@ class UsdRenderer:
 
         return prim_path
 
-    def render_ref(self, name: str, path: str, pos: tuple, rot: tuple, scale: tuple):
-        from pxr import UsdGeom
+    def render_ref(self, name: str, path: str, pos: tuple, rot: tuple, scale: tuple, color: tuple = None):
+        from pxr import Gf, Usd, UsdGeom
 
         ref_path = "/root/" + name
 
@@ -531,6 +545,13 @@ class UsdRenderer:
 
         # update transform
         _usd_set_xform(ref, pos, rot, scale, self.time)
+
+        if color is not None:
+            it = iter(Usd.PrimRange(ref.GetPrim()))
+            for prim in it:
+                if prim.IsA(UsdGeom.Gprim):
+                    UsdGeom.Gprim(prim).GetDisplayColorAttr().Set([Gf.Vec3f(color)], self.time)
+                    it.PruneChildren()
 
     def render_mesh(
         self,
@@ -545,7 +566,7 @@ class UsdRenderer:
         parent_body: str = None,
         is_template: bool = False,
     ):
-        from pxr import UsdGeom, Sdf
+        from pxr import Sdf, UsdGeom
 
         if is_template:
             prim_path = self._resolve_path(name, parent_body, is_template)
@@ -594,7 +615,7 @@ class UsdRenderer:
             time: The time to update at
         """
 
-        from pxr import UsdGeom, Gf
+        from pxr import Gf, UsdGeom
 
         num_lines = int(len(indices) / 2)
 
@@ -638,7 +659,7 @@ class UsdRenderer:
     #      instancer.GetPrimvar("displayColor").Set(line_colors, time)
 
     def render_line_strip(self, name: str, vertices, color: tuple, radius: float = 0.01):
-        from pxr import UsdGeom, Gf
+        from pxr import Gf, UsdGeom
 
         num_lines = int(len(vertices) - 1)
 
@@ -681,7 +702,7 @@ class UsdRenderer:
         instancer_capsule.GetDisplayColorAttr().Set([Gf.Vec3f(color)], self.time)
 
     def render_points(self, name: str, points, radius, colors=None):
-        from pxr import UsdGeom, Gf
+        from pxr import Gf, UsdGeom
 
         instancer_path = self.root.GetPath().AppendChild(name)
         instancer = UsdGeom.PointInstancer.Get(self.stage, instancer_path)
@@ -706,8 +727,6 @@ class UsdRenderer:
                 quats = [Gf.Quath(1.0, 0.0, 0.0, 0.0)] * len(points)
                 instancer.GetOrientationsAttr().Set(quats, self.time)
             else:
-                from pxr import Sdf
-
                 instancer = UsdGeom.Points.Define(self.stage, instancer_path)
 
                 if radius_is_scalar:
@@ -722,7 +741,7 @@ class UsdRenderer:
             instancer.GetDisplayColorAttr().Set(colors, self.time)
 
     def update_body_transforms(self, body_q):
-        from pxr import UsdGeom, Sdf
+        from pxr import Sdf, UsdGeom
 
         if isinstance(body_q, wp.array):
             body_q = body_q.numpy()

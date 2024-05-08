@@ -5,8 +5,9 @@
 # distribution of this software and related documentation without an express
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
-import warp as wp
 from typing import Any
+
+import warp as wp
 
 
 @wp.kernel
@@ -57,13 +58,16 @@ class SGD:
 
     def set_params(self, params):
         self.params = params
-        if params is not None and type(params) == list and len(params) > 0:
+        if params is not None and isinstance(params, list) and len(params) > 0:
             if len(self.b) != len(params):
                 self.b = [None] * len(params)
             for i in range(len(params)):
                 param = params[i]
                 if self.b[i] is None or self.b[i].shape != param.shape or self.b[i].dtype != param.dtype:
                     self.b[i] = wp.zeros_like(param)
+                # Overload the kernel for each parameter so we can precompile the SGD kernel
+                if param is not None:
+                    wp.overload(sgd_step_kernel, {"g": param, "b": param, "params": param})
 
     def reset_internal_state(self):
         for b_i in self.b:
@@ -74,7 +78,15 @@ class SGD:
         assert self.params is not None
         for i in range(len(self.params)):
             SGD.step_detail(
-                grad[i], self.b[i], self.lr, self.momentum, self.dampening, self.weight_decay, self.nesterov, self.t, self.params[i]
+                grad[i],
+                self.b[i],
+                self.lr,
+                self.momentum,
+                self.dampening,
+                self.weight_decay,
+                self.nesterov,
+                self.t,
+                self.params[i],
             )
         self.t = self.t + 1
 

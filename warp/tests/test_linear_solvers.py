@@ -1,10 +1,9 @@
 import unittest
 
 import numpy as np
-import warp as wp
-import unittest
 
-from warp.optim.linear import preconditioner, cg, bicgstab, gmres
+import warp as wp
+from warp.optim.linear import bicgstab, cg, cr, gmres, preconditioner
 from warp.tests.unittest_utils import *
 
 wp.init()
@@ -25,7 +24,10 @@ def _check_linear_solve(test, A, b, func, *args, **kwargs):
         niter_warm, err, atol = func(A, b, x, *args, use_cuda_graph=False, **kwargs)
 
     test.assertLessEqual(err, atol)
-    test.assertLess(niter_warm, niter)
+
+    if func in [cr, gmres]:
+        # monotonic convergence
+        test.assertLess(niter_warm, niter)
 
     # In CG and BiCGSTAB residual norm is evaluating from running residual
     # rather then being computed from scratch as Ax - b
@@ -56,7 +58,7 @@ def _make_spd_system(n: int, seed: int, dtype, device):
     return wp.array(A, dtype=dtype, device=device), wp.array(b, dtype=dtype, device=device)
 
 
-def _make_nonsymmetric_system(n: int, seed: int, dtype, device, spd=False):
+def _make_nonsymmetric_system(n: int, seed: int, dtype, device):
     rng = np.random.default_rng(seed)
     s = rng.uniform(low=0.1, high=10, size=(n,))
 
@@ -66,7 +68,7 @@ def _make_nonsymmetric_system(n: int, seed: int, dtype, device, spd=False):
     return wp.array(A, dtype=dtype, device=device), wp.array(b, dtype=dtype, device=device)
 
 
-def _make_indefinite_system(n: int, seed: int, dtype, device, spd=False):
+def _make_indefinite_system(n: int, seed: int, dtype, device):
     rng = np.random.default_rng(seed)
     s = rng.uniform(low=0.1, high=10, size=(n,))
 
@@ -100,6 +102,23 @@ def test_cg(test, device):
 
     A, b = _make_identity_system(n=5, seed=321, device=device, dtype=wp.float32)
     _check_linear_solve(test, A, b, cg, maxiter=30)
+
+
+def test_cr(test, device):
+    A, b = _make_spd_system(n=64, seed=123, device=device, dtype=wp.float64)
+    M = preconditioner(A, "diag")
+
+    _check_linear_solve(test, A, b, cr, maxiter=1000)
+    _check_linear_solve(test, A, b, cr, M=M, maxiter=1000)
+
+    A, b = _make_spd_system(n=16, seed=321, device=device, dtype=wp.float32)
+    M = preconditioner(A, "diag")
+
+    _check_linear_solve(test, A, b, cr, maxiter=1000)
+    _check_linear_solve(test, A, b, cr, M=M, maxiter=1000)
+
+    A, b = _make_identity_system(n=5, seed=321, device=device, dtype=wp.float32)
+    _check_linear_solve(test, A, b, cr, maxiter=30)
 
 
 def test_bicgstab(test, device):
@@ -163,6 +182,7 @@ if runtime.core.is_debug_enabled():
     print("Skipping CUDA linear solver tests in debug mode")
 
 add_function_test(TestLinearSolvers, "test_cg", test_cg, devices=devices)
+add_function_test(TestLinearSolvers, "test_cr", test_cr, devices=devices)
 add_function_test(TestLinearSolvers, "test_bicgstab", test_bicgstab, devices=devices)
 add_function_test(TestLinearSolvers, "test_gmres", test_gmres, devices=devices)
 

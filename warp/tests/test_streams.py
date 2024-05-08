@@ -10,8 +10,8 @@ import unittest
 import numpy as np
 
 import warp as wp
-from warp.utils import check_iommu
 from warp.tests.unittest_utils import *
+from warp.utils import check_iommu
 
 wp.init()
 
@@ -39,7 +39,6 @@ N = 10 * 1024 * 1024
 
 
 def test_stream_set(test, device):
-
     device = wp.get_device(device)
 
     old_stream = device.stream
@@ -80,7 +79,6 @@ def test_stream_arg_explicit_sync(test, device):
 
 
 def test_stream_scope_implicit_sync(test, device):
-
     with wp.ScopedDevice(device):
         a = wp.zeros(N, dtype=float)
         b = wp.full(N, 42, dtype=float)
@@ -322,7 +320,23 @@ def test_event_synchronize(test, device):
     assert_np_equal(b_host.numpy(), np.full(N, fill_value=42.0))
 
 
-devices = get_unique_cuda_test_devices()
+def test_event_elapsed_time(test, device):
+    stream = wp.get_stream(device)
+    e1 = wp.Event(device, enable_timing=True)
+    e2 = wp.Event(device, enable_timing=True)
+
+    a = wp.zeros(N, dtype=float, device=device)
+
+    stream.record_event(e1)
+    wp.launch(inc, dim=N, inputs=[a], device=device)
+    stream.record_event(e2)
+
+    elapsed = wp.get_event_elapsed_time(e1, e2)
+
+    test.assertGreater(elapsed, 0)
+
+
+devices = get_selected_cuda_test_devices()
 
 
 class TestStreams(unittest.TestCase):
@@ -356,7 +370,6 @@ class TestStreams(unittest.TestCase):
         # allocated using pooled allocators and mempool access is not enabled.
         # Here, we force default CUDA allocators and pre-allocate the memory.
         with wp.ScopedMempool("cuda:0", False), wp.ScopedMempool("cuda:1", False):
-
             # resources on GPU 0
             stream0 = wp.get_stream("cuda:0")
             a0 = wp.zeros(N, dtype=float, device="cuda:0")
@@ -407,7 +420,6 @@ class TestStreams(unittest.TestCase):
         # allocated using pooled allocators and mempool access is not enabled.
         # Here, we force default CUDA allocators and pre-allocate the memory.
         with wp.ScopedMempool("cuda:0", False), wp.ScopedMempool("cuda:1", False):
-
             # resources on GPU 0
             with wp.ScopedDevice("cuda:0"):
                 stream0 = wp.get_stream()
@@ -467,6 +479,7 @@ add_function_test(TestStreams, "test_stream_scope_wait_event", test_stream_scope
 add_function_test(TestStreams, "test_stream_scope_wait_stream", test_stream_scope_wait_stream, devices=devices)
 
 add_function_test(TestStreams, "test_event_synchronize", test_event_synchronize, devices=devices)
+add_function_test(TestStreams, "test_event_elapsed_time", test_event_elapsed_time, devices=devices)
 
 if __name__ == "__main__":
     wp.build.clear_kernel_cache()

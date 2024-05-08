@@ -10,11 +10,23 @@ import unittest
 import numpy as np
 
 import warp as wp
-from warp.sparse import bsr_zeros, bsr_set_from_triplets, bsr_get_diag, bsr_diag, bsr_identity, bsr_copy, bsr_scale
-from warp.sparse import bsr_set_transpose, bsr_transposed
-from warp.sparse import bsr_axpy, bsr_mm, bsr_axpy_work_arrays, bsr_mm_work_arrays, bsr_mv
+from warp.sparse import (
+    bsr_axpy,
+    bsr_axpy_work_arrays,
+    bsr_copy,
+    bsr_diag,
+    bsr_get_diag,
+    bsr_identity,
+    bsr_mm,
+    bsr_mm_work_arrays,
+    bsr_mv,
+    bsr_scale,
+    bsr_set_from_triplets,
+    bsr_set_transpose,
+    bsr_transposed,
+    bsr_zeros,
+)
 from warp.tests.unittest_utils import *
-
 
 wp.init()
 
@@ -203,26 +215,6 @@ def make_test_bsr_transpose(block_shape, scalar_type):
                 bsr_set_transpose(dest=bsr, src=bsr)
 
     return test_bsr_transpose
-
-
-def test_bsr_copy_scale(test, device):
-    nrow = 6
-    bsize = 2
-
-    diag_bsr = bsr_diag(diag=np.eye(bsize, dtype=float) * 2.0, rows_of_blocks=nrow)
-    diag_copy = bsr_copy(diag_bsr, scalar_type=wp.float64)
-
-    test.assertTrue(wp.types.types_equal(diag_copy.values.dtype, wp.mat(shape=(bsize, bsize), dtype=wp.float64)))
-    bsr_scale(x=diag_copy, alpha=0.5)
-
-    res = _bsr_to_dense(diag_copy)
-    ref = np.eye(nrow * bsize)
-    assert_np_equal(res, ref, 0.0001)
-
-    bsr_scale(x=diag_copy, alpha=0.0)
-    test.assertEqual(diag_copy.nrow, nrow)
-    test.assertEqual(diag_copy.ncol, nrow)
-    test.assertEqual(diag_copy.nnz, 0)
 
 
 def make_test_bsr_axpy(block_shape, scalar_type):
@@ -430,13 +422,29 @@ devices = get_test_devices()
 
 
 class TestSparse(unittest.TestCase):
-    pass
+    def test_bsr_copy_scale(self):
+        nrow = 6
+        bsize = 2
+
+        diag_bsr = bsr_diag(diag=np.eye(bsize, dtype=float) * 2.0, rows_of_blocks=nrow)
+        diag_copy = bsr_copy(diag_bsr, scalar_type=wp.float64)
+
+        self.assertTrue(wp.types.types_equal(diag_copy.values.dtype, wp.mat(shape=(bsize, bsize), dtype=wp.float64)))
+        bsr_scale(x=diag_copy, alpha=0.5)
+
+        res = _bsr_to_dense(diag_copy)
+        ref = np.eye(nrow * bsize)
+        assert_np_equal(res, ref, 0.0001)
+
+        bsr_scale(x=diag_copy, alpha=0.0)
+        self.assertEqual(diag_copy.nrow, nrow)
+        self.assertEqual(diag_copy.ncol, nrow)
+        self.assertEqual(diag_copy.nnz, 0)
 
 
 add_function_test(TestSparse, "test_csr_from_triplets", test_csr_from_triplets, devices=devices)
 add_function_test(TestSparse, "test_bsr_from_triplets", test_bsr_from_triplets, devices=devices)
 add_function_test(TestSparse, "test_bsr_get_diag", test_bsr_get_set_diag, devices=devices)
-add_function_test(TestSparse, "test_bsr_copy_scale", test_bsr_copy_scale, devices=devices)
 
 add_function_test(TestSparse, "test_csr_transpose", make_test_bsr_transpose((1, 1), wp.float32), devices=devices)
 add_function_test(TestSparse, "test_bsr_transpose_1_3", make_test_bsr_transpose((1, 3), wp.float32), devices=devices)

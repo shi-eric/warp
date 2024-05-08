@@ -596,18 +596,119 @@ def test_struct_attribute_gradient_kernel(src: wp.array(dtype=float), res: wp.ar
     res[tid] = p.a + sum2(p.n.v)
 
 
-def test_struct_attribute_gradient(test_case, device):
-    src = wp.array([1], dtype=float, requires_grad=True)
-    res = wp.empty_like(src)
+def test_struct_attribute_gradient(test, device):
+    with wp.ScopedDevice(device):
+        src = wp.array([1], dtype=float, requires_grad=True)
+        res = wp.empty_like(src)
 
-    tape = wp.Tape()
-    with tape:
-        wp.launch(test_struct_attribute_gradient_kernel, dim=1, inputs=[src, res])
+        tape = wp.Tape()
+        with tape:
+            wp.launch(test_struct_attribute_gradient_kernel, dim=1, inputs=[src, res])
 
-    res.grad.fill_(1.0)
-    tape.backward()
+        res.grad.fill_(1.0)
+        tape.backward()
 
-    test_case.assertEqual(src.grad.numpy()[0], 5.0)
+        test.assertEqual(src.grad.numpy()[0], 5.0)
+
+
+@wp.kernel
+def copy_kernel(a: wp.array(dtype=wp.float32), b: wp.array(dtype=wp.float32)):
+    tid = wp.tid()
+    ai = a[tid]
+    bi = ai
+    b[tid] = bi
+
+
+def test_copy(test, device):
+    with wp.ScopedDevice(device):
+        a = wp.array([-1.0, 2.0, 3.0], dtype=wp.float32, requires_grad=True)
+        b = wp.array([0.0, 0.0, 0.0], dtype=wp.float32, requires_grad=True)
+
+        wp.launch(copy_kernel, 1, inputs=[a, b])
+
+        b.grad = wp.array([1.0, 1.0, 1.0], dtype=wp.float32)
+        wp.launch(copy_kernel, a.shape[0], inputs=[a, b], adjoint=True, adj_inputs=[None, None])
+
+        assert_np_equal(a.grad.numpy(), np.array([1.0, 1.0, 1.0]))
+
+
+@wp.kernel
+def aliasing_kernel(a: wp.array(dtype=wp.float32), b: wp.array(dtype=wp.float32)):
+    tid = wp.tid()
+    x = a[tid]
+
+    y = x
+    if y > 0.0:
+        y = x * x
+    else:
+        y = x * x * x
+
+    b[tid] = y
+
+
+def test_aliasing(test, device):
+    with wp.ScopedDevice(device):
+        a = wp.array([-1.0, 2.0, 3.0], dtype=wp.float32, requires_grad=True)
+        b = wp.array([0.0, 0.0, 0.0], dtype=wp.float32, requires_grad=True)
+
+        wp.launch(aliasing_kernel, 1, inputs=[a, b])
+
+        b.grad = wp.array([1.0, 1.0, 1.0], dtype=wp.float32)
+        wp.launch(aliasing_kernel, a.shape[0], inputs=[a, b], adjoint=True, adj_inputs=[None, None])
+
+        assert_np_equal(a.grad.numpy(), np.array([3.0, 4.0, 6.0]))
+
+
+@wp.kernel
+def square_kernel(x: wp.array(dtype=float), y: wp.array(dtype=float)):
+    tid = wp.tid()
+    y[tid] = x[tid] ** 2.0
+
+
+def test_gradient_internal(test, device):
+    with wp.ScopedDevice(device):
+        a = wp.array([1.0, 2.0, 3.0], dtype=float, requires_grad=True)
+        b = wp.array([0.0, 0.0, 0.0], dtype=float, requires_grad=True)
+
+        wp.launch(square_kernel, a.size, inputs=[a, b])
+
+        # use internal gradients (.grad), adj_inputs are None
+        b.grad = wp.array([1.0, 1.0, 1.0], dtype=float)
+        wp.launch(square_kernel, a.shape[0], inputs=[a, b], adjoint=True, adj_inputs=[None, None])
+
+        assert_np_equal(a.grad.numpy(), np.array([2.0, 4.0, 6.0]))
+
+
+def test_gradient_external(test, device):
+    with wp.ScopedDevice(device):
+        a = wp.array([1.0, 2.0, 3.0], dtype=float, requires_grad=False)
+        b = wp.array([0.0, 0.0, 0.0], dtype=float, requires_grad=False)
+
+        wp.launch(square_kernel, a.size, inputs=[a, b])
+
+        # use external gradients passed in adj_inputs
+        a_grad = wp.array([0.0, 0.0, 0.0], dtype=float)
+        b_grad = wp.array([1.0, 1.0, 1.0], dtype=float)
+        wp.launch(square_kernel, a.shape[0], inputs=[a, b], adjoint=True, adj_inputs=[a_grad, b_grad])
+
+        assert_np_equal(a_grad.numpy(), np.array([2.0, 4.0, 6.0]))
+
+
+def test_gradient_precedence(test, device):
+    with wp.ScopedDevice(device):
+        a = wp.array([1.0, 2.0, 3.0], dtype=float, requires_grad=True)
+        b = wp.array([0.0, 0.0, 0.0], dtype=float, requires_grad=True)
+
+        wp.launch(square_kernel, a.size, inputs=[a, b])
+
+        # if both internal and external gradients are present, the external one takes precedence,
+        # because it's explicitly passed by the user in adj_inputs
+        a_grad = wp.array([0.0, 0.0, 0.0], dtype=float)
+        b_grad = wp.array([1.0, 1.0, 1.0], dtype=float)
+        wp.launch(square_kernel, a.shape[0], inputs=[a, b], adjoint=True, adj_inputs=[a_grad, b_grad])
+
+        assert_np_equal(a_grad.numpy(), np.array([2.0, 4.0, 6.0]))  # used
+        assert_np_equal(a.grad.numpy(), np.array([0.0, 0.0, 0.0]))  # unused
 
 
 devices = get_test_devices()
@@ -622,7 +723,7 @@ add_function_test(TestGrad, "test_for_loop_nested_for_grad", test_for_loop_neste
 add_function_test(TestGrad, "test_scalar_grad", test_scalar_grad, devices=devices)
 add_function_test(TestGrad, "test_for_loop_grad", test_for_loop_grad, devices=devices)
 add_function_test(
-    TestGrad, "test_for_loop_graph_grad", test_for_loop_graph_grad, devices=get_unique_cuda_test_devices()
+    TestGrad, "test_for_loop_graph_grad", test_for_loop_graph_grad, devices=get_selected_cuda_test_devices()
 )
 add_function_test(TestGrad, "test_for_loop_nested_if_grad", test_for_loop_nested_if_grad, devices=devices)
 add_function_test(TestGrad, "test_preserve_outputs_grad", test_preserve_outputs_grad, devices=devices)
@@ -633,6 +734,11 @@ add_function_test(TestGrad, "test_multi_valued_function_grad", test_multi_valued
 add_function_test(TestGrad, "test_mesh_grad", test_mesh_grad, devices=devices)
 add_function_test(TestGrad, "test_name_clash", test_name_clash, devices=devices)
 add_function_test(TestGrad, "test_struct_attribute_gradient", test_struct_attribute_gradient, devices=devices)
+add_function_test(TestGrad, "test_copy", test_copy, devices=devices)
+add_function_test(TestGrad, "test_aliasing", test_aliasing, devices=devices)
+add_function_test(TestGrad, "test_gradient_internal", test_gradient_internal, devices=devices)
+add_function_test(TestGrad, "test_gradient_external", test_gradient_external, devices=devices)
+add_function_test(TestGrad, "test_gradient_precedence", test_gradient_precedence, devices=devices)
 
 
 if __name__ == "__main__":

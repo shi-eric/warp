@@ -18,7 +18,6 @@ from omni.kit.property.usd.custom_layout_helper import (
 )
 from omni.kit.property.usd.usd_property_widget import UsdPropertyUiEntry
 
-
 PROPS = (
     "inputs:enabled",
     "inputs:substepCount",
@@ -32,10 +31,17 @@ PROPS = (
     "inputs:clothTriElasticStiffness",
     "inputs:clothTriAreaStiffness",
     "inputs:clothTriDampingStiffness",
+    "inputs:clothTriDrag",
+    "inputs:clothTriLift",
     "inputs:clothEdgeBendingStiffness",
     "inputs:clothEdgeDampingStiffness",
     "inputs:colliderContactDistance",
     "inputs:colliderContactQueryRange",
+    "inputs:springElasticStiffness",
+    "inputs:springDampingStiffness",
+    "inputs:springVisualize",
+    "inputs:springVisualizeColor",
+    "inputs:springVisualizeWidth",
     "inputs:groundEnabled",
     "inputs:groundAltitude",
 )

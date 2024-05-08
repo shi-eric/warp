@@ -15,8 +15,8 @@ from typing import (
 )
 
 import omni.graph.core as og
-import warp as wp
 
+import warp as wp
 
 #   General
 # ------------------------------------------------------------------------------
@@ -49,6 +49,17 @@ class NodeTimer(object):
 
     def __exit__(self, type: Any, value: Any, traceback: Any) -> None:
         self.timer.__exit__(type, value, traceback)
+
+
+#   Device
+# ------------------------------------------------------------------------------
+
+
+def device_get_cuda_compute() -> wp.context.Device:
+    """Retrieves the preferred CUDA device for computing purposes."""
+    query_fn = getattr(og, "get_compute_cuda_device", None)
+    cuda_device_idx = 0 if query_fn is None else query_fn()
+    return wp.get_device(f"cuda:{cuda_device_idx}")
 
 
 #   Types

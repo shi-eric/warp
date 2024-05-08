@@ -33,7 +33,7 @@ def build_cuda(cu_path, arch, output_path, config="release", verify_fp=False, fa
 # load PTX or CUBIN as a CUDA runtime module (input type determined by input_path extension)
 def load_cuda(input_path, device):
     if not device.is_cuda:
-        raise ("Not a CUDA device")
+        raise RuntimeError("Not a CUDA device")
 
     return warp.context.runtime.core.cuda_load_module(device.context, input_path.encode("utf-8"))
 
@@ -65,6 +65,8 @@ def init_kernel_cache(path=None):
 
     if path is not None:
         cache_root_dir = os.path.realpath(path)
+    elif "WARP_CACHE_PATH" in os.environ:
+        cache_root_dir = os.path.realpath(os.environ.get("WARP_CACHE_PATH"))
     else:
         cache_root_dir = appdirs.user_cache_dir(appname="warp", appauthor="NVIDIA", version=warp.config.version)
 

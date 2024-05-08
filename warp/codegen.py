@@ -16,6 +16,7 @@ import re
 import sys
 import textwrap
 import types
+from types import ModuleType
 from typing import Any, Callable, Mapping
 
 import warp.config
@@ -138,6 +139,26 @@ class StructInstance:
             else:
                 self.__dict__[field] = var.type()
 
+    def __getattribute__(self, name):
+        cls = super().__getattribute__("_cls")
+        if name in cls.vars:
+            var = cls.vars[name]
+            if isinstance(var.type, type) and issubclass(var.type, ctypes.Array):
+                # Each field stored in a `StructInstance` is exposed as
+                # a standard Python attribute but also has a `ctypes`
+                # equivalent that is being updated in `__setattr__`.
+                # However, when assigning in place an object such as a vec/mat
+                # (e.g.: `my_struct.my_vec[0] = 1.23`), the `__setattr__` method
+                # from `StructInstance` isn't called, and the synchronization
+                # mechanism has no chance of updating the underlying ctype data.
+                # As a workaround, we catch here all attempts at accessing such
+                # objects and directly return their underlying ctype since
+                # the Python-facing Warp vectors and matrices are implemented
+                # using `ctypes.Array` anyways.
+                return getattr(self._ctype, name)
+
+        return super().__getattribute__(name)
+
     def __setattr__(self, name, value):
         if name not in self._cls.vars:
             raise RuntimeError(f"Trying to set Warp struct attribute that does not exist {name}")
@@ -214,6 +235,33 @@ class StructInstance:
 
     def __repr__(self):
         return struct_instance_repr_recursive(self, 0)
+
+    def to(self, device):
+        """Copies this struct with all array members moved onto the given device.
+
+        Arrays already living on the desired device are referenced as-is, while
+        arrays being moved are copied.
+        """
+        out = self._cls()
+        stack = [(self, out, k, v) for k, v in self._cls.vars.items()]
+        while stack:
+            src, dst, name, var = stack.pop()
+            value = getattr(src, name)
+            if isinstance(var.type, array):
+                # array_t
+                setattr(dst, name, value.to(device))
+            elif isinstance(var.type, Struct):
+                # nested struct
+                new_struct = value._cls()
+                setattr(dst, name, new_struct)
+                # The call to `setattr()` just above makes a copy of `new_struct`
+                # so we need to reference that new instance of the struct.
+                new_struct = getattr(dst, name)
+                stack.extend((value, new_struct, k, v) for k, v in value._cls.vars.items())
+            else:
+                setattr(dst, name, value)
+
+        return out
 
     # type description used in numpy structured arrays
     def numpy_dtype(self):
@@ -434,6 +482,8 @@ class Var:
             type = float32
         elif type == int:
             type = int32
+        elif type == builtins.bool:
+            type = bool
 
         self.label = label
         self.type = type
@@ -498,11 +548,6 @@ class Block:
         self.vars = []
 
 
-def is_local_value(value) -> bool:
-    """Check whether a variable is defined inside a kernel."""
-    return isinstance(value, (warp.context.Function, Var))
-
-
 class Adjoint:
     # Source code transformer, this class takes a Python function and
     # generates forward and backward SSA forms of the function instructions
@@ -516,7 +561,7 @@ class Adjoint:
         skip_reverse_codegen=False,
         custom_reverse_mode=False,
         custom_reverse_num_input_args=-1,
-        transformers: List[ast.NodeTransformer] = [],
+        transformers: Optional[List[ast.NodeTransformer]] = None,
     ):
         adj.func = func
 
@@ -538,6 +583,9 @@ class Adjoint:
         adj.source = textwrap.dedent(adj.source)
 
         adj.source_lines = adj.source.splitlines()
+
+        if transformers is None:
+            transformers = []
 
         # build AST and apply node transformers
         adj.tree = ast.parse(adj.source)
@@ -598,11 +646,14 @@ class Adjoint:
         adj.skip_build = False
 
     # generate function ssa form and adjoint
-    def build(adj, builder, default_builder_options={}):
+    def build(adj, builder, default_builder_options=None):
         if adj.skip_build:
             return
 
         adj.builder = builder
+
+        if default_builder_options is None:
+            default_builder_options = {}
 
         if adj.builder:
             adj.builder_options = adj.builder.options
@@ -732,11 +783,11 @@ class Adjoint:
     def dedent(adj):
         adj.indentation = adj.indentation[:-4]
 
-    def begin_block(adj):
+    def begin_block(adj, name="block"):
         b = Block()
 
         # give block a unique id
-        b.label = adj.label_count
+        b.label = name + "_" + str(adj.label_count)
         adj.label_count += 1
 
         adj.blocks.append(b)
@@ -906,11 +957,14 @@ class Adjoint:
             f"Couldn't find function overload for '{func.key}' that matched inputs with types: [{', '.join(arg_types)}]"
         )
 
-    def add_call(adj, func, args, min_outputs=None, templates=[], kwds=None):
+    def add_call(adj, func, args, min_outputs=None, templates=None, kwds=None):
+        if templates is None:
+            templates = []
+
         func = adj.resolve_func(func, args, min_outputs, templates, kwds)
 
         # push any default values onto args
-        for i, (arg_name, arg_type) in enumerate(func.input_types.items()):
+        for i, (arg_name, _arg_type) in enumerate(func.input_types.items()):
             if i >= len(args):
                 if arg_name in func.defaults:
                     const = adj.add_constant(func.defaults[arg_name])
@@ -1008,7 +1062,10 @@ class Adjoint:
 
         return output
 
-    def add_builtin_call(adj, func_name, args, min_outputs=None, templates=[], kwds=None):
+    def add_builtin_call(adj, func_name, args, min_outputs=None, templates=None, kwds=None):
+        if templates is None:
+            templates = []
+
         func = warp.context.builtin_functions[func_name]
         return adj.add_call(func, args, min_outputs, templates, kwds)
 
@@ -1059,13 +1116,13 @@ class Adjoint:
 
     # define a for-loop
     def begin_for(adj, iter):
-        cond_block = adj.begin_block()
+        cond_block = adj.begin_block("for")
         adj.loop_blocks.append(cond_block)
-        adj.add_forward(f"for_start_{cond_block.label}:;")
+        adj.add_forward(f"start_{cond_block.label}:;")
         adj.indent()
 
         # evaluate cond
-        adj.add_forward(f"if (iter_cmp({iter.emit()}) == 0) goto for_end_{cond_block.label};")
+        adj.add_forward(f"if (iter_cmp({iter.emit()}) == 0) goto end_{cond_block.label};")
 
         # evaluate iter
         val = adj.add_builtin_call("iter_next", [iter])
@@ -1088,10 +1145,10 @@ class Adjoint:
         for i in body_block.body_forward:
             adj.blocks[-1].body_forward.append(i)
 
-        adj.add_forward(f"goto for_start_{cond_block.label};", skip_replay=True)
+        adj.add_forward(f"goto start_{cond_block.label};", skip_replay=True)
 
         adj.dedent()
-        adj.add_forward(f"for_end_{cond_block.label}:;", skip_replay=True)
+        adj.add_forward(f"end_{cond_block.label}:;", skip_replay=True)
 
         ####################
         # reverse pass
@@ -1116,8 +1173,8 @@ class Adjoint:
         for i in reversed(body_block.body_reverse):
             reverse.append(i)
 
-        reverse.append(adj.indentation + f"\tgoto for_start_{cond_block.label};")
-        reverse.append(adj.indentation + f"for_end_{cond_block.label}:;")
+        reverse.append(adj.indentation + f"\tgoto start_{cond_block.label};")
+        reverse.append(adj.indentation + f"end_{cond_block.label}:;")
 
         adj.blocks[-1].body_reverse.extend(reversed(reverse))
 
@@ -1125,13 +1182,13 @@ class Adjoint:
     def begin_while(adj, cond):
         # evaluate condition in its own block
         # so we can control replay
-        cond_block = adj.begin_block()
+        cond_block = adj.begin_block("while")
         adj.loop_blocks.append(cond_block)
-        cond_block.body_forward.append(f"while_start_{cond_block.label}:;")
+        cond_block.body_forward.append(f"start_{cond_block.label}:;")
 
         c = adj.eval(cond)
 
-        cond_block.body_forward.append(f"if (({c.emit()}) == false) goto while_end_{cond_block.label};")
+        cond_block.body_forward.append(f"if (({c.emit()}) == false) goto end_{cond_block.label};")
 
         # being block around loop
         adj.begin_block()
@@ -1152,8 +1209,8 @@ class Adjoint:
         for i in body_block.body_forward:
             adj.blocks[-1].body_forward.append(i)
 
-        adj.blocks[-1].body_forward.append(f"goto while_start_{cond_block.label};")
-        adj.blocks[-1].body_forward.append(f"while_end_{cond_block.label}:;")
+        adj.blocks[-1].body_forward.append(f"goto start_{cond_block.label};")
+        adj.blocks[-1].body_forward.append(f"end_{cond_block.label}:;")
 
         ####################
         # reverse pass
@@ -1175,8 +1232,8 @@ class Adjoint:
         for i in reversed(body_block.body_reverse):
             reverse.append(i)
 
-        reverse.append(f"goto while_start_{cond_block.label};")
-        reverse.append(f"while_end_{cond_block.label}:;")
+        reverse.append(f"goto start_{cond_block.label};")
+        reverse.append(f"end_{cond_block.label}:;")
 
         # output
         adj.blocks[-1].body_reverse.extend(reversed(reverse))
@@ -1188,6 +1245,23 @@ class Adjoint:
         if adj.return_var is not None and len(adj.return_var) == 1:
             if not isinstance(node.body[-1], ast.Return):
                 adj.add_forward("return {};", skip_replay=True)
+
+        # native function case: return type is specified, eg -> int or -> wp.float32
+        is_func_native = False
+        if node.decorator_list is not None and len(node.decorator_list) == 1:
+            obj = node.decorator_list[0]
+            if isinstance(obj, ast.Call):
+                if isinstance(obj.func, ast.Attribute):
+                    if obj.func.attr == "func_native":
+                        is_func_native = True
+        if is_func_native and node.returns is not None:
+            if isinstance(node.returns, ast.Name):  # python built-in type
+                var = Var(label="return_type", type=eval(node.returns.id))
+            elif isinstance(node.returns, ast.Attribute):  # warp type
+                var = Var(label="return_type", type=eval(node.returns.attr))
+            else:
+                raise WarpCodegenTypeError("Native function return type not recognized")
+            adj.return_var = (var,)
 
     def emit_If(adj, node):
         if len(node.body) == 0:
@@ -1292,7 +1366,14 @@ class Adjoint:
 
         # the named object is either a function, class name, or module
         # pass it back to the caller for processing
-        return obj
+        if isinstance(obj, warp.context.Function):
+            return obj
+        if isinstance(obj, type):
+            return obj
+        if isinstance(obj, ModuleType):
+            return obj
+
+        raise RuntimeError("Cannot reference a global variable from a kernel unless `wp.constant()` is being used")
 
     @staticmethod
     def resolve_type_attribute(var_type: type, attr: str):
@@ -1371,7 +1452,7 @@ class Adjoint:
 
                 return attr
 
-        except (KeyError, AttributeError):
+        except (KeyError, AttributeError) as e:
             # Try resolving as type attribute
             aggregate_type = strip_reference(aggregate.type) if isinstance(aggregate, Var) else aggregate
 
@@ -1382,8 +1463,8 @@ class Adjoint:
             if isinstance(aggregate, Var):
                 raise WarpCodegenAttributeError(
                     f"Error, `{node.attr}` is not an attribute of '{node.value.id}' ({type_repr(aggregate.type)})"
-                )
-            raise WarpCodegenAttributeError(f"Error, `{node.attr}` is not an attribute of '{aggregate}'")
+                ) from e
+            raise WarpCodegenAttributeError(f"Error, `{node.attr}` is not an attribute of '{aggregate}'") from e
 
     def emit_String(adj, node):
         # string constant
@@ -1627,12 +1708,12 @@ class Adjoint:
     def emit_Break(adj, node):
         adj.materialize_redefinitions(adj.loop_symbols[-1])
 
-        adj.add_forward(f"goto for_end_{adj.loop_blocks[-1].label};")
+        adj.add_forward(f"goto end_{adj.loop_blocks[-1].label};")
 
     def emit_Continue(adj, node):
         adj.materialize_redefinitions(adj.loop_symbols[-1])
 
-        adj.add_forward(f"goto for_start_{adj.loop_blocks[-1].label};")
+        adj.add_forward(f"goto start_{adj.loop_blocks[-1].label};")
 
     def emit_Expr(adj, node):
         return adj.eval(node.value)
@@ -1657,9 +1738,6 @@ class Adjoint:
         templates = []
 
         if not isinstance(func, warp.context.Function):
-            if len(path) == 0:
-                raise WarpCodegenError(f"Unknown function or operator: '{node.func.func.id}'")
-
             attr = path[-1]
             caller = func
             func = None
@@ -1692,10 +1770,6 @@ class Adjoint:
         # eval all arguments
         for arg in node.args:
             var = adj.eval(arg)
-            if not is_local_value(var):
-                raise RuntimeError(
-                    "Cannot reference a global variable from a kernel unless `wp.constant()` is being used"
-                )
             args.append(var)
 
         # eval all keyword args
@@ -1733,6 +1807,56 @@ class Adjoint:
 
         return adj.eval(node.value)
 
+    # returns the object being indexed, and the list of indices
+    def eval_subscript(adj, node):
+        # We want to coalesce multi-dimentional array indexing into a single operation. This needs to deal with expressions like `a[i][j][x][y]` where `a` is a 2D array of matrices,
+        # and essentially rewrite it into `a[i, j][x][y]`. Since the AST observes the indexing right-to-left, and we don't want to evaluate the index expressions prematurely,
+        # this requires a first loop to check if this `node` only performs indexing on the array, and a second loop to evaluate and collect index variables.
+        root = node
+        count = 0
+        array = None
+        while isinstance(root, ast.Subscript):
+            if isinstance(root.slice, ast.Tuple):
+                # handles the x[i, j] case (Python 3.8.x upward)
+                count += len(root.slice.elts)
+            elif isinstance(root.slice, ast.Index) and isinstance(root.slice.value, ast.Tuple):
+                # handles the x[i, j] case (Python 3.7.x)
+                count += len(root.slice.value.elts)
+            else:
+                # simple expression, e.g.: x[i]
+                count += 1
+
+            if isinstance(root.value, ast.Name):
+                symbol = adj.emit_Name(root.value)
+                symbol_type = strip_reference(symbol.type)
+                if is_array(symbol_type):
+                    array = symbol
+                    break
+
+            root = root.value
+
+        # If not all indices index into the array, just evaluate the right-most indexing operation.
+        if not array or (count > array.type.ndim):
+            count = 1
+
+        indices = []
+        root = node
+        while len(indices) < count:
+            if isinstance(root.slice, ast.Tuple):
+                ij = [adj.eval(arg) for arg in root.slice.elts]
+            elif isinstance(root.slice, ast.Index) and isinstance(root.slice.value, ast.Tuple):
+                ij = [adj.eval(arg) for arg in root.slice.value.elts]
+            else:
+                ij = [adj.eval(root.slice)]
+
+            indices = ij + indices  # prepend
+
+            root = root.value
+
+        target = adj.eval(root)
+
+        return target, indices
+
     def emit_Subscript(adj, node):
         if hasattr(node.value, "attr") and node.value.attr == "adjoint":
             # handle adjoint of a variable, i.e. wp.adjoint[var]
@@ -1742,27 +1866,7 @@ class Adjoint:
             var = Var(f"adj_{var_name}", type=var.type, constant=None, prefix=False)
             return var
 
-        target = adj.eval(node.value)
-        if not is_local_value(target):
-            raise RuntimeError("Cannot reference a global variable from a kernel unless `wp.constant()` is being used")
-
-        indices = []
-
-        if isinstance(node.slice, ast.Tuple):
-            # handles the x[i,j] case (Python 3.8.x upward)
-            for arg in node.slice.elts:
-                var = adj.eval(arg)
-                indices.append(var)
-
-        elif isinstance(node.slice, ast.Index) and isinstance(node.slice.value, ast.Tuple):
-            # handles the x[i,j] case (Python 3.7.x)
-            for arg in node.slice.value.elts:
-                var = adj.eval(arg)
-                indices.append(var)
-        else:
-            # simple expression, e.g.: x[i]
-            var = adj.eval(node.slice)
-            indices.append(var)
+        target, indices = adj.eval_subscript(node)
 
         target_type = strip_reference(target.type)
         if is_array(target_type):
@@ -1824,44 +1928,22 @@ class Adjoint:
 
         # handles the case where we are assigning to an array index (e.g.: arr[i] = 2.0)
         elif isinstance(lhs, ast.Subscript):
+            rhs = adj.eval(node.value)
+
             if hasattr(lhs.value, "attr") and lhs.value.attr == "adjoint":
                 # handle adjoint of a variable, i.e. wp.adjoint[var]
                 lhs.slice.is_adjoint = True
                 src_var = adj.eval(lhs.slice)
                 var = Var(f"adj_{src_var.label}", type=src_var.type, constant=None, prefix=False)
-                value = adj.eval(node.value)
-                adj.add_forward(f"{var.emit()} = {value.emit()};")
+                adj.add_forward(f"{var.emit()} = {rhs.emit()};")
                 return
 
-            target = adj.eval(lhs.value)
-            value = adj.eval(node.value)
-            if not is_local_value(value):
-                raise RuntimeError(
-                    "Cannot reference a global variable from a kernel unless `wp.constant()` is being used"
-                )
-
-            slice = lhs.slice
-            indices = []
-
-            if isinstance(slice, ast.Tuple):
-                # handles the x[i, j] case (Python 3.8.x upward)
-                for arg in slice.elts:
-                    var = adj.eval(arg)
-                    indices.append(var)
-            elif isinstance(slice, ast.Index) and isinstance(slice.value, ast.Tuple):
-                # handles the x[i, j] case (Python 3.7.x)
-                for arg in slice.value.elts:
-                    var = adj.eval(arg)
-                    indices.append(var)
-            else:
-                # simple expression, e.g.: x[i]
-                var = adj.eval(slice)
-                indices.append(var)
+            target, indices = adj.eval_subscript(lhs)
 
             target_type = strip_reference(target.type)
 
             if is_array(target_type):
-                adj.add_builtin_call("array_store", [target, *indices, value])
+                adj.add_builtin_call("array_store", [target, *indices, rhs])
 
             elif type_is_vector(target_type) or type_is_matrix(target_type):
                 if is_reference(target.type):
@@ -1869,7 +1951,7 @@ class Adjoint:
                 else:
                     attr = adj.add_builtin_call("index", [target, *indices])
 
-                adj.add_builtin_call("store", [attr, value])
+                adj.add_builtin_call("store", [attr, rhs])
 
                 if warp.config.verbose and not adj.custom_reverse_mode:
                     lineno = adj.lineno + adj.fun_lineno
@@ -1954,7 +2036,7 @@ class Adjoint:
                 )
 
         if var is not None:
-            adj.return_var = tuple()
+            adj.return_var = ()
             for ret in var:
                 if is_reference(ret.type):
                     ret = adj.add_builtin_call("copy", [ret])
@@ -2033,8 +2115,7 @@ class Adjoint:
 
         capturedvars = dict(
             zip(
-                adj.func.__code__.co_freevars,
-                [extract_contents(c.cell_contents) for c in (adj.func.__closure__ or [])],
+                adj.func.__code__.co_freevars, [extract_contents(c.cell_contents) for c in (adj.func.__closure__ or [])]
             )
         )
         vars_dict = {**adj.func.__globals__, **capturedvars}
@@ -2088,11 +2169,11 @@ class Adjoint:
                                 f"{attr_name} is not an attribute of {type_repr(prev_type)}"
                             )
 
-                    return var_type, [type_repr(var_type)]
+                    return var_type, [str(var_type)]
                 else:
                     raise WarpCodegenError(f"Cannot deduce the type of {var}")
 
-        # reverse list since ast presents it backward order
+        # reverse list since ast presents it in backward order
         path = [*reversed(attributes)]
         if isinstance(node, ast.Name):
             path.insert(0, node.id)
@@ -2104,13 +2185,8 @@ class Adjoint:
 
         # Still nothing found, maybe this is a predefined type attribute like `dtype`
         if eval_types:
-            try:
-                val = adj.eval(root_node)
-                if val:
-                    return [val, type_repr(val)]
-
-            except Exception:
-                pass
+            val = adj.eval(root_node)
+            return [val, path]
 
         return None, path
 
@@ -2385,7 +2461,7 @@ def constant_str(value):
 
 def indent(args, stops=1):
     sep = ",\n"
-    for i in range(stops):
+    for _i in range(stops):
         sep += "    "
 
     # return sep + args.replace(", ", "," + sep)
@@ -2548,7 +2624,10 @@ def codegen_func_reverse(adj, func_type="kernel", device="cpu"):
     return "".join([indent_block + l for l in lines])
 
 
-def codegen_func(adj, c_func_name: str, device="cpu", options={}):
+def codegen_func(adj, c_func_name: str, device="cpu", options=None):
+    if options is None:
+        options = {}
+
     # forward header
     if adj.return_var is not None and len(adj.return_var) == 1:
         return_type = adj.return_var[0].ctype()
@@ -2636,22 +2715,29 @@ def codegen_func(adj, c_func_name: str, device="cpu", options={}):
 
 
 def codegen_snippet(adj, name, snippet, adj_snippet, replay_snippet):
+    if adj.return_var is not None and len(adj.return_var) == 1:
+        return_type = adj.return_var[0].ctype()
+    else:
+        return_type = "void"
+
     forward_args = []
     reverse_args = []
 
     # forward args
-    for i, arg in enumerate(adj.args):
+    for _i, arg in enumerate(adj.args):
         s = f"{arg.ctype()} {arg.emit().replace('var_', '')}"
         forward_args.append(s)
         reverse_args.append(s)
 
     # reverse args
-    for i, arg in enumerate(adj.args):
+    for _i, arg in enumerate(adj.args):
         if isinstance(arg.type, indexedarray):
             _arg = Var(arg.label, array(dtype=arg.type.dtype, ndim=arg.type.ndim))
             reverse_args.append(_arg.ctype() + " & adj_" + arg.label)
         else:
             reverse_args.append(arg.ctype() + " & adj_" + arg.label)
+    if return_type != "void":
+        reverse_args.append(return_type + " & adj_ret")
 
     forward_template = cuda_forward_function_template
     replay_template = cuda_forward_function_template
@@ -2660,7 +2746,7 @@ def codegen_snippet(adj, name, snippet, adj_snippet, replay_snippet):
     s = ""
     s += forward_template.format(
         name=name,
-        return_type="void",
+        return_type=return_type,
         forward_args=indent(forward_args),
         forward_body=snippet,
         filename=adj.filename,
@@ -2670,7 +2756,7 @@ def codegen_snippet(adj, name, snippet, adj_snippet, replay_snippet):
     if replay_snippet is not None:
         s += replay_template.format(
             name="replay_" + name,
-            return_type="void",
+            return_type=return_type,
             forward_args=indent(forward_args),
             forward_body=replay_snippet,
             filename=adj.filename,
@@ -2684,7 +2770,7 @@ def codegen_snippet(adj, name, snippet, adj_snippet, replay_snippet):
 
     s += reverse_template.format(
         name=name,
-        return_type="void",
+        return_type=return_type,
         reverse_args=indent(reverse_args),
         forward_body=snippet,
         reverse_body=reverse_body,

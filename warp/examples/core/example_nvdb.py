@@ -15,7 +15,6 @@
 #
 ###########################################################################
 
-import math
 import os
 
 import numpy as np
@@ -59,7 +58,7 @@ def simulate(
     x = positions[tid]
     v = velocities[tid]
 
-    v = v + wp.vec3(0.0, 0.0, -980.0) * dt - v * 0.1 * dt
+    v = v + wp.vec3(0.0, -9.8, 0.0) * dt - v * 0.1 * dt
     xpred = x + v * dt
     xpred_local = wp.volume_world_to_index(volume, xpred)
 
@@ -76,8 +75,8 @@ def simulate(
         xpred = xpred - n * err
 
     # ground collision
-    if xpred[2] < 0.0:
-        xpred = wp.vec3(xpred[0], xpred[1], 0.0)
+    if xpred[1] < 0.0:
+        xpred = wp.vec3(xpred[0], 0.0, xpred[2])
 
     # pbd update
     v = (xpred - x) * (1.0 / dt)
@@ -88,53 +87,44 @@ def simulate(
 
 
 class Example:
-    def __init__(self, stage):
+    def __init__(self, stage_path="example_nvdb.usd"):
         rng = np.random.default_rng(42)
         self.num_particles = 10000
 
-        self.sim_steps = 1000
-        frame_dt = 1.0 / 60.0
+        fps = 60
+        frame_dt = 1.0 / fps
         self.sim_substeps = 3
         self.sim_dt = frame_dt / self.sim_substeps
 
         self.sim_time = 0.0
         self.sim_timers = {}
 
-        self.sim_margin = 15.0
+        self.sim_margin = 0.15
 
-        init_pos = 1000.0 * (rng.random((self.num_particles, 3)) * 2.0 - 1.0) + np.array((0.0, 0.0, 3000.0))
+        init_pos = 10.0 * (rng.random((self.num_particles, 3)) * 2.0 - 1.0) + np.array((0.0, 30.0, 0.0))
         init_vel = rng.random((self.num_particles, 3))
 
         self.positions = wp.from_numpy(init_pos.astype(np.float32), dtype=wp.vec3)
         self.velocities = wp.from_numpy(init_vel.astype(np.float32), dtype=wp.vec3)
 
         # load collision volume
-        file = open(os.path.join(warp.examples.get_asset_directory(), "rocks.nvdb"), "rb")
-
-        # create Volume object
-        self.volume = wp.Volume.load_from_nvdb(file)
-
-        file.close()
+        with open(os.path.join(warp.examples.get_asset_directory(), "rocks.nvdb"), "rb") as file:
+            # create Volume object
+            self.volume = wp.Volume.load_from_nvdb(file)
 
         # renderer
         self.renderer = None
-        if stage:
-            self.renderer = wp.render.UsdRenderer(stage, up_axis="z")
-            self.renderer.render_ground(size=10000.0)
+        if stage_path:
+            self.renderer = wp.render.UsdRenderer(stage_path)
+            self.renderer.render_ground(size=100.0)
 
     def step(self):
-        with wp.ScopedTimer("step", detailed=False, dict=self.sim_timers):
+        with wp.ScopedTimer("step", dict=self.sim_timers):
             for _ in range(self.sim_substeps):
                 wp.launch(
                     kernel=simulate,
                     dim=self.num_particles,
-                    inputs=[
-                        self.positions,
-                        self.velocities,
-                        self.volume.id,
-                        self.sim_margin,
-                        self.sim_dt,
-                    ],
+                    inputs=[self.positions, self.velocities, self.volume.id, self.sim_margin, self.sim_dt],
                 )
                 self.sim_time += self.sim_dt
 
@@ -142,29 +132,45 @@ class Example:
         if self.renderer is None:
             return
 
-        with wp.ScopedTimer("render", detailed=False):
+        with wp.ScopedTimer("render"):
             self.renderer.begin_frame(self.sim_time)
 
             self.renderer.render_ref(
                 name="collision",
                 path=os.path.join(warp.examples.get_asset_directory(), "rocks.usd"),
                 pos=wp.vec3(0.0, 0.0, 0.0),
-                rot=wp.quat_from_axis_angle(wp.vec3(1.0, 0.0, 0.0), math.pi),
+                rot=wp.quat(0.0, 0.0, 0.0, 1.0),
                 scale=wp.vec3(1.0, 1.0, 1.0),
+                color=(0.35, 0.55, 0.9),
             )
-            self.renderer.render_points(name="points", points=self.positions.numpy(), radius=self.sim_margin, colors=(0.8, 0.3, 0.2))
+            self.renderer.render_points(
+                name="points", points=self.positions.numpy(), radius=self.sim_margin, colors=(0.8, 0.3, 0.2)
+            )
 
             self.renderer.end_frame()
 
 
 if __name__ == "__main__":
-    stage_path = "example_nvdb.usd"
+    import argparse
 
-    example = Example(stage_path)
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--device", type=str, default=None, help="Override the default Warp device.")
+    parser.add_argument(
+        "--stage_path",
+        type=lambda x: None if x == "None" else str(x),
+        default="example_nvdb.usd",
+        help="Path to the output USD file.",
+    )
+    parser.add_argument("--num_frames", type=int, default=1000, help="Total number of frames.")
 
-    for i in range(example.sim_steps):
-        example.step()
-        example.render()
+    args = parser.parse_known_args()[0]
 
-    if example.renderer:
-        example.renderer.save()
+    with wp.ScopedDevice(args.device):
+        example = Example(stage_path=args.stage_path)
+
+        for _ in range(args.num_frames):
+            example.step()
+            example.render()
+
+        if example.renderer:
+            example.renderer.save()

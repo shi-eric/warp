@@ -49,7 +49,7 @@ def test_dynamic_for_rename(n: int):
     f0 = int(0.0)
     f1 = int(1.0)
 
-    for i in range(0, n):
+    for _i in range(0, n):
         f = f0 + f1
 
         f0 = f1
@@ -62,7 +62,7 @@ def test_dynamic_for_rename(n: int):
 def test_dynamic_for_inplace(n: int):
     a = float(0.0)
 
-    for i in range(0, n):
+    for _i in range(0, n):
         a += 1.0
 
     wp.expect_eq(a, float(n))
@@ -84,7 +84,7 @@ def test_dynamic_reassign(n: int):
     f0 = wp.vec3()
     f1 = f0
 
-    for i in range(0, n):
+    for _i in range(0, n):
         f1 = f1 - wp.vec3(2.0, 0.0, 0.0)
 
     wp.expect_eq(f1, wp.vec3(-4.0, 0.0, 0.0))
@@ -94,15 +94,15 @@ def test_dynamic_reassign(n: int):
 @wp.kernel
 def test_range_static_sum(result: wp.array(dtype=int)):
     a = int(0)
-    for i in range(10):
+    for _i in range(10):
         a = a + 1
 
     b = int(0)
-    for i in range(0, 10):
+    for _i in range(0, 10):
         b = b + 1
 
     c = int(0)
-    for i in range(0, 20, 2):
+    for _i in range(0, 20, 2):
         c = c + 1
 
     result[0] = a
@@ -113,19 +113,19 @@ def test_range_static_sum(result: wp.array(dtype=int)):
 @wp.kernel
 def test_range_dynamic_sum(start: int, end: int, step: int, result: wp.array(dtype=int)):
     a = int(0)
-    for i in range(end):
+    for _i in range(end):
         a = a + 1
 
     b = int(0)
-    for i in range(start, end):
+    for _i in range(start, end):
         b = b + 1
 
     c = int(0)
-    for i in range(start, end * step, step):
+    for _i in range(start, end * step, step):
         c = c + 1
 
     d = int(0)
-    for i in range(end * step, start, -step):
+    for _i in range(end * step, start, -step):
         d = d + 1
 
     result[0] = a
@@ -148,11 +148,11 @@ def test_range_dynamic_nested(n: int):
     sum2 = float(0.0)
     sum3 = float(0.0)
 
-    for i in range(n):
+    for _i in range(n):
         sum1 = sum1 + 1.0
         sum3 = sum3 + 1.0
 
-        for j in range(n):
+        for _j in range(n):
             sum2 = sum2 + 1.0
             sum3 = sum3 + 1.0
 
@@ -190,7 +190,7 @@ def test_pass(n: int):
 def test_break(n: int):
     a = int(0)
 
-    for i in range(0, n):
+    for _i in range(0, n):
         if a == 5:
             break
 
@@ -219,6 +219,18 @@ def test_break_unroll():
         if i > 5:
             a = i
             break
+
+    wp.expect_eq(a, 6)
+
+
+@wp.kernel
+def test_break_while():
+    a = int(0)
+
+    while a < 10:
+        if a > 5:
+            break
+        a += 1
 
     wp.expect_eq(a, 6)
 
@@ -308,9 +320,9 @@ N = wp.constant(3)
 @wp.kernel
 def test_range_constant_dynamic_nested(m: int):
     s = int(0)
-    for i in range(N):
-        for k in range(m):
-            for j in range(N):
+    for _i in range(N):
+        for _k in range(m):
+            for _j in range(N):
                 s += 1
 
     wp.expect_eq(s, N * m * N)
@@ -325,19 +337,19 @@ def test_range_expression():
     c = wp.float(1.0)
 
     # constant expression with a function
-    for i in range(4 * idx, wp.min(4 * idx + 4, batch_size)):
+    for _i in range(4 * idx, wp.min(4 * idx + 4, batch_size)):
         a += c
 
-    for i in range(4 * idx, min(4 * idx + 4, batch_size)):
+    for _i in range(4 * idx, min(4 * idx + 4, batch_size)):
         a += c
 
     tid = wp.tid()
 
     # dynamic expression with a function
-    for i in range(4 * idx, wp.min(4 * idx, tid + 1000)):
+    for _i in range(4 * idx, wp.min(4 * idx, tid + 1000)):
         a += c
 
-    for i in range(4 * idx, min(4 * idx, tid + 1000)):
+    for _i in range(4 * idx, min(4 * idx, tid + 1000)):
         a += c
 
     wp.expect_eq(a, 8.0)
@@ -537,6 +549,7 @@ add_kernel_test(TestCodeGen, name="test_pass", kernel=test_pass, dim=1, inputs=[
 add_kernel_test(TestCodeGen, name="test_break", kernel=test_break, dim=1, inputs=[10], devices=devices)
 add_kernel_test(TestCodeGen, name="test_break_early", kernel=test_break_early, dim=1, inputs=[10], devices=devices)
 add_kernel_test(TestCodeGen, name="test_break_unroll", kernel=test_break_unroll, dim=1, devices=devices)
+add_kernel_test(TestCodeGen, name="test_break_while", kernel=test_break_while, dim=1, devices=devices)
 add_kernel_test(
     TestCodeGen, name="test_break_multiple", kernel=test_break_multiple, dim=1, inputs=[10], devices=devices
 )

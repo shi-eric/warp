@@ -8,10 +8,11 @@
 import ast
 import ctypes
 import functools
-import gc
 import hashlib
 import inspect
 import io
+import itertools
+import operator
 import os
 import platform
 import sys
@@ -39,14 +40,16 @@ def create_value_func(type):
 
 def get_function_args(func):
     """Ensures that all function arguments are annotated and returns a dictionary mapping from argument name to its type."""
-    import inspect
-
     argspec = inspect.getfullargspec(func)
 
     # use source-level argument annotations
     if len(argspec.annotations) < len(argspec.args):
         raise RuntimeError(f"Incomplete argument annotations on function {func.__qualname__}")
     return argspec.annotations
+
+
+complex_type_hints = (Any, Callable, Tuple)
+sequence_types = (list, tuple)
 
 
 class Function:
@@ -56,6 +59,7 @@ class Function:
         key,
         namespace,
         input_types=None,
+        value_type=None,
         value_func=None,
         template_func=None,
         module=None,
@@ -79,13 +83,17 @@ class Function:
         custom_reverse_num_input_args=-1,
         custom_reverse_mode=False,
         overloaded_annotations=None,
-        code_transformers=[],
+        code_transformers=None,
         skip_adding_overload=False,
         require_original_output_arg=False,
     ):
+        if code_transformers is None:
+            code_transformers = []
+
         self.func = func  # points to Python function decorated with @wp.func, may be None for builtins
         self.key = key
         self.namespace = namespace
+        self.value_type = value_type
         self.value_func = value_func  # a function that takes a list of args and a list of templates and returns the value type, e.g.: load(array, index) returns the type of value being loaded
         self.template_func = template_func
         self.input_types = {}
@@ -162,7 +170,7 @@ class Function:
                 self.input_types[k] = warp.types.type_to_warp(v)
 
             # cache mangled name
-            if self.is_simple():
+            if self.export and self.is_simple():
                 self.mangled_name = self.mangle()
             else:
                 self.mangled_name = None
@@ -236,20 +244,11 @@ class Function:
             return False
 
         # only export simple types that don't use arrays
-        for k, v in self.input_types.items():
-            if isinstance(v, warp.array) or v == Any or v == Callable or v == Tuple:
+        for v in self.input_types.values():
+            if isinstance(v, warp.array) or v in complex_type_hints:
                 return False
 
-        return_type = ""
-
-        try:
-            # todo: construct a default value for each of the functions args
-            # so we can generate the return type for overloaded functions
-            return_type = type_str(self.value_func(None, None, None))
-        except Exception:
-            return False
-
-        if return_type.startswith("Tuple"):
+        if type(self.value_type) in sequence_types:
             return False
 
         return True
@@ -276,7 +275,7 @@ class Function:
 
             # make sure variadic overloads appear last so non variadic
             # ones are matched first:
-            self.overloads.sort(key=lambda f: f.variadic)
+            self.overloads.sort(key=operator.attrgetter("variadic"))
 
         else:
             # get function signature based on the input types
@@ -427,6 +426,7 @@ def call_builtin(func: Function, *params) -> Tuple[bool, Any]:
                     elem_type is expected_elem_type
                     or (elem_type is float and expected_elem_type is warp.types.float32)
                     or (elem_type is int and expected_elem_type is warp.types.int32)
+                    or (elem_type is bool and expected_elem_type is warp.types.bool)
                     or (
                         issubclass(elem_type, np.number)
                         and warp.types.np_dtype_to_warp_type[np.dtype(elem_type)] is expected_elem_type
@@ -464,8 +464,9 @@ def call_builtin(func: Function, *params) -> Tuple[bool, Any]:
 
             if not (
                 isinstance(param, arg_type)
-                or (type(param) is float and arg_type is warp.types.float32)
-                or (type(param) is int and arg_type is warp.types.int32)
+                or (type(param) is float and arg_type is warp.types.float32)  # noqa: E721
+                or (type(param) is int and arg_type is warp.types.int32)  # noqa: E721
+                or (type(param) is bool and arg_type is warp.types.bool)  # noqa: E721
                 or warp.types.np_dtype_to_warp_type.get(getattr(param, "dtype", None)) is arg_type
             ):
                 return (False, None)
@@ -485,6 +486,8 @@ def call_builtin(func: Function, *params) -> Tuple[bool, Any]:
         value_ctype = ctypes.c_float
     elif value_type == int:
         value_ctype = ctypes.c_int32
+    elif value_type == bool:
+        value_ctype = ctypes.c_bool
     elif issubclass(value_type, (ctypes.Array, ctypes.Structure)):
         value_ctype = value_type
     else:
@@ -528,7 +531,7 @@ class KernelHooks:
 
 # caches source and compiled entry points for a kernel (will be populated after module loads)
 class Kernel:
-    def __init__(self, func, key=None, module=None, options=None, code_transformers=[]):
+    def __init__(self, func, key=None, module=None, options=None, code_transformers=None):
         self.func = func
 
         if module is None:
@@ -543,6 +546,9 @@ class Kernel:
             self.key = key
 
         self.options = {} if options is None else options
+
+        if code_transformers is None:
+            code_transformers = []
 
         self.adj = warp.codegen.Adjoint(func, transformers=code_transformers)
 
@@ -560,7 +566,7 @@ class Kernel:
         self.overloads = {}
 
         # argument indices by name
-        self.arg_indices = dict((a.label, i) for i, a in enumerate(self.adj.args))
+        self.arg_indices = {a.label: i for i, a in enumerate(self.adj.args)}
 
         if self.module:
             self.module.register_kernel(self)
@@ -579,6 +585,13 @@ class Kernel:
         if len(arg_types) != len(self.adj.arg_types):
             raise RuntimeError(f"Invalid number of arguments for kernel {self.key}")
 
+        # get a type signature from the given argument types
+        sig = warp.types.get_signature(arg_types, func_name=self.key)
+        ovl = self.overloads.get(sig)
+        if ovl is not None:
+            # return the existing overload matching the signature
+            return ovl
+
         arg_names = list(self.adj.arg_types.keys())
         template_types = list(self.adj.arg_types.values())
 
@@ -593,13 +606,6 @@ class Kernel:
                     raise TypeError(
                         f"Kernel {self.key} argument '{arg_names[i]}' type mismatch: expected {template_types[i]}, got {arg_types[i]}"
                     )
-
-        # get a type signature from the given argument types
-        sig = warp.types.get_signature(arg_types, func_name=self.key)
-        if sig in self.overloads:
-            raise RuntimeError(
-                f"Duplicate overload for kernel {self.key}, an overload with the given arguments already exists"
-            )
 
         overload_annotations = dict(zip(arg_names, arg_types))
 
@@ -618,12 +624,7 @@ class Kernel:
 
     def get_overload(self, arg_types):
         sig = warp.types.get_signature(arg_types, func_name=self.key)
-
-        ovl = self.overloads.get(sig)
-        if ovl is not None:
-            return ovl
-        else:
-            return self.add_overload(arg_types)
+        return self.overloads.get(sig)
 
     def get_mangled_name(self):
         if self.sig:
@@ -659,7 +660,7 @@ def func_native(snippet, adj_snippet=None, replay_snippet=None):
         name = warp.codegen.make_full_qualified_name(f)
 
         m = get_module(f.__module__)
-        func = Function(
+        Function(
             func=f,
             key=name,
             namespace="",
@@ -667,7 +668,7 @@ def func_native(snippet, adj_snippet=None, replay_snippet=None):
             native_snippet=snippet,
             adj_native_snippet=adj_snippet,
             replay_snippet=replay_snippet,
-        )  # cuda snippets do not have a return value_type
+        )  # value_type not known yet, will be inferred during Adjoint.build()
         g = m.functions[name]
         # copy over the function attributes, including docstring
         return functools.update_wrapper(g, f)
@@ -772,7 +773,7 @@ def func_grad(forward_fn):
                 raise RuntimeError(
                     f"Gradient function {grad_fn.__qualname__} for function {forward_fn.key} has an incorrect signature. The arguments must match the "
                     "forward function arguments plus the adjoint variables corresponding to the return variables:"
-                    f"\n{', '.join(map(lambda nt: f'{nt[0]}: {nt[1].__name__}', expected_args))}"
+                    f"\n{', '.join(f'{nt[0]}: {nt[1].__name__}' for nt in expected_args)}"
                 )
 
         return grad_fn
@@ -936,9 +937,28 @@ def overload(kernel, arg_types=None):
 builtin_functions = {}
 
 
+def get_generic_vtypes():
+    # get a list of existing generic vector types (includes matrices and stuff)
+    # so we can match arguments against them:
+    generic_vtypes = tuple(x for x in warp.types.vector_types if hasattr(x, "_wp_generic_type_str_"))
+
+    # deduplicate identical types:
+    typedict = {(t._wp_generic_type_str_, str(t._wp_type_params_)): t for t in generic_vtypes}
+    return tuple(typedict[k] for k in sorted(typedict.keys()))
+
+
+generic_vtypes = get_generic_vtypes()
+
+
+scalar_types = {}
+scalar_types.update({x: x for x in warp.types.scalar_types})
+scalar_types.update({x: x._wp_scalar_type_ for x in warp.types.vector_types})
+
+
 def add_builtin(
     key,
-    input_types={},
+    input_types=None,
+    constraint=None,
     value_type=None,
     value_func=None,
     template_func=None,
@@ -955,6 +975,9 @@ def add_builtin(
     defaults=None,
     require_original_output_arg=False,
 ):
+    if input_types is None:
+        input_types = {}
+
     # wrap simple single-type functions with a value_func()
     if value_func is None:
 
@@ -971,95 +994,86 @@ def add_builtin(
 
     # Add specialized versions of this builtin if it's generic by matching arguments against
     # hard coded types. We do this so you can use hard coded warp types outside kernels:
-    generic = any(warp.types.type_is_generic(x) for x in input_types.values())
+    generic = False
+    for x in input_types.values():
+        if warp.types.type_is_generic(x):
+            generic = True
+            break
+
     if generic and export:
-        # get a list of existing generic vector types (includes matrices and stuff)
-        # so we can match arguments against them:
-        generic_vtypes = [x for x in warp.types.vector_types if hasattr(x, "_wp_generic_type_str_")]
-
-        # deduplicate identical types:
-        def typekey(t):
-            return f"{t._wp_generic_type_str_}_{t._wp_type_params_}"
-
-        typedict = {typekey(t): t for t in generic_vtypes}
-        generic_vtypes = [typedict[k] for k in sorted(typedict.keys())]
-
         # collect the parent type names of all the generic arguments:
-        def generic_names(l):
-            for t in l:
-                if hasattr(t, "_wp_generic_type_str_"):
-                    yield t._wp_generic_type_str_
-                elif warp.types.type_is_generic_scalar(t):
-                    yield t.__name__
-
-        genericset = set(generic_names(input_types.values()))
+        genericset = set()
+        for t in input_types.values():
+            if hasattr(t, "_wp_generic_type_hint_"):
+                genericset.add(t._wp_generic_type_hint_)
+            elif warp.types.type_is_generic_scalar(t):
+                genericset.add(t)
 
         # for each of those type names, get a list of all hard coded types derived
         # from them:
-        def derived(name):
-            if name == "Float":
-                return warp.types.float_types
-            elif name == "Scalar":
-                return warp.types.scalar_types
-            elif name == "Int":
-                return warp.types.int_types
-            return [x for x in generic_vtypes if x._wp_generic_type_str_ == name]
+        gtypes = []
+        for t in genericset:
+            if t is warp.types.Float:
+                value = warp.types.float_types
+            elif t == warp.types.Scalar:
+                value = warp.types.scalar_types
+            elif t == warp.types.Int:
+                value = warp.types.int_types
+            else:
+                value = tuple(x for x in generic_vtypes if x._wp_generic_type_hint_ == t)
 
-        gtypes = {k: derived(k) for k in genericset}
+            gtypes.append((t, value))
 
         # find the scalar data types supported by all the arguments by intersecting
         # sets:
-        def scalar_type(t):
-            if t in warp.types.scalar_types:
-                return t
-            return [p for p in t._wp_type_params_ if p in warp.types.scalar_types][0]
-
-        scalartypes = [{scalar_type(x) for x in gtypes[k]} for k in gtypes.keys()]
+        scalartypes = tuple({scalar_types[x] for x in v} for _, v in gtypes)
         if scalartypes:
-            scalartypes = scalartypes.pop().intersection(*scalartypes)
-
-        scalartypes = list(scalartypes)
-        scalartypes.sort(key=str)
+            scalartypes = set.intersection(*scalartypes)
+        scalartypes = sorted(scalartypes, key=str)
 
         # generate function calls for each of these scalar types:
         for stype in scalartypes:
             # find concrete types for this scalar type (eg if the scalar type is float32
             # this dict will look something like this:
             # {"vec":[wp.vec2,wp.vec3,wp.vec4], "mat":[wp.mat22,wp.mat33,wp.mat44]})
-            consistenttypes = {k: [x for x in v if scalar_type(x) == stype] for k, v in gtypes.items()}
-
-            def typelist(param):
-                if warp.types.type_is_generic_scalar(param):
-                    return [stype]
-                if hasattr(param, "_wp_generic_type_str_"):
-                    l = consistenttypes[param._wp_generic_type_str_]
-                    return [x for x in l if warp.types.types_equal(param, x, match_generic=True)]
-                return [param]
+            consistenttypes = {k: tuple(x for x in v if scalar_types[x] == stype) for k, v in gtypes}
 
             # gotta try generating function calls for all combinations of these argument types
             # now.
-            import itertools
+            typelists = []
+            for param in input_types.values():
+                if warp.types.type_is_generic_scalar(param):
+                    l = (stype,)
+                elif hasattr(param, "_wp_generic_type_hint_"):
+                    l = tuple(
+                        x
+                        for x in consistenttypes[param._wp_generic_type_hint_]
+                        if warp.types.types_equal(param, x, match_generic=True)
+                    )
+                else:
+                    l = (param,)
 
-            typelists = [typelist(param) for param in input_types.values()]
+                typelists.append(l)
+
             for argtypes in itertools.product(*typelists):
                 # Some of these argument lists won't work, eg if the function is mul(), we won't be
-                # able to do a matrix vector multiplication for a mat22 and a vec3, so we call value_func
-                # on the generated argument list and skip generation if it fails.
-                # This also gives us the return type, which we keep for later:
-                try:
-                    return_type = value_func(argtypes, {}, [])
-                except Exception:
-                    continue
+                # able to do a matrix vector multiplication for a mat22 and a vec3. The `constraint`
+                # function determines which combinations are valid:
+                if constraint:
+                    if constraint(argtypes) is False:
+                        continue
+
+                return_type = value_func(argtypes, {}, [])
 
                 # The return_type might just be vector_t(length=3,dtype=wp.float32), so we've got to match that
                 # in the list of hard coded types so it knows it's returning one of them:
-                if hasattr(return_type, "_wp_generic_type_str_"):
-                    return_type_match = [
+                if hasattr(return_type, "_wp_generic_type_hint_"):
+                    return_type_match = tuple(
                         x
                         for x in generic_vtypes
-                        if x._wp_generic_type_str_ == return_type._wp_generic_type_str_
+                        if x._wp_generic_type_hint_ == return_type._wp_generic_type_hint_
                         and x._wp_type_params_ == return_type._wp_type_params_
-                    ]
+                    )
                     if not return_type_match:
                         continue
                     return_type = return_type_match[0]
@@ -1086,6 +1100,7 @@ def add_builtin(
         key=key,
         namespace=namespace,
         input_types=input_types,
+        value_type=value_type,
         value_func=value_func,
         template_func=template_func,
         variadic=variadic,
@@ -2250,10 +2265,15 @@ class Graph:
 
 class Runtime:
     def __init__(self):
+        if sys.version_info < (3, 7):
+            raise RuntimeError("Warp requires Python 3.7 as a minimum")
+        if sys.version_info < (3, 9):
+            warp.utils.warn(f"Python 3.9 or newer is recommended for running Warp, detected {sys.version_info}")
+
         bin_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "bin")
 
         if os.name == "nt":
-            if sys.version_info[0] > 3 or sys.version_info[0] == 3 and sys.version_info[1] >= 8:
+            if sys.version_info >= (3, 8):
                 # Python >= 3.8 this method to add dll search paths
                 os.add_dll_directory(bin_path)
 
@@ -2282,561 +2302,578 @@ class Runtime:
             self.llvm = None
 
         # setup c-types for warp.dll
-        self.core.get_error_string.argtypes = []
-        self.core.get_error_string.restype = ctypes.c_char_p
-        self.core.set_error_output_enabled.argtypes = [ctypes.c_int]
-        self.core.set_error_output_enabled.restype = None
-        self.core.is_error_output_enabled.argtypes = []
-        self.core.is_error_output_enabled.restype = ctypes.c_int
+        try:
+            self.core.get_error_string.argtypes = []
+            self.core.get_error_string.restype = ctypes.c_char_p
+            self.core.set_error_output_enabled.argtypes = [ctypes.c_int]
+            self.core.set_error_output_enabled.restype = None
+            self.core.is_error_output_enabled.argtypes = []
+            self.core.is_error_output_enabled.restype = ctypes.c_int
 
-        self.core.alloc_host.argtypes = [ctypes.c_size_t]
-        self.core.alloc_host.restype = ctypes.c_void_p
-        self.core.alloc_pinned.argtypes = [ctypes.c_size_t]
-        self.core.alloc_pinned.restype = ctypes.c_void_p
-        self.core.alloc_device.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
-        self.core.alloc_device.restype = ctypes.c_void_p
-        self.core.alloc_device_default.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
-        self.core.alloc_device_default.restype = ctypes.c_void_p
-        self.core.alloc_device_async.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
-        self.core.alloc_device_async.restype = ctypes.c_void_p
+            self.core.alloc_host.argtypes = [ctypes.c_size_t]
+            self.core.alloc_host.restype = ctypes.c_void_p
+            self.core.alloc_pinned.argtypes = [ctypes.c_size_t]
+            self.core.alloc_pinned.restype = ctypes.c_void_p
+            self.core.alloc_device.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+            self.core.alloc_device.restype = ctypes.c_void_p
+            self.core.alloc_device_default.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+            self.core.alloc_device_default.restype = ctypes.c_void_p
+            self.core.alloc_device_async.argtypes = [ctypes.c_void_p, ctypes.c_size_t]
+            self.core.alloc_device_async.restype = ctypes.c_void_p
 
-        self.core.float_to_half_bits.argtypes = [ctypes.c_float]
-        self.core.float_to_half_bits.restype = ctypes.c_uint16
-        self.core.half_bits_to_float.argtypes = [ctypes.c_uint16]
-        self.core.half_bits_to_float.restype = ctypes.c_float
+            self.core.float_to_half_bits.argtypes = [ctypes.c_float]
+            self.core.float_to_half_bits.restype = ctypes.c_uint16
+            self.core.half_bits_to_float.argtypes = [ctypes.c_uint16]
+            self.core.half_bits_to_float.restype = ctypes.c_float
 
-        self.core.free_host.argtypes = [ctypes.c_void_p]
-        self.core.free_host.restype = None
-        self.core.free_pinned.argtypes = [ctypes.c_void_p]
-        self.core.free_pinned.restype = None
-        self.core.free_device.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self.core.free_device.restype = None
-        self.core.free_device_default.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self.core.free_device_default.restype = None
-        self.core.free_device_async.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self.core.free_device_async.restype = None
+            self.core.free_host.argtypes = [ctypes.c_void_p]
+            self.core.free_host.restype = None
+            self.core.free_pinned.argtypes = [ctypes.c_void_p]
+            self.core.free_pinned.restype = None
+            self.core.free_device.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.core.free_device.restype = None
+            self.core.free_device_default.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.core.free_device_default.restype = None
+            self.core.free_device_async.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.core.free_device_async.restype = None
 
-        self.core.memset_host.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_size_t]
-        self.core.memset_host.restype = None
-        self.core.memset_device.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_size_t]
-        self.core.memset_device.restype = None
+            self.core.memset_host.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_size_t]
+            self.core.memset_host.restype = None
+            self.core.memset_device.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int, ctypes.c_size_t]
+            self.core.memset_device.restype = None
 
-        self.core.memtile_host.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_size_t]
-        self.core.memtile_host.restype = None
-        self.core.memtile_device.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_size_t,
-            ctypes.c_size_t,
-        ]
-        self.core.memtile_device.restype = None
+            self.core.memtile_host.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_size_t]
+            self.core.memtile_host.restype = None
+            self.core.memtile_device.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_size_t,
+                ctypes.c_size_t,
+            ]
+            self.core.memtile_device.restype = None
 
-        self.core.memcpy_h2h.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t]
-        self.core.memcpy_h2h.restype = ctypes.c_bool
-        self.core.memcpy_h2d.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_size_t,
-            ctypes.c_void_p,
-        ]
-        self.core.memcpy_h2d.restype = ctypes.c_bool
-        self.core.memcpy_d2h.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_size_t,
-            ctypes.c_void_p,
-        ]
-        self.core.memcpy_d2h.restype = ctypes.c_bool
-        self.core.memcpy_d2d.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_size_t,
-            ctypes.c_void_p,
-        ]
-        self.core.memcpy_d2d.restype = ctypes.c_bool
-        self.core.memcpy_p2p.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_size_t,
-            ctypes.c_void_p,
-        ]
-        self.core.memcpy_p2p.restype = ctypes.c_bool
+            self.core.memcpy_h2h.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_size_t]
+            self.core.memcpy_h2h.restype = ctypes.c_bool
+            self.core.memcpy_h2d.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_size_t,
+                ctypes.c_void_p,
+            ]
+            self.core.memcpy_h2d.restype = ctypes.c_bool
+            self.core.memcpy_d2h.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_size_t,
+                ctypes.c_void_p,
+            ]
+            self.core.memcpy_d2h.restype = ctypes.c_bool
+            self.core.memcpy_d2d.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_size_t,
+                ctypes.c_void_p,
+            ]
+            self.core.memcpy_d2d.restype = ctypes.c_bool
+            self.core.memcpy_p2p.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_size_t,
+                ctypes.c_void_p,
+            ]
+            self.core.memcpy_p2p.restype = ctypes.c_bool
 
-        self.core.array_copy_host.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-        ]
-        self.core.array_copy_host.restype = ctypes.c_bool
-        self.core.array_copy_device.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-        ]
-        self.core.array_copy_device.restype = ctypes.c_bool
+            self.core.array_copy_host.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
+            self.core.array_copy_host.restype = ctypes.c_bool
+            self.core.array_copy_device.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
+            self.core.array_copy_device.restype = ctypes.c_bool
 
-        self.core.array_fill_host.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
-        self.core.array_fill_host.restype = None
-        self.core.array_fill_device.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_void_p,
-            ctypes.c_int,
-        ]
-        self.core.array_fill_device.restype = None
+            self.core.array_fill_host.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
+            self.core.array_fill_host.restype = None
+            self.core.array_fill_device.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_void_p,
+                ctypes.c_int,
+            ]
+            self.core.array_fill_device.restype = None
 
-        self.core.array_sum_double_host.argtypes = [
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-        ]
-        self.core.array_sum_float_host.argtypes = [
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-        ]
-        self.core.array_sum_double_device.argtypes = [
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-        ]
-        self.core.array_sum_float_device.argtypes = [
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-        ]
+            self.core.array_sum_double_host.argtypes = [
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
+            self.core.array_sum_float_host.argtypes = [
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
+            self.core.array_sum_double_device.argtypes = [
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
+            self.core.array_sum_float_device.argtypes = [
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
 
-        self.core.array_inner_double_host.argtypes = [
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-        ]
-        self.core.array_inner_float_host.argtypes = [
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-        ]
-        self.core.array_inner_double_device.argtypes = [
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-        ]
-        self.core.array_inner_float_device.argtypes = [
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-        ]
+            self.core.array_inner_double_host.argtypes = [
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
+            self.core.array_inner_float_host.argtypes = [
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
+            self.core.array_inner_double_device.argtypes = [
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
+            self.core.array_inner_float_device.argtypes = [
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
 
-        self.core.array_scan_int_host.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_int, ctypes.c_bool]
-        self.core.array_scan_float_host.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_int, ctypes.c_bool]
-        self.core.array_scan_int_device.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_int, ctypes.c_bool]
-        self.core.array_scan_float_device.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_int, ctypes.c_bool]
+            self.core.array_scan_int_host.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_int, ctypes.c_bool]
+            self.core.array_scan_float_host.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_int, ctypes.c_bool]
+            self.core.array_scan_int_device.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_int, ctypes.c_bool]
+            self.core.array_scan_float_device.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_int, ctypes.c_bool]
 
-        self.core.radix_sort_pairs_int_host.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_int]
-        self.core.radix_sort_pairs_int_device.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_int]
+            self.core.radix_sort_pairs_int_host.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_int]
+            self.core.radix_sort_pairs_int_device.argtypes = [ctypes.c_uint64, ctypes.c_uint64, ctypes.c_int]
 
-        self.core.runlength_encode_int_host.argtypes = [
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_int,
-        ]
-        self.core.runlength_encode_int_device.argtypes = [
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_int,
-        ]
+            self.core.runlength_encode_int_host.argtypes = [
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_int,
+            ]
+            self.core.runlength_encode_int_device.argtypes = [
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_int,
+            ]
 
-        self.core.bvh_create_host.restype = ctypes.c_uint64
-        self.core.bvh_create_host.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
+            self.core.bvh_create_host.restype = ctypes.c_uint64
+            self.core.bvh_create_host.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
 
-        self.core.bvh_create_device.restype = ctypes.c_uint64
-        self.core.bvh_create_device.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
+            self.core.bvh_create_device.restype = ctypes.c_uint64
+            self.core.bvh_create_device.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
 
-        self.core.bvh_destroy_host.argtypes = [ctypes.c_uint64]
-        self.core.bvh_destroy_device.argtypes = [ctypes.c_uint64]
+            self.core.bvh_destroy_host.argtypes = [ctypes.c_uint64]
+            self.core.bvh_destroy_device.argtypes = [ctypes.c_uint64]
 
-        self.core.bvh_refit_host.argtypes = [ctypes.c_uint64]
-        self.core.bvh_refit_device.argtypes = [ctypes.c_uint64]
+            self.core.bvh_refit_host.argtypes = [ctypes.c_uint64]
+            self.core.bvh_refit_device.argtypes = [ctypes.c_uint64]
 
-        self.core.mesh_create_host.restype = ctypes.c_uint64
-        self.core.mesh_create_host.argtypes = [
-            warp.types.array_t,
-            warp.types.array_t,
-            warp.types.array_t,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-        ]
+            self.core.mesh_create_host.restype = ctypes.c_uint64
+            self.core.mesh_create_host.argtypes = [
+                warp.types.array_t,
+                warp.types.array_t,
+                warp.types.array_t,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
 
-        self.core.mesh_create_device.restype = ctypes.c_uint64
-        self.core.mesh_create_device.argtypes = [
-            ctypes.c_void_p,
-            warp.types.array_t,
-            warp.types.array_t,
-            warp.types.array_t,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-        ]
+            self.core.mesh_create_device.restype = ctypes.c_uint64
+            self.core.mesh_create_device.argtypes = [
+                ctypes.c_void_p,
+                warp.types.array_t,
+                warp.types.array_t,
+                warp.types.array_t,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+            ]
 
-        self.core.mesh_destroy_host.argtypes = [ctypes.c_uint64]
-        self.core.mesh_destroy_device.argtypes = [ctypes.c_uint64]
+            self.core.mesh_destroy_host.argtypes = [ctypes.c_uint64]
+            self.core.mesh_destroy_device.argtypes = [ctypes.c_uint64]
 
-        self.core.mesh_refit_host.argtypes = [ctypes.c_uint64]
-        self.core.mesh_refit_device.argtypes = [ctypes.c_uint64]
+            self.core.mesh_refit_host.argtypes = [ctypes.c_uint64]
+            self.core.mesh_refit_device.argtypes = [ctypes.c_uint64]
 
-        self.core.hash_grid_create_host.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int]
-        self.core.hash_grid_create_host.restype = ctypes.c_uint64
-        self.core.hash_grid_destroy_host.argtypes = [ctypes.c_uint64]
-        self.core.hash_grid_update_host.argtypes = [ctypes.c_uint64, ctypes.c_float, ctypes.c_void_p, ctypes.c_int]
-        self.core.hash_grid_reserve_host.argtypes = [ctypes.c_uint64, ctypes.c_int]
+            self.core.hash_grid_create_host.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int]
+            self.core.hash_grid_create_host.restype = ctypes.c_uint64
+            self.core.hash_grid_destroy_host.argtypes = [ctypes.c_uint64]
+            self.core.hash_grid_update_host.argtypes = [ctypes.c_uint64, ctypes.c_float, ctypes.c_void_p]
+            self.core.hash_grid_reserve_host.argtypes = [ctypes.c_uint64, ctypes.c_int]
 
-        self.core.hash_grid_create_device.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int]
-        self.core.hash_grid_create_device.restype = ctypes.c_uint64
-        self.core.hash_grid_destroy_device.argtypes = [ctypes.c_uint64]
-        self.core.hash_grid_update_device.argtypes = [ctypes.c_uint64, ctypes.c_float, ctypes.c_void_p, ctypes.c_int]
-        self.core.hash_grid_reserve_device.argtypes = [ctypes.c_uint64, ctypes.c_int]
+            self.core.hash_grid_create_device.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int, ctypes.c_int]
+            self.core.hash_grid_create_device.restype = ctypes.c_uint64
+            self.core.hash_grid_destroy_device.argtypes = [ctypes.c_uint64]
+            self.core.hash_grid_update_device.argtypes = [ctypes.c_uint64, ctypes.c_float, ctypes.c_void_p]
+            self.core.hash_grid_reserve_device.argtypes = [ctypes.c_uint64, ctypes.c_int]
 
-        self.core.cutlass_gemm.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_float,
-            ctypes.c_float,
-            ctypes.c_bool,
-            ctypes.c_bool,
-            ctypes.c_bool,
-            ctypes.c_int,
-        ]
-        self.core.cutlass_gemm.restype = ctypes.c_bool
+            self.core.cutlass_gemm.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_float,
+                ctypes.c_float,
+                ctypes.c_bool,
+                ctypes.c_bool,
+                ctypes.c_bool,
+                ctypes.c_int,
+            ]
+            self.core.cutlass_gemm.restype = ctypes.c_bool
 
-        self.core.volume_create_host.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
-        self.core.volume_create_host.restype = ctypes.c_uint64
-        self.core.volume_get_buffer_info_host.argtypes = [
-            ctypes.c_uint64,
-            ctypes.POINTER(ctypes.c_void_p),
-            ctypes.POINTER(ctypes.c_uint64),
-        ]
-        self.core.volume_get_tiles_host.argtypes = [
-            ctypes.c_uint64,
-            ctypes.POINTER(ctypes.c_void_p),
-            ctypes.POINTER(ctypes.c_uint64),
-        ]
-        self.core.volume_destroy_host.argtypes = [ctypes.c_uint64]
+            self.core.volume_create_host.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
+            self.core.volume_create_host.restype = ctypes.c_uint64
+            self.core.volume_get_buffer_info_host.argtypes = [
+                ctypes.c_uint64,
+                ctypes.POINTER(ctypes.c_void_p),
+                ctypes.POINTER(ctypes.c_uint64),
+            ]
+            self.core.volume_get_tiles_host.argtypes = [
+                ctypes.c_uint64,
+                ctypes.POINTER(ctypes.c_void_p),
+                ctypes.POINTER(ctypes.c_uint64),
+            ]
+            self.core.volume_destroy_host.argtypes = [ctypes.c_uint64]
 
-        self.core.volume_create_device.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint64]
-        self.core.volume_create_device.restype = ctypes.c_uint64
-        self.core.volume_f_from_tiles_device.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_float,
-            ctypes.c_float,
-            ctypes.c_float,
-            ctypes.c_float,
-            ctypes.c_float,
-            ctypes.c_bool,
-        ]
-        self.core.volume_f_from_tiles_device.restype = ctypes.c_uint64
-        self.core.volume_v_from_tiles_device.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_float,
-            ctypes.c_float,
-            ctypes.c_float,
-            ctypes.c_float,
-            ctypes.c_float,
-            ctypes.c_float,
-            ctypes.c_float,
-            ctypes.c_bool,
-        ]
-        self.core.volume_v_from_tiles_device.restype = ctypes.c_uint64
-        self.core.volume_i_from_tiles_device.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_int,
-            ctypes.c_float,
-            ctypes.c_int,
-            ctypes.c_float,
-            ctypes.c_float,
-            ctypes.c_float,
-            ctypes.c_bool,
-        ]
-        self.core.volume_i_from_tiles_device.restype = ctypes.c_uint64
-        self.core.volume_get_buffer_info_device.argtypes = [
-            ctypes.c_uint64,
-            ctypes.POINTER(ctypes.c_void_p),
-            ctypes.POINTER(ctypes.c_uint64),
-        ]
-        self.core.volume_get_tiles_device.argtypes = [
-            ctypes.c_uint64,
-            ctypes.POINTER(ctypes.c_void_p),
-            ctypes.POINTER(ctypes.c_uint64),
-        ]
-        self.core.volume_destroy_device.argtypes = [ctypes.c_uint64]
+            self.core.volume_create_device.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint64]
+            self.core.volume_create_device.restype = ctypes.c_uint64
+            self.core.volume_f_from_tiles_device.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_float,
+                ctypes.c_float,
+                ctypes.c_float,
+                ctypes.c_float,
+                ctypes.c_float,
+                ctypes.c_bool,
+            ]
+            self.core.volume_f_from_tiles_device.restype = ctypes.c_uint64
+            self.core.volume_v_from_tiles_device.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_float,
+                ctypes.c_float,
+                ctypes.c_float,
+                ctypes.c_float,
+                ctypes.c_float,
+                ctypes.c_float,
+                ctypes.c_float,
+                ctypes.c_bool,
+            ]
+            self.core.volume_v_from_tiles_device.restype = ctypes.c_uint64
+            self.core.volume_i_from_tiles_device.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_int,
+                ctypes.c_float,
+                ctypes.c_int,
+                ctypes.c_float,
+                ctypes.c_float,
+                ctypes.c_float,
+                ctypes.c_bool,
+            ]
+            self.core.volume_i_from_tiles_device.restype = ctypes.c_uint64
+            self.core.volume_get_buffer_info_device.argtypes = [
+                ctypes.c_uint64,
+                ctypes.POINTER(ctypes.c_void_p),
+                ctypes.POINTER(ctypes.c_uint64),
+            ]
+            self.core.volume_get_tiles_device.argtypes = [
+                ctypes.c_uint64,
+                ctypes.POINTER(ctypes.c_void_p),
+                ctypes.POINTER(ctypes.c_uint64),
+            ]
+            self.core.volume_destroy_device.argtypes = [ctypes.c_uint64]
 
-        self.core.volume_get_voxel_size.argtypes = [
-            ctypes.c_uint64,
-            ctypes.POINTER(ctypes.c_float),
-            ctypes.POINTER(ctypes.c_float),
-            ctypes.POINTER(ctypes.c_float),
-        ]
+            self.core.volume_get_voxel_size.argtypes = [
+                ctypes.c_uint64,
+                ctypes.POINTER(ctypes.c_float),
+                ctypes.POINTER(ctypes.c_float),
+                ctypes.POINTER(ctypes.c_float),
+            ]
 
-        bsr_matrix_from_triplets_argtypes = [
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-        ]
-        self.core.bsr_matrix_from_triplets_float_host.argtypes = bsr_matrix_from_triplets_argtypes
-        self.core.bsr_matrix_from_triplets_double_host.argtypes = bsr_matrix_from_triplets_argtypes
-        self.core.bsr_matrix_from_triplets_float_device.argtypes = bsr_matrix_from_triplets_argtypes
-        self.core.bsr_matrix_from_triplets_double_device.argtypes = bsr_matrix_from_triplets_argtypes
+            bsr_matrix_from_triplets_argtypes = [
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+            ]
+            self.core.bsr_matrix_from_triplets_float_host.argtypes = bsr_matrix_from_triplets_argtypes
+            self.core.bsr_matrix_from_triplets_double_host.argtypes = bsr_matrix_from_triplets_argtypes
+            self.core.bsr_matrix_from_triplets_float_device.argtypes = bsr_matrix_from_triplets_argtypes
+            self.core.bsr_matrix_from_triplets_double_device.argtypes = bsr_matrix_from_triplets_argtypes
 
-        self.core.bsr_matrix_from_triplets_float_host.restype = ctypes.c_int
-        self.core.bsr_matrix_from_triplets_double_host.restype = ctypes.c_int
-        self.core.bsr_matrix_from_triplets_float_device.restype = ctypes.c_int
-        self.core.bsr_matrix_from_triplets_double_device.restype = ctypes.c_int
+            self.core.bsr_matrix_from_triplets_float_host.restype = ctypes.c_int
+            self.core.bsr_matrix_from_triplets_double_host.restype = ctypes.c_int
+            self.core.bsr_matrix_from_triplets_float_device.restype = ctypes.c_int
+            self.core.bsr_matrix_from_triplets_double_device.restype = ctypes.c_int
 
-        bsr_transpose_argtypes = [
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_int,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-            ctypes.c_uint64,
-        ]
-        self.core.bsr_transpose_float_host.argtypes = bsr_transpose_argtypes
-        self.core.bsr_transpose_double_host.argtypes = bsr_transpose_argtypes
-        self.core.bsr_transpose_float_device.argtypes = bsr_transpose_argtypes
-        self.core.bsr_transpose_double_device.argtypes = bsr_transpose_argtypes
+            bsr_transpose_argtypes = [
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+                ctypes.c_uint64,
+            ]
+            self.core.bsr_transpose_float_host.argtypes = bsr_transpose_argtypes
+            self.core.bsr_transpose_double_host.argtypes = bsr_transpose_argtypes
+            self.core.bsr_transpose_float_device.argtypes = bsr_transpose_argtypes
+            self.core.bsr_transpose_double_device.argtypes = bsr_transpose_argtypes
 
-        self.core.is_cuda_enabled.argtypes = None
-        self.core.is_cuda_enabled.restype = ctypes.c_int
-        self.core.is_cuda_compatibility_enabled.argtypes = None
-        self.core.is_cuda_compatibility_enabled.restype = ctypes.c_int
-        self.core.is_cutlass_enabled.argtypes = None
-        self.core.is_cutlass_enabled.restype = ctypes.c_int
+            self.core.is_cuda_enabled.argtypes = None
+            self.core.is_cuda_enabled.restype = ctypes.c_int
+            self.core.is_cuda_compatibility_enabled.argtypes = None
+            self.core.is_cuda_compatibility_enabled.restype = ctypes.c_int
+            self.core.is_cutlass_enabled.argtypes = None
+            self.core.is_cutlass_enabled.restype = ctypes.c_int
 
-        self.core.cuda_driver_version.argtypes = None
-        self.core.cuda_driver_version.restype = ctypes.c_int
-        self.core.cuda_toolkit_version.argtypes = None
-        self.core.cuda_toolkit_version.restype = ctypes.c_int
-        self.core.cuda_driver_is_initialized.argtypes = None
-        self.core.cuda_driver_is_initialized.restype = ctypes.c_bool
+            self.core.cuda_driver_version.argtypes = None
+            self.core.cuda_driver_version.restype = ctypes.c_int
+            self.core.cuda_toolkit_version.argtypes = None
+            self.core.cuda_toolkit_version.restype = ctypes.c_int
+            self.core.cuda_driver_is_initialized.argtypes = None
+            self.core.cuda_driver_is_initialized.restype = ctypes.c_bool
 
-        self.core.nvrtc_supported_arch_count.argtypes = None
-        self.core.nvrtc_supported_arch_count.restype = ctypes.c_int
-        self.core.nvrtc_supported_archs.argtypes = [ctypes.POINTER(ctypes.c_int)]
-        self.core.nvrtc_supported_archs.restype = None
+            self.core.nvrtc_supported_arch_count.argtypes = None
+            self.core.nvrtc_supported_arch_count.restype = ctypes.c_int
+            self.core.nvrtc_supported_archs.argtypes = [ctypes.POINTER(ctypes.c_int)]
+            self.core.nvrtc_supported_archs.restype = None
 
-        self.core.cuda_device_get_count.argtypes = None
-        self.core.cuda_device_get_count.restype = ctypes.c_int
-        self.core.cuda_device_get_primary_context.argtypes = [ctypes.c_int]
-        self.core.cuda_device_get_primary_context.restype = ctypes.c_void_p
-        self.core.cuda_device_get_name.argtypes = [ctypes.c_int]
-        self.core.cuda_device_get_name.restype = ctypes.c_char_p
-        self.core.cuda_device_get_arch.argtypes = [ctypes.c_int]
-        self.core.cuda_device_get_arch.restype = ctypes.c_int
-        self.core.cuda_device_is_uva.argtypes = [ctypes.c_int]
-        self.core.cuda_device_is_uva.restype = ctypes.c_int
-        self.core.cuda_device_is_mempool_supported.argtypes = [ctypes.c_int]
-        self.core.cuda_device_is_mempool_supported.restype = ctypes.c_int
-        self.core.cuda_device_set_mempool_release_threshold.argtypes = [ctypes.c_int, ctypes.c_uint64]
-        self.core.cuda_device_set_mempool_release_threshold.restype = ctypes.c_int
-        self.core.cuda_device_get_mempool_release_threshold.argtypes = [ctypes.c_int]
-        self.core.cuda_device_get_mempool_release_threshold.restype = ctypes.c_uint64
-        self.core.cuda_device_get_memory_info.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p]
-        self.core.cuda_device_get_memory_info.restype = None
-        self.core.cuda_device_get_uuid.argtypes = [ctypes.c_int, ctypes.c_char * 16]
-        self.core.cuda_device_get_uuid.restype = None
-        self.core.cuda_device_get_pci_domain_id.argtypes = [ctypes.c_int]
-        self.core.cuda_device_get_pci_domain_id.restype = ctypes.c_int
-        self.core.cuda_device_get_pci_bus_id.argtypes = [ctypes.c_int]
-        self.core.cuda_device_get_pci_bus_id.restype = ctypes.c_int
-        self.core.cuda_device_get_pci_device_id.argtypes = [ctypes.c_int]
-        self.core.cuda_device_get_pci_device_id.restype = ctypes.c_int
+            self.core.cuda_device_get_count.argtypes = None
+            self.core.cuda_device_get_count.restype = ctypes.c_int
+            self.core.cuda_device_get_primary_context.argtypes = [ctypes.c_int]
+            self.core.cuda_device_get_primary_context.restype = ctypes.c_void_p
+            self.core.cuda_device_get_name.argtypes = [ctypes.c_int]
+            self.core.cuda_device_get_name.restype = ctypes.c_char_p
+            self.core.cuda_device_get_arch.argtypes = [ctypes.c_int]
+            self.core.cuda_device_get_arch.restype = ctypes.c_int
+            self.core.cuda_device_is_uva.argtypes = [ctypes.c_int]
+            self.core.cuda_device_is_uva.restype = ctypes.c_int
+            self.core.cuda_device_is_mempool_supported.argtypes = [ctypes.c_int]
+            self.core.cuda_device_is_mempool_supported.restype = ctypes.c_int
+            self.core.cuda_device_set_mempool_release_threshold.argtypes = [ctypes.c_int, ctypes.c_uint64]
+            self.core.cuda_device_set_mempool_release_threshold.restype = ctypes.c_int
+            self.core.cuda_device_get_mempool_release_threshold.argtypes = [ctypes.c_int]
+            self.core.cuda_device_get_mempool_release_threshold.restype = ctypes.c_uint64
+            self.core.cuda_device_get_memory_info.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p]
+            self.core.cuda_device_get_memory_info.restype = None
+            self.core.cuda_device_get_uuid.argtypes = [ctypes.c_int, ctypes.c_char * 16]
+            self.core.cuda_device_get_uuid.restype = None
+            self.core.cuda_device_get_pci_domain_id.argtypes = [ctypes.c_int]
+            self.core.cuda_device_get_pci_domain_id.restype = ctypes.c_int
+            self.core.cuda_device_get_pci_bus_id.argtypes = [ctypes.c_int]
+            self.core.cuda_device_get_pci_bus_id.restype = ctypes.c_int
+            self.core.cuda_device_get_pci_device_id.argtypes = [ctypes.c_int]
+            self.core.cuda_device_get_pci_device_id.restype = ctypes.c_int
 
-        self.core.cuda_context_get_current.argtypes = None
-        self.core.cuda_context_get_current.restype = ctypes.c_void_p
-        self.core.cuda_context_set_current.argtypes = [ctypes.c_void_p]
-        self.core.cuda_context_set_current.restype = None
-        self.core.cuda_context_push_current.argtypes = [ctypes.c_void_p]
-        self.core.cuda_context_push_current.restype = None
-        self.core.cuda_context_pop_current.argtypes = None
-        self.core.cuda_context_pop_current.restype = None
-        self.core.cuda_context_create.argtypes = [ctypes.c_int]
-        self.core.cuda_context_create.restype = ctypes.c_void_p
-        self.core.cuda_context_destroy.argtypes = [ctypes.c_void_p]
-        self.core.cuda_context_destroy.restype = None
-        self.core.cuda_context_synchronize.argtypes = [ctypes.c_void_p]
-        self.core.cuda_context_synchronize.restype = None
-        self.core.cuda_context_check.argtypes = [ctypes.c_void_p]
-        self.core.cuda_context_check.restype = ctypes.c_uint64
+            self.core.cuda_context_get_current.argtypes = None
+            self.core.cuda_context_get_current.restype = ctypes.c_void_p
+            self.core.cuda_context_set_current.argtypes = [ctypes.c_void_p]
+            self.core.cuda_context_set_current.restype = None
+            self.core.cuda_context_push_current.argtypes = [ctypes.c_void_p]
+            self.core.cuda_context_push_current.restype = None
+            self.core.cuda_context_pop_current.argtypes = None
+            self.core.cuda_context_pop_current.restype = None
+            self.core.cuda_context_create.argtypes = [ctypes.c_int]
+            self.core.cuda_context_create.restype = ctypes.c_void_p
+            self.core.cuda_context_destroy.argtypes = [ctypes.c_void_p]
+            self.core.cuda_context_destroy.restype = None
+            self.core.cuda_context_synchronize.argtypes = [ctypes.c_void_p]
+            self.core.cuda_context_synchronize.restype = None
+            self.core.cuda_context_check.argtypes = [ctypes.c_void_p]
+            self.core.cuda_context_check.restype = ctypes.c_uint64
 
-        self.core.cuda_context_get_device_ordinal.argtypes = [ctypes.c_void_p]
-        self.core.cuda_context_get_device_ordinal.restype = ctypes.c_int
-        self.core.cuda_context_is_primary.argtypes = [ctypes.c_void_p]
-        self.core.cuda_context_is_primary.restype = ctypes.c_int
-        self.core.cuda_context_get_stream.argtypes = [ctypes.c_void_p]
-        self.core.cuda_context_get_stream.restype = ctypes.c_void_p
-        self.core.cuda_context_set_stream.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
-        self.core.cuda_context_set_stream.restype = None
+            self.core.cuda_context_get_device_ordinal.argtypes = [ctypes.c_void_p]
+            self.core.cuda_context_get_device_ordinal.restype = ctypes.c_int
+            self.core.cuda_context_is_primary.argtypes = [ctypes.c_void_p]
+            self.core.cuda_context_is_primary.restype = ctypes.c_int
+            self.core.cuda_context_get_stream.argtypes = [ctypes.c_void_p]
+            self.core.cuda_context_get_stream.restype = ctypes.c_void_p
+            self.core.cuda_context_set_stream.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
+            self.core.cuda_context_set_stream.restype = None
 
-        # peer access
-        self.core.cuda_is_peer_access_supported.argtypes = [ctypes.c_int, ctypes.c_int]
-        self.core.cuda_is_peer_access_supported.restype = ctypes.c_int
-        self.core.cuda_is_peer_access_enabled.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self.core.cuda_is_peer_access_enabled.restype = ctypes.c_int
-        self.core.cuda_set_peer_access_enabled.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
-        self.core.cuda_set_peer_access_enabled.restype = ctypes.c_int
-        self.core.cuda_is_mempool_access_enabled.argtypes = [ctypes.c_int, ctypes.c_int]
-        self.core.cuda_is_mempool_access_enabled.restype = ctypes.c_int
-        self.core.cuda_set_mempool_access_enabled.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int]
-        self.core.cuda_set_mempool_access_enabled.restype = ctypes.c_int
+            # peer access
+            self.core.cuda_is_peer_access_supported.argtypes = [ctypes.c_int, ctypes.c_int]
+            self.core.cuda_is_peer_access_supported.restype = ctypes.c_int
+            self.core.cuda_is_peer_access_enabled.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.core.cuda_is_peer_access_enabled.restype = ctypes.c_int
+            self.core.cuda_set_peer_access_enabled.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
+            self.core.cuda_set_peer_access_enabled.restype = ctypes.c_int
+            self.core.cuda_is_mempool_access_enabled.argtypes = [ctypes.c_int, ctypes.c_int]
+            self.core.cuda_is_mempool_access_enabled.restype = ctypes.c_int
+            self.core.cuda_set_mempool_access_enabled.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int]
+            self.core.cuda_set_mempool_access_enabled.restype = ctypes.c_int
 
-        self.core.cuda_stream_create.argtypes = [ctypes.c_void_p]
-        self.core.cuda_stream_create.restype = ctypes.c_void_p
-        self.core.cuda_stream_destroy.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self.core.cuda_stream_destroy.restype = None
-        self.core.cuda_stream_register.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self.core.cuda_stream_register.restype = None
-        self.core.cuda_stream_unregister.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self.core.cuda_stream_unregister.restype = None
-        self.core.cuda_stream_synchronize.argtypes = [ctypes.c_void_p]
-        self.core.cuda_stream_synchronize.restype = None
-        self.core.cuda_stream_wait_event.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self.core.cuda_stream_wait_event.restype = None
-        self.core.cuda_stream_wait_stream.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
-        self.core.cuda_stream_wait_stream.restype = None
-        self.core.cuda_stream_is_capturing.argtypes = [ctypes.c_void_p]
-        self.core.cuda_stream_is_capturing.restype = ctypes.c_int
+            self.core.cuda_stream_create.argtypes = [ctypes.c_void_p]
+            self.core.cuda_stream_create.restype = ctypes.c_void_p
+            self.core.cuda_stream_destroy.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.core.cuda_stream_destroy.restype = None
+            self.core.cuda_stream_register.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.core.cuda_stream_register.restype = None
+            self.core.cuda_stream_unregister.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.core.cuda_stream_unregister.restype = None
+            self.core.cuda_stream_synchronize.argtypes = [ctypes.c_void_p]
+            self.core.cuda_stream_synchronize.restype = None
+            self.core.cuda_stream_wait_event.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.core.cuda_stream_wait_event.restype = None
+            self.core.cuda_stream_wait_stream.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+            self.core.cuda_stream_wait_stream.restype = None
+            self.core.cuda_stream_is_capturing.argtypes = [ctypes.c_void_p]
+            self.core.cuda_stream_is_capturing.restype = ctypes.c_int
 
-        self.core.cuda_event_create.argtypes = [ctypes.c_void_p, ctypes.c_uint]
-        self.core.cuda_event_create.restype = ctypes.c_void_p
-        self.core.cuda_event_destroy.argtypes = [ctypes.c_void_p]
-        self.core.cuda_event_destroy.restype = None
-        self.core.cuda_event_record.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self.core.cuda_event_record.restype = None
-        self.core.cuda_event_synchronize.argtypes = [ctypes.c_void_p]
-        self.core.cuda_event_synchronize.restype = None
+            self.core.cuda_event_create.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+            self.core.cuda_event_create.restype = ctypes.c_void_p
+            self.core.cuda_event_destroy.argtypes = [ctypes.c_void_p]
+            self.core.cuda_event_destroy.restype = None
+            self.core.cuda_event_record.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.core.cuda_event_record.restype = None
+            self.core.cuda_event_synchronize.argtypes = [ctypes.c_void_p]
+            self.core.cuda_event_synchronize.restype = None
+            self.core.cuda_event_elapsed_time.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.core.cuda_event_elapsed_time.restype = ctypes.c_float
 
-        self.core.cuda_graph_begin_capture.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
-        self.core.cuda_graph_begin_capture.restype = ctypes.c_bool
-        self.core.cuda_graph_end_capture.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
-        self.core.cuda_graph_end_capture.restype = ctypes.c_bool
-        self.core.cuda_graph_launch.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self.core.cuda_graph_launch.restype = ctypes.c_bool
-        self.core.cuda_graph_destroy.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self.core.cuda_graph_destroy.restype = ctypes.c_bool
+            self.core.cuda_graph_begin_capture.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
+            self.core.cuda_graph_begin_capture.restype = ctypes.c_bool
+            self.core.cuda_graph_end_capture.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.POINTER(ctypes.c_void_p),
+            ]
+            self.core.cuda_graph_end_capture.restype = ctypes.c_bool
+            self.core.cuda_graph_launch.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.core.cuda_graph_launch.restype = ctypes.c_bool
+            self.core.cuda_graph_destroy.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.core.cuda_graph_destroy.restype = ctypes.c_bool
 
-        self.core.cuda_compile_program.argtypes = [
-            ctypes.c_char_p,
-            ctypes.c_int,
-            ctypes.c_char_p,
-            ctypes.c_bool,
-            ctypes.c_bool,
-            ctypes.c_bool,
-            ctypes.c_bool,
-            ctypes.c_char_p,
-        ]
-        self.core.cuda_compile_program.restype = ctypes.c_size_t
+            self.core.cuda_compile_program.argtypes = [
+                ctypes.c_char_p,
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_bool,
+                ctypes.c_bool,
+                ctypes.c_bool,
+                ctypes.c_bool,
+                ctypes.c_char_p,
+            ]
+            self.core.cuda_compile_program.restype = ctypes.c_size_t
 
-        self.core.cuda_load_module.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
-        self.core.cuda_load_module.restype = ctypes.c_void_p
+            self.core.cuda_load_module.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+            self.core.cuda_load_module.restype = ctypes.c_void_p
 
-        self.core.cuda_unload_module.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self.core.cuda_unload_module.restype = None
+            self.core.cuda_unload_module.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.core.cuda_unload_module.restype = None
 
-        self.core.cuda_get_kernel.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p]
-        self.core.cuda_get_kernel.restype = ctypes.c_void_p
+            self.core.cuda_get_kernel.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_char_p]
+            self.core.cuda_get_kernel.restype = ctypes.c_void_p
 
-        self.core.cuda_launch_kernel.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.c_size_t,
-            ctypes.c_int,
-            ctypes.POINTER(ctypes.c_void_p),
-            ctypes.c_void_p,
-        ]
-        self.core.cuda_launch_kernel.restype = ctypes.c_size_t
+            self.core.cuda_launch_kernel.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.c_size_t,
+                ctypes.c_int,
+                ctypes.POINTER(ctypes.c_void_p),
+                ctypes.c_void_p,
+            ]
+            self.core.cuda_launch_kernel.restype = ctypes.c_size_t
 
-        self.core.cuda_graphics_map.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self.core.cuda_graphics_map.restype = None
-        self.core.cuda_graphics_unmap.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self.core.cuda_graphics_unmap.restype = None
-        self.core.cuda_graphics_device_ptr_and_size.argtypes = [
-            ctypes.c_void_p,
-            ctypes.c_void_p,
-            ctypes.POINTER(ctypes.c_uint64),
-            ctypes.POINTER(ctypes.c_size_t),
-        ]
-        self.core.cuda_graphics_device_ptr_and_size.restype = None
-        self.core.cuda_graphics_register_gl_buffer.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint]
-        self.core.cuda_graphics_register_gl_buffer.restype = ctypes.c_void_p
-        self.core.cuda_graphics_unregister_resource.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
-        self.core.cuda_graphics_unregister_resource.restype = None
+            self.core.cuda_graphics_map.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.core.cuda_graphics_map.restype = None
+            self.core.cuda_graphics_unmap.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.core.cuda_graphics_unmap.restype = None
+            self.core.cuda_graphics_device_ptr_and_size.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_void_p,
+                ctypes.POINTER(ctypes.c_uint64),
+                ctypes.POINTER(ctypes.c_size_t),
+            ]
+            self.core.cuda_graphics_device_ptr_and_size.restype = None
+            self.core.cuda_graphics_register_gl_buffer.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint]
+            self.core.cuda_graphics_register_gl_buffer.restype = ctypes.c_void_p
+            self.core.cuda_graphics_unregister_resource.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.core.cuda_graphics_unregister_resource.restype = None
 
-        self.core.init.restype = ctypes.c_int
+            self.core.cuda_timing_begin.argtypes = [ctypes.c_int]
+            self.core.cuda_timing_begin.restype = None
+            self.core.cuda_timing_get_result_count.argtypes = []
+            self.core.cuda_timing_get_result_count.restype = int
+            self.core.cuda_timing_end.argtypes = []
+            self.core.cuda_timing_end.restype = None
+
+            self.core.init.restype = ctypes.c_int
+
+        except AttributeError as e:
+            raise RuntimeError(f"Setting C-types for {warp_lib} failed. It may need rebuilding.") from e
 
         error = self.core.init()
 
@@ -3027,7 +3064,7 @@ class Runtime:
 
     def load_dll(self, dll_path):
         try:
-            if sys.version_info[0] > 3 or sys.version_info[0] == 3 and sys.version_info[1] >= 8:
+            if sys.version_info >= (3, 8):
                 dll = ctypes.CDLL(dll_path, winmode=0)
             else:
                 dll = ctypes.CDLL(dll_path)
@@ -3568,6 +3605,29 @@ def wait_event(event: Event):
     get_stream().wait_event(event)
 
 
+def get_event_elapsed_time(start_event: Event, end_event: Event, synchronize: bool = True):
+    """Get the elapsed time between two recorded events.
+
+    The result is in milliseconds with a resolution of about 0.5 microsecond.
+
+    Both events must have been previously recorded with ``wp.record_event()`` or ``wp.Stream.record_event()``.
+
+    If ``synchronize`` is False, the caller must ensure that device execution has reached ``end_event``
+    prior to calling ``get_event_elapsed_time()``.
+
+    Args:
+        start_event (Event): The start event.
+        end_event (Event): The end event.
+        synchronize (bool, optional): Whether Warp should synchronize on the ``end_event``.
+    """
+
+    # ensure the end_event is reached
+    if synchronize:
+        synchronize_event(end_event)
+
+    return runtime.core.cuda_event_elapsed_time(start_event.cuda_event, end_event.cuda_event)
+
+
 def wait_stream(stream: Stream, event: Event = None):
     """Make the current stream wait for another CUDA stream to complete its work.
 
@@ -3763,6 +3823,8 @@ def full(
             dtype = warp.int32
         elif value_type == float:
             dtype = warp.float32
+        elif value_type == bool:
+            dtype = warp.bool
         elif value_type in warp.types.scalar_types or hasattr(value_type, "_wp_scalar_type_"):
             dtype = value_type
         elif isinstance(value, warp.codegen.StructInstance):
@@ -3773,7 +3835,7 @@ def full(
                 # try to convert to a numpy array first
                 na = np.array(value, copy=False)
             except Exception as e:
-                raise ValueError(f"Failed to interpret the value as a vector or matrix: {e}")
+                raise ValueError(f"Failed to interpret the value as a vector or matrix: {e}") from e
 
             # determine the scalar type
             scalar_type = warp.types.np_dtype_to_warp_type.get(na.dtype)
@@ -3914,6 +3976,18 @@ def from_numpy(
     device: Optional[Devicelike] = None,
     requires_grad: bool = False,
 ) -> warp.array:
+    """Returns a Warp array created from a NumPy array.
+
+    Args:
+        arr: The NumPy array providing the data to construct the Warp array.
+        dtype: The data type of the new Warp array. If this is not provided, the data type will be inferred.
+        shape: The shape of the Warp array.
+        device: The device on which the Warp array will be constructed.
+        requires_grad: Whether or not gradients will be tracked for this array.
+
+    Raises:
+        RuntimeError: The data type of the NumPy array is not supported.
+    """
     if dtype is None:
         base_type = warp.types.np_dtype_to_warp_type.get(arr.dtype)
         if base_type is None:
@@ -3993,8 +4067,8 @@ def pack_arg(kernel, arg_type, arg_name, value, device, adjoint=False):
             # try constructing the required value from the argument (handles tuple / list, Gf.Vec3 case)
             try:
                 return arg_type(value)
-            except Exception:
-                raise ValueError(f"Failed to convert argument for param {arg_name} to {type_str(arg_type)}")
+            except Exception as e:
+                raise ValueError(f"Failed to convert argument for param {arg_name} to {type_str(arg_type)}") from e
 
     elif isinstance(value, bool):
         return ctypes.c_bool(value)
@@ -4006,11 +4080,11 @@ def pack_arg(kernel, arg_type, arg_name, value, device, adjoint=False):
                 return arg_type._type_(warp.types.float_to_half_bits(value.value))
             else:
                 return arg_type._type_(value.value)
-        except Exception:
+        except Exception as e:
             raise RuntimeError(
                 "Error launching kernel, unable to pack kernel parameter type "
                 f"{type(value)} for param {arg_name}, expected {arg_type}"
-            )
+            ) from e
 
     else:
         try:
@@ -4024,7 +4098,7 @@ def pack_arg(kernel, arg_type, arg_name, value, device, adjoint=False):
             raise RuntimeError(
                 "Error launching kernel, unable to pack kernel parameter type "
                 f"{type(value)} for param {arg_name}, expected {arg_type}"
-            )
+            ) from e
 
 
 # represents all data required for a kernel launch
@@ -4227,7 +4301,7 @@ def launch(
         # if it's a generic kernel, infer the required overload from the arguments
         if kernel.is_generic:
             fwd_types = kernel.infer_argument_types(fwd_args)
-            kernel = kernel.get_overload(fwd_types)
+            kernel = kernel.add_overload(fwd_types)
 
         # delay load modules, including new overload if needed
         module = kernel.module
@@ -4312,7 +4386,10 @@ def launch(
 
     # record on tape if one is active
     if runtime.tape and record_tape:
-        runtime.tape.record_launch(kernel, dim, max_blocks, inputs, outputs, device)
+        # record file, lineno, func as metadata
+        frame = inspect.currentframe().f_back
+        caller = {"file": frame.f_code.co_filename, "lineno": frame.f_lineno, "func": frame.f_code.co_name}
+        runtime.tape.record_launch(kernel, dim, max_blocks, inputs, outputs, device, metadata={"caller": caller})
 
 
 def synchronize():
@@ -4506,16 +4583,24 @@ def capture_begin(device: Devicelike = None, stream=None, force_module_load=None
     stream of the current device.
 
     Args:
-
         device: The CUDA device to capture on
         stream: The CUDA stream to capture on
-        force_module_load: Whether or not to force loading of all kernels before capture, in general it is better to use :func:`~warp.load_module()` to selectively load kernels.
+        force_module_load: Whether or not to force loading of all kernels before capture.
+          In general it is better to use :func:`~warp.load_module()` to selectively load kernels.
+          When running with CUDA drivers that support CUDA 12.3 or newer, this option is not recommended to be set to
+          ``True`` because kernels can be loaded during graph capture on more recent drivers. If this argument is
+          ``None``, then the behavior inherits from ``wp.config.enable_graph_capture_module_load_by_default`` if the
+          driver is older than CUDA 12.3.
         external: Whether the capture was already started externally
 
     """
 
     if force_module_load is None:
-        force_module_load = warp.config.enable_graph_capture_module_load_by_default
+        if runtime.driver_version >= 12030:
+            # Driver versions 12.3 and can compile modules during graph capture
+            force_module_load = False
+        else:
+            force_module_load = warp.config.enable_graph_capture_module_load_by_default
 
     if warp.config.verify_cuda:
         raise RuntimeError("Cannot use CUDA error verification during graph capture")
@@ -4623,6 +4708,8 @@ def copy(
     If neither source nor destination are on a CUDA device, no stream is used for the copy.
 
     """
+
+    from warp.context import runtime
 
     if not warp.types.is_array(src) or not warp.types.is_array(dest):
         raise RuntimeError("Copy source and destination must be arrays")
@@ -4778,6 +4865,20 @@ def copy(
     if hasattr(src, "grad") and src.grad is not None and hasattr(dest, "grad") and dest.grad is not None:
         copy(dest.grad, src.grad, stream=stream)
 
+        if runtime.tape:
+            runtime.tape.record_func(backward=lambda: adj_copy(dest.grad, src.grad, stream=stream), arrays=[dest, src])
+
+
+def adj_copy(adj_dest: warp.array, adj_src: warp.array, stream: Stream = None):
+    """Copy adjoint operation for wp.copy() calls on the tape.
+
+    Args:
+        adj_dest: Destination array adjoint
+        adj_src: Source array adjoint
+        stream: The stream on which the copy was performed in the forward pass
+    """
+    copy(adj_src, adj_dest, stream=stream)
+
 
 def type_str(t):
     if t is None:
@@ -4800,30 +4901,30 @@ def type_str(t):
         return f"FabricArray[{type_str(t.dtype)}]"
     elif isinstance(t, warp.indexedfabricarray):
         return f"IndexedFabricArray[{type_str(t.dtype)}]"
-    elif hasattr(t, "_wp_generic_type_str_"):
-        generic_type = t._wp_generic_type_str_
+    elif hasattr(t, "_wp_generic_type_hint_"):
+        generic_type = t._wp_generic_type_hint_
 
         # for concrete vec/mat types use the short name
         if t in warp.types.vector_types:
             return t.__name__
 
         # for generic vector / matrix type use a Generic type hint
-        if generic_type == "vec_t":
+        if generic_type == warp.types.Vector:
             # return f"Vector"
             return f"Vector[{type_str(t._wp_type_params_[0])},{type_str(t._wp_scalar_type_)}]"
-        elif generic_type == "quat_t":
+        elif generic_type == warp.types.Quaternion:
             # return f"Quaternion"
             return f"Quaternion[{type_str(t._wp_scalar_type_)}]"
-        elif generic_type == "mat_t":
+        elif generic_type == warp.types.Matrix:
             # return f"Matrix"
             return f"Matrix[{type_str(t._wp_type_params_[0])},{type_str(t._wp_type_params_[1])},{type_str(t._wp_scalar_type_)}]"
-        elif generic_type == "transform_t":
+        elif generic_type == warp.types.Transformation:
             # return f"Transformation"
             return f"Transformation[{type_str(t._wp_scalar_type_)}]"
-        else:
-            raise TypeError("Invalid vector or matrix dimensions")
-    else:
-        return t.__name__
+
+        raise TypeError("Invalid vector or matrix dimensions")
+
+    return t.__name__
 
 
 def print_function(f, file, noentry=False):  # pragma: no cover
@@ -4853,17 +4954,17 @@ def print_function(f, file, noentry=False):  # pragma: no cover
     except Exception:
         pass
 
-    print(f".. function:: {f.key}({args}){return_type}", file=file)
+    print(f".. py:function:: {f.key}({args}){return_type}", file=file)
     if noentry:
-        print("   :noindex:", file=file)
-        print("   :nocontentsentry:", file=file)
+        print("    :noindex:", file=file)
+        print("    :nocontentsentry:", file=file)
     print("", file=file)
 
     if f.doc != "":
         if not f.missing_grad:
-            print(f"   {f.doc}", file=file)
+            print(f"    {f.doc}", file=file)
         else:
-            print(f"   {f.doc} [1]_", file=file)
+            print(f"    {f.doc} [1]_", file=file)
         print("", file=file)
 
     print(file=file)
@@ -4923,7 +5024,7 @@ def export_functions_rst(file):  # pragma: no cover
     # build dictionary of all functions by group
     groups = {}
 
-    for k, f in builtin_functions.items():
+    for _k, f in builtin_functions.items():
         # build dict of groups
         if f.group not in groups:
             groups[f.group] = []
@@ -4950,13 +5051,11 @@ def export_functions_rst(file):  # pragma: no cover
 
     # footnotes
     print(".. rubric:: Footnotes", file=file)
-    print(".. [1] Note: function gradients not implemented for backpropagation.", file=file)
+    print(".. [1] Function gradients have not been implemented for backpropagation.", file=file)
 
 
 def export_stubs(file):  # pragma: no cover
     """Generates stub file for auto-complete of builtin functions"""
-
-    import textwrap
 
     print(
         "# Autogenerated file, do not edit, this file provides stubs for builtins autocomplete in VSCode, PyCharm, etc",
@@ -5018,8 +5117,7 @@ def export_stubs(file):  # pragma: no cover
 
             print("@over", file=file)
             print(f"def {f.key}({args}){return_str}:", file=file)
-            print('    """', file=file)
-            print(textwrap.indent(text=f.doc, prefix="    "), file=file)
+            print(f'    """{f.doc}', file=file)
             print('    """', file=file)
             print("    ...\n\n", file=file)
 
@@ -5051,15 +5149,9 @@ def export_builtins(file: io.TextIOBase):  # pragma: no cover
             if not f.export or f.generic:
                 continue
 
-            simple = True
-            for k, v in f.input_types.items():
-                if isinstance(v, warp.array) or v == Any or v == Callable or v == Tuple:
-                    simple = False
-                    break
-
             # only export simple types that don't use arrays
             # or templated types
-            if not simple or f.variadic:
+            if not f.is_simple():
                 continue
 
             args = ", ".join(f"{ctype_arg_str(v)} {k}" for k, v in f.input_types.items())

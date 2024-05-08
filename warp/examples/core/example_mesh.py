@@ -82,11 +82,10 @@ def simulate(
 
 
 class Example:
-    def __init__(self, stage):
+    def __init__(self, stage_path="example_mesh.usd"):
         rng = np.random.default_rng(42)
         self.num_particles = 1000
 
-        self.sim_steps = 500
         self.sim_dt = 1.0 / 60.0
 
         self.sim_time = 0.0
@@ -95,7 +94,7 @@ class Example:
         self.sim_margin = 0.1
 
         usd_stage = Usd.Stage.Open(os.path.join(warp.examples.get_asset_directory(), "bunny.usd"))
-        usd_geom = UsdGeom.Mesh(usd_stage.GetPrimAtPath("/bunny/bunny"))
+        usd_geom = UsdGeom.Mesh(usd_stage.GetPrimAtPath("/root/bunny"))
         usd_scale = 10.0
 
         # create collision mesh
@@ -110,14 +109,14 @@ class Example:
 
         self.positions = wp.from_numpy(init_pos, dtype=wp.vec3)
         self.velocities = wp.from_numpy(init_vel, dtype=wp.vec3)
-        
+
         # renderer
         self.renderer = None
-        if stage:
-            self.renderer = wp.render.UsdRenderer(stage)
+        if stage_path:
+            self.renderer = wp.render.UsdRenderer(stage_path)
 
     def step(self):
-        with wp.ScopedTimer("step", detailed=False, dict=self.sim_timers):
+        with wp.ScopedTimer("step", dict=self.sim_timers):
             wp.launch(kernel=deform, dim=len(self.mesh.points), inputs=[self.mesh.points, self.sim_time])
 
             # refit the mesh BVH to account for the deformation
@@ -128,28 +127,48 @@ class Example:
                 dim=self.num_particles,
                 inputs=[self.positions, self.velocities, self.mesh.id, self.sim_margin, self.sim_dt],
             )
-            
+
             self.sim_time += self.sim_dt
 
     def render(self):
         if self.renderer is None:
             return
-        
-        with wp.ScopedTimer("render", detailed=False):
+
+        with wp.ScopedTimer("render"):
             self.renderer.begin_frame(self.sim_time)
-            self.renderer.render_mesh(name="mesh", points=self.mesh.points.numpy(), indices=self.mesh.indices.numpy(), colors=((0.35, 0.55, 0.9),) * len(self.mesh.points))
-            self.renderer.render_points(name="points", points=self.positions.numpy(), radius=self.sim_margin, colors=(0.8, 0.3, 0.2))
+            self.renderer.render_mesh(
+                name="mesh",
+                points=self.mesh.points.numpy(),
+                indices=self.mesh.indices.numpy(),
+                colors=((0.35, 0.55, 0.9),) * len(self.mesh.points),
+            )
+            self.renderer.render_points(
+                name="points", points=self.positions.numpy(), radius=self.sim_margin, colors=(0.8, 0.3, 0.2)
+            )
             self.renderer.end_frame()
 
 
 if __name__ == "__main__":
-    stage_path = "example_mesh.usd"
+    import argparse
 
-    example = Example(stage_path)
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--device", type=str, default=None, help="Override the default Warp device.")
+    parser.add_argument(
+        "--stage_path",
+        type=lambda x: None if x == "None" else str(x),
+        default="example_mesh.usd",
+        help="Path to the output USD file.",
+    )
+    parser.add_argument("--num_frames", type=int, default=500, help="Total number of frames.")
 
-    for i in range(example.sim_steps):
-        example.step()
-        example.render()
+    args = parser.parse_known_args()[0]
 
-    if example.renderer:
-        example.renderer.save()
+    with wp.ScopedDevice(args.device):
+        example = Example(stage_path=args.stage_path)
+
+        for _ in range(args.num_frames):
+            example.step()
+            example.render()
+
+        if example.renderer:
+            example.renderer.save()

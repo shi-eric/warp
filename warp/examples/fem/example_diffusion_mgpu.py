@@ -81,9 +81,7 @@ class DistributedSystem:
 
         for mat_i, x_i, y_i, idx in zip(*self.rank_data):
             # WAR copy with indexed array requiring matching shape
-            tmp_i = wp.array(
-                ptr=tmp.ptr, device=tmp.device, capacity=tmp.capacity, dtype=tmp.dtype, shape=idx.shape
-            )
+            tmp_i = wp.array(ptr=tmp.ptr, device=tmp.device, capacity=tmp.capacity, dtype=tmp.dtype, shape=idx.shape)
 
             # Compress rhs on rank 0
             x_idx = wp.indexedarray(x, idx)
@@ -102,24 +100,24 @@ class DistributedSystem:
             wp.copy(dest=tmp_i, src=y_i, count=idx.size, stream=stream)
             z_idx = wp.indexedarray(z, idx)
             wp.launch(kernel=sum_kernel, dim=idx.shape, device=z_idx.device, inputs=[z_idx, tmp_i], stream=stream)
-        
+
         wp.wait_stream(stream)
 
 
 class Example:
-    def __init__(self, stage=None, quiet=False):
+    def __init__(self, quiet=False, device=None):
         self._bd_weight = 100.0
         self._quiet = quiet
 
         self._geo = fem.Grid2D(res=wp.vec2i(25))
 
-        self._main_device = wp.get_device("cuda")
+        self._main_device = wp.get_device(device)
 
         with wp.ScopedDevice(self._main_device):
             self._scalar_space = fem.make_polynomial_space(self._geo, degree=3)
             self._scalar_field = self._scalar_space.make_field()
 
-        self.renderer = Plot(stage)
+        self.renderer = Plot()
 
     def step(self):
         devices = wp.get_cuda_devices()
@@ -165,14 +163,7 @@ class Example:
         A.rank_data = (matrices, rhs_vecs, res_vecs, indices)
 
         with wp.ScopedDevice(main_device):
-            bsr_cg(
-                A,
-                x=global_res,
-                b=glob_rhs,
-                use_diag_precond=False,
-                quiet=self._quiet,
-                mv_routine=A.mv_routine
-            )
+            bsr_cg(A, x=global_res, b=glob_rhs, use_diag_precond=False, quiet=self._quiet, mv_routine=A.mv_routine)
 
         array_cast(in_array=global_res, out_array=self._scalar_field.dof_values)
 
@@ -205,10 +196,26 @@ class Example:
 
 
 if __name__ == "__main__":
+    import argparse
+
     wp.set_module_options({"enable_backward": False})
 
-    example = Example()
-    example.step()
-    example.render()
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--device", type=str, default=None, help="Override the default Warp device.")
+    parser.add_argument("--quiet", action="store_true", help="Suppresses the printing out of iteration residuals.")
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="Run in headless mode, suppressing the opening of any graphical windows.",
+    )
 
-    example.renderer.plot()
+    args = parser.parse_known_args()[0]
+
+    with wp.ScopedTimer(__file__):
+        example = Example(quiet=args.quiet, device=args.device)
+
+        example.step()
+        example.render()
+
+        if not args.headless:
+            example.renderer.plot()

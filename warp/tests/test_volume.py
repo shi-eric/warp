@@ -105,14 +105,14 @@ def test_volume_sample_grad_local_f_linear_values(
 
     grad = wp.vec3(0.0, 0.0, 0.0)
     val = wp.volume_sample_grad_f(volume, p, wp.Volume.LINEAR, grad)
-
-    if case_num == 1:
-        val = grad[0]
+    if case_num == 0:
+        values[tid] = val
+    elif case_num == 1:
+        values[tid] = grad[0]
     elif case_num == 2:
-        val = grad[1]
+        values[tid] = grad[1]
     elif case_num == 3:
-        val = grad[2]
-    values[tid] = val
+        values[tid] = grad[2]
 
 
 @wp.kernel
@@ -135,15 +135,14 @@ def test_volume_sample_grad_world_f_linear_values(
 
     grad = wp.vec3(0.0, 0.0, 0.0)
     val = wp.volume_sample_grad_f(volume, p, wp.Volume.LINEAR, grad)
-
-    if case_num == 1:
-        val = grad[0]
+    if case_num == 0:
+        values[tid] = val
+    elif case_num == 1:
+        values[tid] = grad[0]
     elif case_num == 2:
-        val = grad[1]
+        values[tid] = grad[1]
     elif case_num == 3:
-        val = grad[2]
-
-    values[tid] = val
+        values[tid] = grad[2]
 
 
 # vec3f volume tests
@@ -372,7 +371,7 @@ for value_type, path in volume_paths.items():
         try:
             volume = wp.Volume.load_from_nvdb(volume_data, device)
         except RuntimeError as e:
-            raise RuntimeError(f'Failed to load volume from "{path}" to {device} memory:\n{e}')
+            raise RuntimeError(f'Failed to load volume from "{path}" to {device} memory:\n{e}') from e
 
         volumes[value_type][device.alias] = volume
 
@@ -646,16 +645,18 @@ add_function_test(
 add_function_test(TestVolume, "test_volume_transform_gradient", test_volume_transform_gradient, devices=devices)
 add_function_test(TestVolume, "test_volume_store", test_volume_store, devices=devices)
 add_function_test(
-    TestVolume, "test_volume_allocation_f", test_volume_allocation_f, devices=get_unique_cuda_test_devices()
+    TestVolume, "test_volume_allocation_f", test_volume_allocation_f, devices=get_selected_cuda_test_devices()
 )
 add_function_test(
-    TestVolume, "test_volume_allocation_v", test_volume_allocation_v, devices=get_unique_cuda_test_devices()
+    TestVolume, "test_volume_allocation_v", test_volume_allocation_v, devices=get_selected_cuda_test_devices()
 )
 add_function_test(
-    TestVolume, "test_volume_allocation_i", test_volume_allocation_i, devices=get_unique_cuda_test_devices()
+    TestVolume, "test_volume_allocation_i", test_volume_allocation_i, devices=get_selected_cuda_test_devices()
 )
 add_function_test(TestVolume, "test_volume_introspection", test_volume_introspection, devices=devices)
-add_function_test(TestVolume, "test_volume_from_numpy", test_volume_from_numpy, devices=get_unique_cuda_test_devices())
+add_function_test(
+    TestVolume, "test_volume_from_numpy", test_volume_from_numpy, devices=get_selected_cuda_test_devices()
+)
 
 points = {}
 points_jittered = {}

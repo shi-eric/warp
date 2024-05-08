@@ -7,28 +7,26 @@
 
 import warp as wp
 
-from .model import Model, State, Control
-
-from .integrator import Integrator
-
-from .integrator_euler import (
-    eval_spring_forces,
-    eval_triangle_forces,
-    eval_triangle_contact_forces,
-    eval_bending_forces,
-    eval_tetrahedral_forces,
-    eval_particle_forces,
-    eval_particle_ground_contact_forces,
-    eval_particle_body_contact_forces,
-    eval_muscle_forces,
-    eval_rigid_contacts,
-    eval_joint_force,
-)
-
 from .articulation import (
     compute_2d_rotational_dofs,
     compute_3d_rotational_dofs,
+    eval_fk,
 )
+from .integrator import Integrator
+from .integrator_euler import (
+    eval_bending_forces,
+    eval_joint_force,
+    eval_muscle_forces,
+    eval_particle_body_contact_forces,
+    eval_particle_forces,
+    eval_particle_ground_contact_forces,
+    eval_rigid_contacts,
+    eval_spring_forces,
+    eval_tetrahedral_forces,
+    eval_triangle_contact_forces,
+    eval_triangle_forces,
+)
+from .model import Control, Model, State
 
 
 # Frank & Park definition 3.20, pg 100
@@ -809,7 +807,7 @@ def compute_link_velocity(
     qd_start = joint_qd_start[i]
 
     X_pj = joint_X_p[i]
-    X_cj = joint_X_c[i]
+    # X_cj = joint_X_c[i]
 
     # parent anchor frame in world space
     X_wpj = X_pj
@@ -1130,31 +1128,31 @@ def dense_gemm(
                 C[C_start + i * n + j] = sum
 
 
-@wp.func_grad(dense_gemm)
-def adj_dense_gemm(
-    m: int,
-    n: int,
-    p: int,
-    transpose_A: bool,
-    transpose_B: bool,
-    add_to_C: bool,
-    A_start: int,
-    B_start: int,
-    C_start: int,
-    A: wp.array(dtype=float),
-    B: wp.array(dtype=float),
-    # outputs
-    C: wp.array(dtype=float),
-):
-    add_to_C = True
-    if transpose_A:
-        dense_gemm(p, m, n, False, True, add_to_C, A_start, B_start, C_start, B, wp.adjoint[C], wp.adjoint[A])
-        dense_gemm(p, n, m, False, False, add_to_C, A_start, B_start, C_start, A, wp.adjoint[C], wp.adjoint[B])
-    else:
-        dense_gemm(
-            m, p, n, False, not transpose_B, add_to_C, A_start, B_start, C_start, wp.adjoint[C], B, wp.adjoint[A]
-        )
-        dense_gemm(p, n, m, True, False, add_to_C, A_start, B_start, C_start, A, wp.adjoint[C], wp.adjoint[B])
+# @wp.func_grad(dense_gemm)
+# def adj_dense_gemm(
+#     m: int,
+#     n: int,
+#     p: int,
+#     transpose_A: bool,
+#     transpose_B: bool,
+#     add_to_C: bool,
+#     A_start: int,
+#     B_start: int,
+#     C_start: int,
+#     A: wp.array(dtype=float),
+#     B: wp.array(dtype=float),
+#     # outputs
+#     C: wp.array(dtype=float),
+# ):
+#     add_to_C = True
+#     if transpose_A:
+#         dense_gemm(p, m, n, False, True, add_to_C, A_start, B_start, C_start, B, wp.adjoint[C], wp.adjoint[A])
+#         dense_gemm(p, n, m, False, False, add_to_C, A_start, B_start, C_start, A, wp.adjoint[C], wp.adjoint[B])
+#     else:
+#         dense_gemm(
+#             m, p, n, False, not transpose_B, add_to_C, A_start, B_start, C_start, wp.adjoint[C], B, wp.adjoint[A]
+#         )
+#         dense_gemm(p, n, m, True, False, add_to_C, A_start, B_start, C_start, A, wp.adjoint[C], wp.adjoint[B])
 
 
 @wp.kernel
@@ -1311,6 +1309,8 @@ def adj_dense_solve(
     x: wp.array(dtype=float),
     tmp: wp.array(dtype=float),
 ):
+    if not tmp or not wp.adjoint[x] or not wp.adjoint[L]:
+        return
     for i in range(n):
         tmp[b_start + i] = 0.0
 
@@ -1332,6 +1332,7 @@ def eval_dense_solve_batched(
     b_start: wp.array(dtype=int),
     L: wp.array(dtype=float),
     b: wp.array(dtype=float),
+    # outputs
     x: wp.array(dtype=float),
     tmp: wp.array(dtype=float),
 ):
@@ -1376,25 +1377,6 @@ def integrate_generalized_joints(
         joint_q_new,
         joint_qd_new,
     )
-
-
-@wp.kernel
-def eval_body_inertial_velocities(
-    body_q: wp.array(dtype=wp.transform),
-    body_v_s: wp.array(dtype=wp.spatial_vector),
-    # outputs
-    body_qd: wp.array(dtype=wp.spatial_vector),
-):
-    tid = wp.tid()
-
-    X_sc = body_q[tid]
-    v_s = body_v_s[tid]
-    w = wp.spatial_top(v_s)
-    v = wp.spatial_bottom(v_s)
-
-    v_inertial = v + wp.cross(w, wp.transform_get_translation(X_sc))
-
-    body_qd[tid] = wp.spatial_vector(w, v_inertial)
 
 
 class FeatherstoneIntegrator(Integrator):
@@ -1528,7 +1510,9 @@ class FeatherstoneIntegrator(Integrator):
 
         if model.body_count:
             # TODO use requires_grad here?
-            self.body_I_m = wp.empty((model.body_count,), dtype=wp.spatial_matrix, device=model.device)
+            self.body_I_m = wp.empty(
+                (model.body_count,), dtype=wp.spatial_matrix, device=model.device, requires_grad=model.requires_grad
+            )
             wp.launch(
                 compute_spatial_inertia,
                 model.body_count,
@@ -1536,7 +1520,9 @@ class FeatherstoneIntegrator(Integrator):
                 outputs=[self.body_I_m],
                 device=model.device,
             )
-            self.body_X_com = wp.empty((model.body_count,), dtype=wp.transform, device=model.device)
+            self.body_X_com = wp.empty(
+                (model.body_count,), dtype=wp.transform, device=model.device, requires_grad=model.requires_grad
+            )
             wp.launch(
                 compute_com_transforms,
                 model.body_count,
@@ -1639,7 +1625,6 @@ class FeatherstoneIntegrator(Integrator):
             # articulations
 
             if model.joint_count:
-
                 # evaluate body transforms
                 wp.launch(
                     eval_rigid_fk,
@@ -1915,74 +1900,8 @@ class FeatherstoneIntegrator(Integrator):
                     device=model.device,
                 )
 
-                wp.launch(
-                    eval_rigid_fk,
-                    dim=model.articulation_count,
-                    inputs=[
-                        model.articulation_start,
-                        model.joint_type,
-                        model.joint_parent,
-                        model.joint_child,
-                        model.joint_q_start,
-                        state_out.joint_q,
-                        model.joint_X_p,
-                        model.joint_X_c,
-                        self.body_X_com,
-                        model.joint_axis,
-                        model.joint_axis_start,
-                        model.joint_axis_dim,
-                    ],
-                    outputs=[state_out.body_q, state_aug.body_q_com],
-                    device=model.device,
-                )
-
-                # compute body_qd
-                state_aug.body_f_s.zero_()
-                wp.launch(
-                    eval_rigid_id,
-                    dim=model.articulation_count,
-                    inputs=[
-                        model.articulation_start,
-                        model.joint_type,
-                        model.joint_parent,
-                        model.joint_child,
-                        model.joint_q_start,
-                        model.joint_qd_start,
-                        state_out.joint_q,
-                        state_out.joint_qd,
-                        model.joint_axis,
-                        model.joint_axis_start,
-                        model.joint_axis_dim,
-                        self.body_I_m,
-                        state_out.body_q,
-                        state_aug.body_q_com,
-                        model.joint_X_p,
-                        model.joint_X_c,
-                        model.gravity,
-                    ],
-                    outputs=[
-                        state_aug.joint_S_s,
-                        state_aug.body_I_s,
-                        state_aug.body_v_s,
-                        state_aug.body_f_s,
-                        state_aug.body_a_s,
-                    ],
-                    device=model.device,
-                )
-
-                # body velocity in inertial frame
-                wp.launch(
-                    kernel=eval_body_inertial_velocities,
-                    dim=model.body_count,
-                    inputs=[
-                        state_out.body_q,
-                        state_aug.body_v_s,
-                    ],
-                    outputs=[
-                        state_out.body_qd,
-                    ],
-                    device=model.device,
-                )
+                # update maximal coordinates
+                eval_fk(model, state_out.joint_q, state_out.joint_qd, None, state_out)
 
             self.integrate_particles(model, state_in, state_out, dt)
 

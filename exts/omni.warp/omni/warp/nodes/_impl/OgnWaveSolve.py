@@ -7,18 +7,17 @@
 
 """Node creating a grid geometry simulated with a wave equation solver."""
 
-from math import sqrt
 import traceback
+from math import sqrt
 
 import numpy as np
 import omni.graph.core as og
 import omni.timeline
-import warp as wp
-
 import omni.warp.nodes
 from omni.warp.nodes._impl.kernels.grid_create import grid_create_launch_kernel
 from omni.warp.nodes.ogn.OgnWaveSolveDatabase import OgnWaveSolveDatabase
 
+import warp as wp
 
 PROFILING = False
 
@@ -384,7 +383,7 @@ class OgnWaveSolve:
 
     @staticmethod
     def compute(db: OgnWaveSolveDatabase) -> None:
-        device = wp.get_device("cuda:0")
+        device = omni.warp.nodes.device_get_cuda_compute()
 
         try:
             with wp.ScopedDevice(device):

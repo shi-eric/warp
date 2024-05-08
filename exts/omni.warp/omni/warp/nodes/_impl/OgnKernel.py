@@ -13,8 +13,7 @@ from typing import Tuple
 import omni.graph.core as og
 import omni.graph.tools.ogn as ogn
 import omni.timeline
-import warp as wp
-
+from omni.warp.nodes._impl.attributes import attr_join_name
 from omni.warp.nodes._impl.kernel import (
     EXPLICIT_SOURCE,
     InternalStateBase,
@@ -26,9 +25,9 @@ from omni.warp.nodes._impl.kernel import (
     validate_input_arrays,
     write_output_attrs,
 )
-from omni.warp.nodes._impl.attributes import attr_join_name
 from omni.warp.nodes.ogn.OgnKernelDatabase import OgnKernelDatabase
 
+import warp as wp
 
 QUIET_DEFAULT = wp.config.quiet
 
@@ -47,9 +46,7 @@ class InternalState(InternalStateBase):
         super().__init__()
 
         self.attr_tracking = omni.warp.nodes.AttrTracking(
-            (
-                "dimCount",
-            ),
+            ("dimCount",),
         )
 
     def needs_initialization(
@@ -125,21 +122,21 @@ def infer_kernel_shape(
 
     try:
         value = getattr(db.inputs, source)
-    except AttributeError:
+    except AttributeError as e:
         raise RuntimeError(
             "The attribute '{}' used to source the dimension doesn't exist.".format(
                 attr_join_name(ATTR_PORT_TYPE_INPUT, source)
             )
-        )
+        ) from e
 
     try:
         return (value.shape[0],)
-    except AttributeError:
+    except AttributeError as e:
         raise RuntimeError(
             "The attribute '{}' used to source the dimension isn't an array.".format(
                 attr_join_name(ATTR_PORT_TYPE_INPUT, source)
             )
-        )
+        ) from e
 
 
 def compute(db: OgnKernelDatabase, device: wp.context.Device) -> None:
@@ -204,18 +201,22 @@ class OgnKernel:
         # Populate the devices tokens.
         attr = og.Controller.attribute("inputs:device", node)
         if attr.get_metadata(ogn.MetadataKeys.ALLOWED_TOKENS) is None:
-            attr.set_metadata(ogn.MetadataKeys.ALLOWED_TOKENS, ",".join(["cpu", "cuda:0"]))
+            cuda_devices = [x.alias for x in wp.get_cuda_devices()]
+            attr.set_metadata(ogn.MetadataKeys.ALLOWED_TOKENS, ",".join(["cpu", "cuda"] + cuda_devices))
 
     @staticmethod
     def compute(db: OgnKernelDatabase) -> None:
         try:
-            device = wp.get_device(db.inputs.device)
+            if db.inputs.device == "cuda":
+                device = omni.warp.nodes.device_get_cuda_compute()
+            else:
+                device = wp.get_device(db.inputs.device)
         except Exception:
             # Fallback to a default device.
             # This can happen due to a scene being authored on a device
             # (e.g.: `cuda:1`) that is not available to another user opening
             # that same scene.
-            device = wp.get_device("cuda:0")
+            device = omni.warp.nodes.device_get_cuda_compute()
 
         try:
             with wp.ScopedDevice(device):

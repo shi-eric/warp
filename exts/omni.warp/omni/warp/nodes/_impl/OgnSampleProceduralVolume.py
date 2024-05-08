@@ -10,11 +10,10 @@
 import traceback
 
 import omni.graph.core as og
-import warp as wp
-
 import omni.warp.nodes
 from omni.warp.nodes.ogn.OgnSampleProceduralVolumeDatabase import OgnSampleProceduralVolumeDatabase
 
+import warp as wp
 
 MIN_RES = 8
 
@@ -149,7 +148,7 @@ class OgnSampleProceduralVolume:
 
     @staticmethod
     def compute(db: OgnSampleProceduralVolumeDatabase) -> None:
-        device = wp.get_device("cuda:0")
+        device = omni.warp.nodes.device_get_cuda_compute()
 
         try:
             with wp.ScopedDevice(device):

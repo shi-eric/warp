@@ -15,7 +15,7 @@ Below are some examples of simulations implemented using Warp:
 Quickstart
 ----------
 
-Warp supports Python versions 3.7 onwards. It can run on x86-64 and ARMv8 CPUs on Windows, Linux, and macOS. GPU support requires a CUDA-capable NVIDIA GPU and driver (minimum GeForce GTX 9xx).
+Python version 3.9 or newer is recommended. Warp can run on x86-64 and ARMv8 CPUs on Windows, Linux, and macOS. GPU support requires a CUDA-capable NVIDIA GPU and driver (minimum GeForce GTX 9xx).
 
 The easiest way to install Warp is from `PyPI <https://pypi.org/project/warp-lang>`_:
 
@@ -261,6 +261,7 @@ Please see the following resources for additional background on Warp:
    Presentation <https://www.nvidia.com/en-us/on-demand/session/gtcspring21-s31838>`_
 -  `SIGGRAPH Asia 2021 Differentiable Simulation
    Course <https://dl.acm.org/doi/abs/10.1145/3476117.3483433>`_
+-  `GTC 2024 Presentation <https://www.nvidia.com/en-us/on-demand/session/gtc24-s63345>`_
 
 The underlying technology in Warp has been used in a number of research
 projects at NVIDIA including the following publications:
@@ -294,6 +295,15 @@ If you use Warp in your research please use the following citation:
         howpublished = {\url{https://github.com/nvidia/warp}}
     }
 
+Support
+-------
+
+Problems, questions, and feature requests can be opened on
+`GitHub Issues <https://github.com/NVIDIA/warp/issues>`_.
+
+The Warp team also monitors the **#warp** channel on the public
+`Omniverse Discord <https://discord.com/invite/nvidiaomniverse>`_ server, come chat to us!
+
 License
 -------
 
@@ -310,14 +320,21 @@ Full Table of Contents
     installation
     basics
     modules/devices
-    modules/allocators
-    modules/concurrency
+    modules/differentiability
     modules/generics
     modules/interoperability
     configuration
     debugging
     limitations
     faq
+
+.. toctree::
+    :maxdepth: 2
+    :caption: Advanced Topics
+
+    modules/allocators
+    modules/concurrency
+    profiling
 
 .. toctree::
     :maxdepth: 2

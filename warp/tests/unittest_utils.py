@@ -7,28 +7,30 @@
 
 import ctypes
 import ctypes.util
+import importlib
 import os
 import sys
 import time
 import unittest
+from typing import Optional
 
 import numpy as np
 
 import warp as wp
 
-try:
-    import pxr  # noqa: F401
-
-    USD_AVAILABLE = True
-except ImportError as e:
-    USD_AVAILABLE = False
-    print(f"Skipping USD tests for reason: {e}")
+pxr = importlib.util.find_spec("pxr")
+USD_AVAILABLE = pxr is not None
 
 # default test mode (see get_test_devices())
 #   "basic" - only run on CPU and first GPU device
 #   "unique" - run on CPU and all unique GPU arches
+#   "unique_or_2x" - run on CPU and all unique GPU arches. If there is a single GPU arch, add a second GPU if it exists.
 #   "all" - run on all devices
-test_mode = "unique"
+test_mode = "unique_or_2x"
+
+coverage_enabled = False
+coverage_temp_dir = None
+coverage_branch = None
 
 try:
     if sys.platform == "win32":
@@ -40,11 +42,19 @@ except OSError:
     LIBC = None
 
 
-def get_unique_cuda_test_devices(mode=None):
-    """Returns a list of unique CUDA devices according to the CUDA arch.
+def get_selected_cuda_test_devices(mode: Optional[str] = None):
+    """Returns a list of CUDA devices according the selected ``mode`` behavior.
 
     If ``mode`` is ``None``, the ``global test_mode`` value will be used and
     this list will be a subset of the devices returned from ``get_test_devices()``.
+
+    Args:
+        mode: ``"basic"``, returns a list containing up to a single CUDA device.
+          ``"unique"``, returns a list containing no more than one device of
+          every CUDA architecture on the system.
+          ``"unique_or_2x"`` behaves like ``"unique"`` but adds up to one
+          additional CUDA device if the system only devices of a single CUDA
+          architecture.
     """
 
     if mode is None:
@@ -52,26 +62,39 @@ def get_unique_cuda_test_devices(mode=None):
         mode = test_mode
 
     if mode == "basic":
-        cuda_devices = [wp.get_device("cuda:0")]
-    else:
-        cuda_devices = wp.get_cuda_devices()
+        if wp.is_cuda_available():
+            return [wp.get_device("cuda:0")]
+        else:
+            return []
 
-    unique_cuda_devices = {}
+    cuda_devices = wp.get_cuda_devices()
+    first_cuda_devices = {}
+
     for d in cuda_devices:
-        if d.arch not in unique_cuda_devices:
-            unique_cuda_devices[d.arch] = d
+        if d.arch not in first_cuda_devices:
+            first_cuda_devices[d.arch] = d
 
-    return list(unique_cuda_devices.values())
+    selected_cuda_devices = list(first_cuda_devices.values())
+
+    if mode == "unique_or_2x" and len(selected_cuda_devices) == 1 and len(cuda_devices) > 1:
+        for d in cuda_devices:
+            if d not in selected_cuda_devices:
+                selected_cuda_devices.append(d)
+                break
+
+    return selected_cuda_devices
 
 
-def get_test_devices(mode=None):
+def get_test_devices(mode: Optional[str] = None):
     """Returns a list of devices based on the mode selected.
 
     Args:
-        mode (str, optional): The testing mode to specify which devices to include. If not provided or ``None``, the
+        mode: The testing mode to specify which devices to include. If not provided or ``None``, the
           ``global test_mode`` value will be used.
-          "basic" (default): Returns the CPU and the first GPU device when available.
+          "basic": Returns the CPU and the first GPU device when available.
           "unique": Returns the CPU and all unique GPU architectures.
+          "unique_or_2x" (default): Behaves like "unique" but adds up to one additional CUDA device
+            if the system only devices of a single CUDA architecture.
           "all": Returns all available devices.
     """
     if mode is None:
@@ -80,23 +103,22 @@ def get_test_devices(mode=None):
 
     devices = []
 
-    # only run on CPU and first GPU device
     if mode == "basic":
+        # only run on CPU and first GPU device
         if wp.is_cpu_available():
             devices.append(wp.get_device("cpu"))
         if wp.is_cuda_available():
             devices.append(wp.get_device("cuda:0"))
-
-    # run on CPU and all unique GPU arches
-    elif mode == "unique":
+    elif mode == "unique" or mode == "unique_or_2x":
+        # run on CPU and a subset of GPUs
         if wp.is_cpu_available():
             devices.append(wp.get_device("cpu"))
-
-        devices.extend(get_unique_cuda_test_devices())
-
-    # run on all devices
+        devices.extend(get_selected_cuda_test_devices(mode))
     elif mode == "all":
+        # run on all devices
         devices = wp.get_devices()
+    else:
+        raise ValueError(f"Unknown test mode selected: {mode}")
 
     return devices
 
@@ -124,7 +146,11 @@ class StdOutCapture:
         import tempfile
 
         self.tempfile = io.TextIOWrapper(
-            tempfile.TemporaryFile(buffering=0), encoding="utf-8", errors="replace", newline="", write_through=True
+            tempfile.TemporaryFile(buffering=0),
+            encoding="utf-8",
+            errors="replace",
+            newline="",
+            write_through=True,
         )
 
         os.dup2(self.tempfile.fileno(), self.saved.fileno())
@@ -184,7 +210,6 @@ def assert_array_equal(result: wp.array, expect: wp.array):
 
 
 def assert_np_equal(result: np.ndarray, expect: np.ndarray, tol=0.0):
-
     if tol != 0.0:
         # TODO: Get all tests working without the .flatten()
         np.testing.assert_allclose(result.flatten(), expect.flatten(), atol=tol, equal_nan=True)
@@ -238,7 +263,11 @@ def add_function_test(cls, name, func, devices=None, check_output=True, **kwargs
                     create_test_func(func, device, check_output, **kwargs),
                 )
     else:
-        setattr(cls, name + "_" + sanitize_identifier(devices), create_test_func(func, devices, check_output, **kwargs))
+        setattr(
+            cls,
+            name + "_" + sanitize_identifier(devices),
+            create_test_func(func, devices, check_output, **kwargs),
+        )
 
 
 def add_kernel_test(cls, kernel, dim, name=None, expect=None, inputs=None, devices=None):
@@ -383,7 +412,11 @@ def write_junit_results(
         test_status = test_data[2]
 
         test_case = ET.SubElement(
-            root, "testcase", classname=test.__class__.__name__, name=test._testMethodName, time=f"{test_duration:.3f}"
+            root,
+            "testcase",
+            classname=test.__class__.__name__,
+            name=test._testMethodName,
+            time=f"{test_duration:.3f}",
         )
 
         if test_status == "FAIL":

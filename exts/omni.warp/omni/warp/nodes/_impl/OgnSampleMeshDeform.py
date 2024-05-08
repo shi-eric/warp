@@ -10,11 +10,10 @@
 import traceback
 
 import omni.graph.core as og
-import warp as wp
-
 import omni.warp.nodes
 from omni.warp.nodes.ogn.OgnSampleMeshDeformDatabase import OgnSampleMeshDeformDatabase
 
+import warp as wp
 
 PROFILING = False
 
@@ -77,7 +76,7 @@ class OgnSampleMeshDeform:
 
     @staticmethod
     def compute(db: OgnSampleMeshDeformDatabase) -> None:
-        device = wp.get_device("cuda:0")
+        device = omni.warp.nodes.device_get_cuda_compute()
 
         try:
             with wp.ScopedDevice(device):

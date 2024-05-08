@@ -10,11 +10,11 @@
 import traceback
 
 import omni.graph.core as og
-import warp as wp
-
 import omni.warp.nodes
+from omni.warp.nodes import from_omni_graph_ptr
 from omni.warp.nodes.ogn.OgnMeshFromVolumeDatabase import OgnMeshFromVolumeDatabase
 
+import warp as wp
 
 PROFILING = False
 
@@ -113,16 +113,16 @@ def compute(db: OgnMeshFromVolumeDatabase) -> None:
 
     if db.inputs.data.shape[0] != size:
         raise RuntimeError(
-            "The length of the input array data doesn't match with "
-            "the given size: `{} != {}`.".format(db.inputs.data.shape[0], size)
+            "The length of the input array data doesn't match with " "the given size: `{} != {}`.".format(
+                db.inputs.data.shape[0], size
+            )
         )
 
     # Alias the incoming memory to a Warp array.
-    data = wp.from_ptr(
+    data = from_omni_graph_ptr(
         db.inputs.data.memory,
-        size,
-        dtype=float,
         shape=dims,
+        dtype=float,
     )
 
     with omni.warp.nodes.NodeTimer("surface_mesh", db, active=PROFILING):
@@ -203,7 +203,7 @@ class OgnMeshFromVolume:
 
     @staticmethod
     def compute(db: OgnMeshFromVolumeDatabase) -> None:
-        device = wp.get_device("cuda:0")
+        device = omni.warp.nodes.device_get_cuda_compute()
 
         try:
             with wp.ScopedDevice(device):

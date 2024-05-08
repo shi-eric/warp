@@ -45,7 +45,7 @@ def randvals(rng, shape, dtype):
     return rng.integers(1, high=5, size=shape, dtype=dtype)
 
 
-kernel_cache = dict()
+kernel_cache = {}
 
 
 def getkernel(func, suffix=""):
@@ -1882,7 +1882,7 @@ def test_constants(test, device, dtype, register_kernels=False):
     if register_kernels:
         return
 
-    wp.launch(kernel, dim=1, inputs=[])
+    wp.launch(kernel, dim=1, inputs=[], device=device)
 
 
 def test_minmax(test, device, dtype, register_kernels=False):

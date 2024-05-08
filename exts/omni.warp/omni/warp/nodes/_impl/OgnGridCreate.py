@@ -9,14 +9,12 @@
 
 import traceback
 
-import numpy as np
 import omni.graph.core as og
-import warp as wp
-
 import omni.warp.nodes
 from omni.warp.nodes._impl.kernels.grid_create import grid_create_launch_kernel
 from omni.warp.nodes.ogn.OgnGridCreateDatabase import OgnGridCreateDatabase
 
+import warp as wp
 
 PROFILING = False
 
@@ -100,7 +98,7 @@ class OgnGridCreate:
 
     @staticmethod
     def compute(db: OgnGridCreateDatabase) -> None:
-        device = wp.get_device("cuda:0")
+        device = omni.warp.nodes.device_get_cuda_compute()
 
         try:
             with wp.ScopedDevice(device):
