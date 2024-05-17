@@ -7,10 +7,11 @@
 
 name: Deploy Sphinx documentation to Pages
 
-# Runs on pushes targeting the default branch
+# Runs on every tag created starting with v
 on:
   push:
-    branches: [main]
+    tags:
+      - v*
 
 jobs:
   build:
@@ -23,7 +24,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
