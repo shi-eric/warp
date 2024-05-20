@@ -1,7 +1,9 @@
 Generics
 ========
 
-Warp supports writing generic kernels and functions, which act as templates that can be instantiated with different concrete types.  This allows you to write code once and reuse it with multiple data types.
+Warp supports writing generic kernels and functions, which act as templates that can be instantiated with different concrete types.
+This allows you to write code once and reuse it with multiple data types.
+The concepts discussed on this page also apply to :ref:`Runtime Kernel Creation`.
 
 Generic Kernels
 ---------------
@@ -149,6 +151,7 @@ These instances are treated as regular kernels, not generic.  This means that la
     wp.launch(scale_f32, dim=n, inputs=[x32, 3])
     wp.launch(scale_f64, dim=n, inputs=[x64, 3])
 
+.. _Generic Functions:
 
 Generic Functions
 -----------------

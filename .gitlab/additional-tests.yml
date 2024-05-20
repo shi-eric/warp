@@ -6,93 +6,36 @@
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 # ==============================================================================
-# Debug Build and Testing Child Pipeline
+# Additional Tests Child Pipeline
 #
-# This child pipeline is used to build and test Warp when the library is built
-# in debug mode.
+# This child pipeline is used to test Warp on additional Python versions.
+# It uses the (release mode) binaries from the main pipeline.
 #
 # This pipeline can be triggered from the main GitLab pipeline under specific
 # circumstances. See the child pipelines defined in /.gitlab-ci.yml for the
 # trigger conditions. It is not run in merge request pipelines.
 # ==============================================================================
 
-include: /.gitlab-ci/common.yml
+include: /.gitlab/common.yml
 
-# ==============================================================================
-# Build Jobs (Debug)
-# ==============================================================================
-
-# Hide this job for now until debug aarch64 builds work
-.linux-aarch64 build:
-  stage: build
-  image: urm.nvidia.com/ct-omniverse-docker-local/u18-aarch64-builder:3.2.0
-  extends:
-    - .save_warp_bin_artifact
-  script:
-    - ./tools/ci/building/build-linux-x86_64/build.sh --debug --no-docker # We are already using the builder image
-  tags:
-    - arch/arm
-
-linux-x86_64 build:
-  stage: build
-  image: urm.nvidia.com/ct-omniverse-docker/centos7-gcc10-builder:3.2.0
-  extends:
-    - .save_warp_bin_artifact
-    - .runner-build-linux-x86_64
-  script:
-    - ./tools/ci/building/build-linux-x86_64/build.sh --debug --no-docker # We are already using the builder image
-
-windows-x86_64 build:
-  stage: build
-  extends:
-    - .save_warp_bin_artifact
-    - .runner-build-windows-x86_64
-  before_script:
-    - powershell -command "Get-Volume | Format-Table -AutoSize"
-  script:
-    - ./tools/ci/building/build-windows-x86_64/build.bat --debug
-
-mac-x86_64 build:
-  stage: build
-  extends:
-    - .save_warp_bin_artifact
-    - .runner-build-macos-universal
-    - .macos_warp_tags
-  script:
-    - ./tools/ci/building/build-linux-x86_64/build.sh --debug
-
-# ==============================================================================
-# Unit Testing Jobs (Debug)
-#
-# Unlike the main testing jobs defined in /.gitlab-ci.yml, the debug jobs don't
-# generate code coverage reports.
-# ==============================================================================
-
-# Hide this job for now until debug aarch64 builds work
-.linux-aarch64 test:
-  stage: test
-  image: ubuntu:22.04
-  needs: [linux-aarch64 build]
-  extends:
-    - .save_test_report_artifact
-  before_script:
-    - echo -e "\\e[0Ksection_start:`date +%s`:install_dependencies[collapsed=true]\\r\\e[0KInstalling dependencies"
-    - !reference [.snippets, install-python+warp-aarch64]
-    - echo -e "\\e[0Ksection_end:`date +%s`:install_dependencies\\r\\e[0K"
-  script:
-    - python -m warp.tests --junit-report-xml rspec.xml -s autodetect
-  tags:
-    - arch/arm
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "parent_pipeline"
 
 linux-x86_64 test:
   stage: test
-  needs: [linux-x86_64 build]
+  needs:
+    - pipeline: $PARENT_PIPELINE_ID
+      job: linux-x86_64 build
   extends:
     - .omni_nvks_gpu_2x
     - .save_test_report_artifact
   before_script:
     - echo -e "\\e[0Ksection_start:`date +%s`:install_dependencies[collapsed=true]\\r\\e[0KInstalling dependencies"
     - df -h
+      # Move compiled binaries out of platform-specific directory
+    - mv warp/bin/linux-x86_64/warp.so warp/bin/
+    - mv warp/bin/linux-x86_64/warp-clang.so warp/bin/
     - tools/packman/packman install -l _build/target-deps/python python ${DEFAULT_PYTHON}-linux-x86_64
     - export PATH="$CUDA_BIN:$PATH"
     - $PYTHON -m venv _venv
@@ -108,7 +51,9 @@ linux-x86_64 test:
 
 windows-x86_64 test:
   stage: test
-  needs: [windows-x86_64 build]
+  needs:
+    - pipeline: $PARENT_PIPELINE_ID
+      job: windows-x86_64 build
   extends:
     - .runner-test-windows-x86_64-gpu
     - .save_test_report_artifact
@@ -131,9 +76,28 @@ windows-x86_64 test:
     - os/windows
     - gpu/2x-A5000
 
+linux-aarch64 test:
+  stage: test
+  image: ubuntu:22.04
+  needs: 
+    - pipeline: $PARENT_PIPELINE_ID
+      job: linux-aarch64 build
+  extends:
+    - .save_test_report_artifact
+  before_script:
+    - echo -e "\\e[0Ksection_start:`date +%s`:install_dependencies[collapsed=true]\\r\\e[0KInstalling dependencies"
+    - !reference [.snippets, install-python+warp-aarch64]
+    - echo -e "\\e[0Ksection_end:`date +%s`:install_dependencies\\r\\e[0K"
+  script:
+    - python -m warp.tests --junit-report-xml rspec.xml -s autodetect
+  tags:
+    - arch/arm
+
 mac-x86_64 test:
   stage: test
-  needs: [mac-x86_64 build]
+  needs: 
+    - pipeline: $PARENT_PIPELINE_ID
+      job: mac-x86_64 build
   extends:
     - .runner-test-macos-universal
     - .macos_warp_tags
@@ -141,7 +105,7 @@ mac-x86_64 test:
   before_script:
     - echo -e "\\e[0Ksection_start:`date +%s`:install_dependencies[collapsed=true]\\r\\e[0KInstalling dependencies"
     - !reference [.snippets, install-python+warp-macos]
-    - python -m pip install --upgrade usd-core
+    - python -m pip install --upgrade usd-core coverage[toml]
     - echo -e "\\e[0Ksection_end:`date +%s`:install_dependencies\\r\\e[0K"
   script:
-    - python -m warp.tests --junit-report-xml rspec.xml -s autodetect
+    - python -m warp.tests --junit-report-xml rspec.xml --coverage --coverage-xml coverage.xml -s autodetect
