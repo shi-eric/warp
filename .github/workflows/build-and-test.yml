@@ -2,10 +2,6 @@ name: Build and Test Warp
 
 on:
   workflow_call:
-    secrets:
-      CODECOV_TOKEN:
-        description: "A token passed from the caller workflow"
-        required: true
 
 jobs:
   build-warp-windows:
