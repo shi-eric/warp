@@ -118,7 +118,7 @@ jobs:
           $wheel = Get-ChildItem -Path ./dist -Filter "*.whl" | Select-Object -First 1
           pip install $wheel.FullName
       - name: Run Tests
-        run: python -m warp.tests --junit-report-xml rspec.xml -s autodetect
+        run: python -m warp.tests --junit-report-xml rspec.xml --coverage --coverage-xml coverage.xml -s autodetect
       - name: Test Summary
         uses: test-summary/action@v2.3
         with:
@@ -145,7 +145,7 @@ jobs:
           pip install --upgrade numpy coverage[toml] usd-core
           pip install ./dist/*.whl
       - name: Run Tests
-        run: python -m warp.tests --junit-report-xml rspec.xml -s autodetect
+        run: python -m warp.tests --junit-report-xml rspec.xml --coverage --coverage-xml coverage.xml -s autodetect
       - name: Test Summary
         uses: test-summary/action@v2.3
         with:
