@@ -156,11 +156,14 @@ jobs:
   test-warp-macos:
     runs-on: macos-latest
     needs: build-warp-macos
+    env:
+      OS: macos-latest
+      PYTHON_VERSION: 3.11
     steps:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
       - name: Download Warp build artifact
         uses: actions/download-artifact@v4
         with:
@@ -172,10 +175,17 @@ jobs:
           pip install --upgrade numpy coverage[toml] usd-core
           pip install ./dist/*.whl
       - name: Run Tests
-        run: python -m warp.tests --junit-report-xml rspec.xml -s autodetect
+        run: python -m warp.tests --junit-report-xml rspec.xml --coverage --coverage-xml coverage.xml -s autodetect
       - name: Test Summary
         uses: test-summary/action@v2.3
         with:
           paths: "rspec.xml"
           show: "fail"
         if: always()
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4.0.1
+        with:
+          env_vars: OS,PYTHON_VERSION
+          files: ./coverage.xml
+          flags: unittests
+          token: ${{ secrets.CODECOV_TOKEN }}
