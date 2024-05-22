@@ -2,6 +2,10 @@ name: Build and Test Warp
 
 on:
   workflow_call:
+    secrets:
+      CODECOV_TOKEN:
+        description: "A token passed from the caller workflow"
+        required: true
 
 jobs:
   build-warp-windows:
@@ -181,6 +185,4 @@ jobs:
           env_vars: OS,PYTHON_VERSION
           files: ./coverage.xml
           flags: unittests
-          token: ${{ secrets.codecov_token }}
-        env:
-          CODECOV_TOKEN: ${{ secrets.codecov_token }}
+          token: ${{ secrets.CODECOV_TOKEN }}
