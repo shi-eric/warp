@@ -14,4 +14,4 @@ jobs:
   build-and-test:
     uses: ./.github/workflows/build-and-test.yml
     secrets:
-      access-token: ${{ secrets.CODECOV_TOKEN }}
+      codecov_token: ${{ secrets.CODECOV_TOKEN }}

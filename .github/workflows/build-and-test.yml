@@ -181,6 +181,6 @@ jobs:
           env_vars: OS,PYTHON_VERSION
           files: ./coverage.xml
           flags: unittests
-          token: ${{ secrets.CODECOV_TOKEN }}
+          token: ${{ secrets.codecov_token }}
         env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          CODECOV_TOKEN: ${{ secrets.codecov_token }}
