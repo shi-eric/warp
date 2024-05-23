@@ -2,6 +2,10 @@ name: Build and Test Warp
 
 on:
   workflow_call:
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: 3.11
 
 jobs:
   build-warp-windows:
@@ -14,7 +18,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -41,7 +45,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -66,7 +70,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -83,6 +87,8 @@ jobs:
   test-warp-windows:
     runs-on: windows-latest
     needs: build-warp-windows
+    env:
+      OS: windows-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -91,7 +97,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
       - name: Download Warp build artifact
         uses: actions/download-artifact@v4
         with:
@@ -110,10 +116,19 @@ jobs:
           paths: "rspec.xml"
           show: "fail"
         if: always()
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4.4.0
+        with:
+          env_vars: OS,PYTHON_VERSION
+          files: ./coverage.xml
+          flags: unittests
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   test-warp-ubuntu:
     runs-on: ubuntu-latest
     needs: build-warp-ubuntu
+    env:
+      OS: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -122,7 +137,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ env.PYTHON_VERSION }}
       - name: Download Warp build artifact
         uses: actions/download-artifact@v4
         with:
@@ -141,13 +156,19 @@ jobs:
           paths: "rspec.xml"
           show: "fail"
         if: always()
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v4.4.0
+        with:
+          env_vars: OS,PYTHON_VERSION
+          files: ./coverage.xml
+          flags: unittests
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   test-warp-macos:
     runs-on: macos-latest
     needs: build-warp-macos
     env:
       OS: macos-latest
-      PYTHON_VERSION: 3.11
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
