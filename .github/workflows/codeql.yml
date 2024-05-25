@@ -16,7 +16,7 @@ on:
       - release-*
       - gh-workflow-expts
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "gh-workflow-expts" ]
   schedule:
     - cron: "45 9 * * *"
   workflow_dispatch:
