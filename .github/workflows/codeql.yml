@@ -1,3 +1,10 @@
+# Copyright (c) 2024 NVIDIA CORPORATION.  All rights reserved.
+# NVIDIA CORPORATION and its licensors retain all intellectual property
+# and proprietary rights in and to this software, related documentation
+# and any modifications thereto.  Any use, reproduction, disclosure or
+# distribution of this software and related documentation without an express
+# license agreement from NVIDIA CORPORATION is strictly prohibited.
+
 name: "CodeQL"
 
 on:
@@ -6,7 +13,7 @@ on:
   pull_request:
     branches: [ "gh-workflow-expts" ]
   schedule:
-    - cron: '37 10 * * 3'
+    - cron: "45 9 * * *"
   workflow_dispatch:
 
 env:
@@ -33,7 +40,15 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-
+    - if: matrix.build-mode == 'manual'
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    - if: matrix.build-mode == 'manual'
+      run: |
+        python -m pip install --upgrade pip
+        pip install --upgrade numpy
+        tools/packman/packman install -l _build/target-deps/cuda cuda 11.8.0_520.61-d8963068-linux-x86_64
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3
@@ -47,16 +62,7 @@ jobs:
         # For more details on CodeQL's query packs, refer to: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
         # queries: security-extended,security-and-quality
     - if: matrix.build-mode == 'manual'
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-    - if: matrix.build-mode == 'manual'
       run: |
-        python -m pip install --upgrade pip
-        pip install --upgrade numpy
-    - if: matrix.build-mode == 'manual'
-      run: |
-          tools/packman/packman install -l _build/target-deps/cuda cuda 11.8.0_520.61-d8963068-linux-x86_64
           python build_lib.py --cuda_path=_build/target-deps/cuda 
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
