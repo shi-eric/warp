@@ -9,9 +9,14 @@ name: "CodeQL"
 
 on:
   push:
-    branches: [ "gh-workflow-expts" ]
+    tags:
+      - v*
+    branches:
+      - main
+      - release-*
+      - gh-workflow-expts
   pull_request:
-    branches: [ "gh-workflow-expts" ]
+    branches: [ "main" ]
   schedule:
     - cron: "45 9 * * *"
   workflow_dispatch:
@@ -25,45 +30,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     permissions:
-      # required for all workflows
       security-events: write
-      # required to fetch internal or private CodeQL packs
       packages: read
     strategy:
       fail-fast: false
       matrix:
-        include:
-        - language: c-cpp
-          build-mode: manual
-        - language: python
-          build-mode: none
+        language: [python]
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-    - if: matrix.build-mode == 'manual'
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-    - if: matrix.build-mode == 'manual'
-      run: |
-        python -m pip install --upgrade pip
-        pip install --upgrade numpy
-        tools/packman/packman install -l _build/target-deps/cuda cuda 11.8.0_520.61-d8963068-linux-x86_64
-    # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v3
       with:
         languages: ${{ matrix.language }}
-        build-mode: ${{ matrix.build-mode }}
-        # If you wish to specify custom queries, you can do so here or in a config file.
-        # By default, queries listed here will override any specified in a config file.
-        # Prefix the list here with "+" to use these queries and those in the config file.
-
-        # For more details on CodeQL's query packs, refer to: https://docs.github.com/en/code-security/code-scanning/automatically-scanning-your-code-for-vulnerabilities-and-errors/configuring-code-scanning#using-queries-in-ql-packs
-        # queries: security-extended,security-and-quality
-    - if: matrix.build-mode == 'manual'
-      run: |
-          python build_lib.py --cuda_path=_build/target-deps/cuda 
+        queries: security-extended,security-and-quality
     - name: Perform CodeQL Analysis
       uses: github/codeql-action/analyze@v3
       with:
