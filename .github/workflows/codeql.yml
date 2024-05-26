@@ -14,12 +14,12 @@ on:
     branches:
       - main
       - release-*
-      - gh-workflow-expts
   pull_request:
-    branches: [ "main", "gh-workflow-expts" ]
+    branches:
+      - main
+      - release-*
   schedule:
     - cron: "45 9 * * *"
-  workflow_dispatch:
 
 env:
   PYTHON_VERSION: 3.11
