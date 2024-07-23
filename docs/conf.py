@@ -99,7 +99,7 @@ def linkcode_resolve(domain, info):
     filename = os.path.relpath(filename, start=os.path.dirname(wp.__file__))
     lines = f"#L{linenum}-L{linenum + len(source)}" if linenum else ""
 
-    return f"https://github.com/NVIDIA/warp/blob/v{version}/warp/{filename}{lines}"
+    return f"https://github.com/shi-eric/warp/blob/v{version}/warp/{filename}{lines}"
 
 
 # List of patterns, relative to source directory, that match files and
