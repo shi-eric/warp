@@ -299,34 +299,34 @@ add_builtin(
     In other words, it discards the integer part of ``x`` and is equivalent to ``x - trunc(x)``.""",
 )
 
-add_builtin(
-    "isfinite",
-    input_types={"a": Scalar},
-    value_type=builtins.bool,
-    group="Scalar Math",
-    doc="""Return ``True`` if ``a`` is a finite number, otherwise return ``False``.""",
-)
-add_builtin(
-    "isfinite",
-    input_types={"a": vector(length=Any, dtype=Scalar)},
-    value_type=builtins.bool,
-    group="Vector Math",
-    doc="Return ``True`` if all elements of the vector ``a`` are finite, otherwise return ``False``.",
-)
-add_builtin(
-    "isfinite",
-    input_types={"a": quaternion(dtype=Scalar)},
-    value_type=builtins.bool,
-    group="Vector Math",
-    doc="Return ``True`` if all elements of the quaternion ``a`` are finite, otherwise return ``False``.",
-)
-add_builtin(
-    "isfinite",
-    input_types={"a": matrix(shape=(Any, Any), dtype=Scalar)},
-    value_type=builtins.bool,
-    group="Vector Math",
-    doc="Return ``True`` if all elements of the matrix ``a`` are finite, otherwise return ``False``.",
-)
+# add_builtin(
+#    "isfinite",
+#    input_types={"a": Scalar},
+#    value_type=builtins.bool,
+#    group="Scalar Math",
+#    doc="""Return ``True`` if ``a`` is a finite number, otherwise return ``False``.""",
+# )
+# add_builtin(
+#    "isfinite",
+#    input_types={"a": vector(length=Any, dtype=Scalar)},
+#    value_type=builtins.bool,
+#    group="Vector Math",
+#    doc="Return ``True`` if all elements of the vector ``a`` are finite, otherwise return ``False``.",
+# )
+# add_builtin(
+#    "isfinite",
+#    input_types={"a": quaternion(dtype=Scalar)},
+#    value_type=builtins.bool,
+#    group="Vector Math",
+#    doc="Return ``True`` if all elements of the quaternion ``a`` are finite, otherwise return ``False``.",
+# )
+# add_builtin(
+#    "isfinite",
+#    input_types={"a": matrix(shape=(Any, Any), dtype=Scalar)},
+#    value_type=builtins.bool,
+#    group="Vector Math",
+#    doc="Return ``True`` if all elements of the matrix ``a`` are finite, otherwise return ``False``.",
+# )
 
 add_builtin(
     "isnan",
