@@ -1,4 +1,4 @@
-# CHANGELOG
+# Changelog
 
 ## [Unreleased] - 2024-??
 
