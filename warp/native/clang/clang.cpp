@@ -71,7 +71,7 @@
     extern "C" void __memset_pattern16(void *s, const void *pattern, size_t n);
 
 #else
-    // // Intel Mac's define bzero in libSystem.dylib
+    // x86_64 macOS (no longer supported, but kept for reference)
     extern "C" void __bzero(void *s, size_t n);
 
     extern "C" void _memset_pattern16(void *s, const void *pattern, size_t n);
@@ -466,7 +466,7 @@ WP_API int wp_load_obj(const char* object_file, const char* module_name)
                 SYMBOL(bzero),
                 SYMBOL(_bzero),
             #else
-                // Intel Mac
+                // x86_64 macOS (no longer supported)
                 SYMBOL(__bzero),
             #endif
             SYMBOL(memset_pattern16),
