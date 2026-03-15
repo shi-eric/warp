@@ -13,6 +13,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from statistics import median
+
 import warp as wp
 
 from ..benchmarks_utils import clear_kernel_cache
@@ -25,8 +27,8 @@ def array2d_augassign_kernel(x: wp.array2d(dtype=float), y: wp.array2d(dtype=flo
 
 
 class CompileModule:
-    repeat = 10  # Number of samples to run
-    number = 1  # Number of measurements to make between a single setup and teardown
+    repeat = 20  # Number of timing repetitions for statistical aggregation
+    number = 1  # Iterations of the benchmark function per timing measurement
 
     def setup(self):
         wp.init()
@@ -58,9 +60,9 @@ class RunForwardKernel:
             for _ in range(1000):
                 wp.launch(array2d_augassign_kernel, self.x.shape, inputs=[self.x, self.y], device="cuda:0")
 
-        average = sum(result.elapsed for result in timer.timing_results) / len(timer.timing_results)
+        median_elapsed = median(result.elapsed for result in timer.timing_results)
 
-        return average * 1e-3
+        return median_elapsed * 1e-3
 
     track_cuda.unit = "seconds"
 
@@ -89,8 +91,8 @@ class RunBackwardKernel:
                     device="cuda:0",
                 )
 
-        average = sum(result.elapsed for result in timer.timing_results) / len(timer.timing_results)
+        median_elapsed = median(result.elapsed for result in timer.timing_results)
 
-        return average * 1e-3
+        return median_elapsed * 1e-3
 
     track_cuda.unit = "seconds"

@@ -363,8 +363,10 @@ class BvhAABBQuery:
     params = [[0.002, 0.004, 0.008], [0, 8], ["cpu", "cuda"]]
     param_names = ["query_radius", "leaf_size", "device"]
 
-    number = 5
-    timeout = 120
+    number = 20
+    repeat = 20
+    warmup_time = 1.0
+    timeout = 180
 
     def setup(self, query_radius, leaf_size, device):
         with wp.ScopedDevice(device):
@@ -402,10 +404,7 @@ class BvhAABBQuery:
             bb_min = bounding_box[0]
             bb_max = bounding_box[1]
 
-            # Option A (no extra cast, if your NumPy supports dtype in Generator.random)
             query_points_np = bb_min + (bb_max - bb_min) * rand_eng.random((NUM_QUERY_POINTS, 3), dtype=np.float32)
-
-            # Option B (always works; uses uniform + cast)
 
             self.query_points = wp.array(query_points_np, dtype=wp.vec3)
 
@@ -531,8 +530,10 @@ class BvhRayQuery:
     params = [[480, 1080], [0, 8], ["cpu", "cuda"]]
     param_names = ["resolution", "leaf_size", "device"]
 
-    number = 5
-    timeout = 120
+    number = 20
+    repeat = 20
+    warmup_time = 1.0
+    timeout = 180
 
     def setup(self, resolution, leaf_size, device):
         cam_pos = wp.vec3(0.0, 0.75, 7.0)
@@ -596,10 +597,7 @@ class BvhRayQuery:
             bb_min = bounding_box[0]
             bb_max = bounding_box[1]
 
-            # Option A (no extra cast, if your NumPy supports dtype in Generator.random)
             query_points_np = bb_min + (bb_max - bb_min) * rand_eng.random((NUM_QUERY_POINTS, 3), dtype=np.float32)
-
-            # Option B (always works; uses uniform + cast)
 
             self.query_points = wp.array(query_points_np, dtype=wp.vec3)
 

@@ -50,7 +50,9 @@ class BvhBuild:
     param_names = ["method", "asset"]
 
     repeat = 100
-    number = 5
+    number = 15
+    warmup_time = 0.5
+    timeout = 300
 
     assets = ["bunny", "bear", "rocks"]
 
