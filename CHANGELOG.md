@@ -11,6 +11,10 @@
 - **Experimental**: Add cuBQL BVH backend for `wp.Mesh`, selectable via `bvh_constructor="cubql"`.
   Currently only supports `wp.mesh_query_ray()`. Point queries, AABB queries, grouped queries,
   and winding number queries are not yet supported ([GH-1286](https://github.com/NVIDIA/warp/issues/1286)).
+- Add auto-build of native libraries during `pip install .` from a source checkout via a custom PEP 517 build
+  backend. Build options can be passed using `-C` config settings, e.g.,
+  `pip install . -C warp-no-cuda=true -C warp-quick=true`
+  ([GH-1227](https://github.com/NVIDIA/warp/issues/1227)).
 
 ### Removed
 

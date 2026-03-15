@@ -27,7 +27,7 @@ from wheel.bdist_wheel import bdist_wheel
 # Parse --build-option arguments meant for the bdist_wheel command. We have to parse these
 # ourselves because when bdist_wheel runs it's too late to select a subset of libraries for package_data.
 parser = argparse.ArgumentParser()
-parser.add_argument("command")
+parser.add_argument("command", nargs="?", default="")
 parser.add_argument(
     "--platform",
     "-P",
@@ -115,17 +115,25 @@ def detect_warp_libraries():
                         detected_libraries.add(Library(file.name, "bin/" + platform_name + "/", p))
 
     if len(detected_libraries) == 0:
-        raise Exception("No libraries found in warp/bin. Please run build_lib.py first.")
+        return set()
 
     return detected_libraries
 
 
 detected_libraries = detect_warp_libraries()
+
+if args.command == "bdist_wheel" and not detected_libraries:
+    raise RuntimeError(
+        "No native libraries found in warp/bin/. "
+        "Run build_lib.py before building a wheel, "
+        "or use the PEP 517 build backend which builds automatically."
+    )
+
 detected_platforms = {lib.platform for lib in detected_libraries}
 
 wheel_platform = None  # The one platform for which we're building a wheel
 
-if args.command == "bdist_wheel":
+if args.command == "bdist_wheel" and detected_platforms:
     if args.platform != "":
         for p in platforms:
             if args.platform == p.name():
