@@ -4265,7 +4265,7 @@ def from_ptr(ptr, length, dtype=None, shape=None, device=None):
     .. deprecated::
         Use the :class:`array` constructor with a ``ptr`` argument instead.
 
-    For OmniGraph applications, use :func:`from_omni_graph_ptr`.
+    For OmniGraph applications, use :func:`warp.from_omni_graph_ptr`.
     To create an array from a C pointer, use the :class:`array` constructor
     with the ``ptr`` argument as a ``uint64`` representing the memory address.
 
@@ -6463,7 +6463,7 @@ class MeshQueryRay:
         normal (vec3f): Face normal.
 
     See Also:
-        :func:`mesh_query_ray`.
+        :func:`mesh_query_ray() <warp._src.lang.mesh_query_ray>`.
     """
 
     from warp._src.codegen import Var as _Var  # noqa: PLC0415

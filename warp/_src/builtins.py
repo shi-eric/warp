@@ -334,7 +334,7 @@ add_builtin(
 
     This is the most intuitive form of rounding in the colloquial sense, but can be slower than other options like
     :func:`~warp._src.lang.rint`.
-    Differs from :func:`numpy.round`, which behaves the same way as :func:`numpy.rint`.""",
+    Differs from :func:`numpy.round`, which behaves the same way as :obj:`numpy.rint`.""",
     is_differentiable=False,
 )
 
@@ -346,7 +346,7 @@ add_builtin(
     doc="""Compute the nearest integer value to ``x``, rounding halfway cases to nearest even integer.
 
     It is generally faster than :func:`~warp._src.lang.round`.
-    Equivalent to :func:`numpy.rint`.""",
+    Equivalent to :obj:`numpy.rint`.""",
     is_differentiable=False,
 )
 
@@ -359,7 +359,7 @@ add_builtin(
 
     In other words, it discards the fractional part of ``x``.
     It is similar to casting ``float(int(a))``, but preserves the negative sign when ``x`` is in the range [-0.0, -1.0).
-    Equivalent to :func:`numpy.trunc` and :func:`numpy.fix`.""",
+    Equivalent to :obj:`numpy.trunc` and :func:`numpy.fix`.""",
     is_differentiable=False,
 )
 
