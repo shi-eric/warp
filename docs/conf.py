@@ -14,6 +14,8 @@ import os
 import pkgutil
 import sys
 
+import re
+
 import docutils
 import sphinx
 from sphinx.ext.autosummary.generate import AutosummaryRenderer
@@ -92,18 +94,16 @@ nitpick_ignore_regex = [
     # Internal _src paths
     (r"py:class", r"warp\._src\..*"),
     # Ctypes-based geometric types that can't be documented as classes (vec*, mat*, quat, etc.)
-    (r"py:class", r"warp\.(vec\d*[ifd]?|mat\d+[ifd]?|quat[fd]?|spatial_vector[fd]?|transform[fd]?)"),
-    # Short names for the same ctypes types (when not fully qualified)
-    (r"py:class", r"(vec\d*[ifd]?|mat\d+[ifd]?|quat[fd]?|spatial_vector[fd]?|transform[fd]?)"),
+    (r"py:class", r"(warp\.)?(vec\d*[ihfd]?|mat\d+[ihfd]?|quat[hfd]?|spatial_(vector|matrix)[hfd]?|transform[hfd]?)"),
     # Type aliases (DeviceLike is Union[Device, str, None])
-    (r"py:class", r"warp\.DeviceLike"),
-    # Short type names used in FEM annotations (e.g., DeviceLike, Graph, Sample, Coords)
+    (r"py:class", r"(warp\.)?DeviceLike"),
+    # Type names used in FEM and internal annotations (e.g., Graph, Sample, Coords)
     (
         r"py:class",
-        r"(DeviceLike|Graph|Struct|BlockType|Rows|Cols|Sample|Coords|ElementIndex|"
+        r"(Graph|Struct|BlockType|Rows|Cols|Sample|Coords|ElementIndex|"
         r"ElementArg|ElementEvalArg|ElementIndexArg|TopologyArg|EvalArg|"
         r"BsrMatrixOrExpression|_Var|_FuncParams|FunctionMetadata|KernelHooks|"
-        r"launch_bounds_t|FieldRestriction|scalar|vec3)",
+        r"launch_bounds_t|FieldRestriction|scalar)",
     ),
     # FEM nested type annotations (e.g., Geometry.CellArg, FieldLike.EvalArg)
     (r"py:class", r"\w+\.\w+Arg"),
@@ -137,11 +137,11 @@ nitpick_ignore_regex = [
     ),
     # FEM OUTSIDE constant (module-level, not exported to public API)
     (r"py:data", r"OUTSIDE"),
-    # jax_callable lives in a mocked/optional submodule
+    # jax_callable lives in warp.jax_experimental (jax itself is mocked)
     (r"py:func", r"warp\.jax_experimental\.jax_callable"),
     # Internal/unexported FEM functions referenced in docstrings
     (r"py:func", r"warp\.fem\.enforce_nanogrid_grading"),
-    # Deprecated/internal OmniGraph function
+    # External OmniGraph function referenced in docstrings but defined outside this repo
     (r"py:func", r"warp\.from_omni_graph_ptr"),
 ]
 
@@ -418,10 +418,14 @@ def rewrite_wp_in_docstrings(app, what, name, obj, options, lines):
     """Rewrite ``wp.`` import aliases to ``warp.`` in docstrings.
 
     This complements rewrite_wp_aliases (which handles signatures) by also
-    fixing docstring content that references ``wp.`` types.
+    fixing docstring content that references ``wp.`` types.  Lines inside
+    doctest blocks (``>>>``, ``...``) are skipped to preserve copy-pasteable
+    code examples that use ``import warp as wp``.
     """
-    import re
     for i, line in enumerate(lines):
+        stripped = line.lstrip()
+        if stripped.startswith(">>>") or stripped.startswith("..."):
+            continue  # preserve code examples
         if "wp." in line:
             lines[i] = re.sub(r"\bwp\.", "warp.", line)
 
@@ -509,7 +513,6 @@ def rewrite_wp_aliases(app, what, name, obj, options, signature, return_annotati
     ``"warp.array"``.  Sphinx cannot resolve the ``wp`` alias, so this hook
     normalises them before cross-reference resolution.
     """
-    import re
 
     def _fix(text):
         if text is None:
@@ -528,31 +531,46 @@ def resolve_wp_aliases(app, env, node, contnode):
     intercept every code path (e.g. ``autodoc_typehints = "description"``), so
     this ``missing-reference`` handler rewrites the target at resolution time.
     """
-    import re
-
     reftarget = node.get("reftarget", "")
-    if not re.match(r"^wp\.", reftarget):
+    if not reftarget.startswith("wp."):
         return None  # not a wp.* reference, let Sphinx handle it
 
-    new_target = re.sub(r"^wp\.", "warp.", reftarget)
-    node["reftarget"] = new_target
+    new_target = "warp." + reftarget[3:]
 
-    # Also fix the displayed text if it still shows the wp.* name
+    # Save originals so we can restore on failed resolution
+    orig_target = reftarget
+    orig_text = None
+    text_node = None
     if contnode and hasattr(contnode, "children") and contnode.children:
         text_node = contnode.children[0]
         if hasattr(text_node, "astext") and text_node.astext().startswith("wp."):
-            text_node.parent.replace(text_node, docutils.nodes.Text(
-                re.sub(r"^wp\.", "warp.", text_node.astext())
-            ))
+            orig_text = text_node.astext()
+
+    # Rewrite target and display text
+    node["reftarget"] = new_target
+    if orig_text is not None:
+        text_node.parent.replace(text_node, docutils.nodes.Text(
+            "warp." + orig_text[3:]
+        ))
 
     # Re-resolve using Sphinx's domain
     domain = env.get_domain("py")
-    try:
-        return domain.resolve_xref(env, node.get("refdoc", ""), app.builder,
-                                   node.get("reftype", "class"), new_target,
-                                   node, contnode)
-    except Exception:
-        return None
+    result = domain.resolve_xref(env, node.get("refdoc", ""), app.builder,
+                                 node.get("reftype", "class"), new_target,
+                                 node, contnode)
+
+    if result is not None:
+        return result
+
+    # Resolution failed — restore original values so Sphinx reports the
+    # correct target name in any warning
+    node["reftarget"] = orig_target
+    if orig_text is not None and text_node is not None:
+        new_text_node = contnode.children[0] if contnode.children else None
+        if new_text_node is not None:
+            new_text_node.parent.replace(new_text_node, docutils.nodes.Text(orig_text))
+
+    return None
 
 
 def generate_reference_docs(app):
