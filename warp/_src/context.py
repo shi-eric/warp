@@ -3804,7 +3804,7 @@ class Device:
                 If ``None``, falls back to global config or automatic determination.
 
         Returns:
-            The output format to use: ``"ptx"``, ``"cubin"``, or ``None`` for CPU devices.
+            ``"ptx"``, ``"cubin"``, or ``None`` for CPU devices.
         """
 
         if self.is_cpu:

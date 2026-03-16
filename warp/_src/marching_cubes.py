@@ -17,13 +17,13 @@ from __future__ import annotations
 
 from typing import Final
 
-import warp as wp
+import warp
 
 _wp_module_name_ = "warp.marching_cubes"
 
 
 # =============================================================================
-# Marching Cubes Lookup Tables (module-level for kernel access via wp.static())
+# Marching Cubes Lookup Tables (module-level for kernel access via warp.static())
 # =============================================================================
 
 # fmt: off
@@ -48,18 +48,18 @@ MC_EDGE_TO_CORNERS: Final[tuple[tuple[int, int], ...]] = (
 
 
 def marching_cubes_extract_vertices(
-    field: wp.array3d(dtype=wp.float32),
+    field: warp.array3d(dtype=warp.float32),
     threshold: float,
-    domain_bounds_lower_corner: wp.vec3,
-    grid_pos_delta: wp.vec3,
+    domain_bounds_lower_corner: warp.vec3,
+    grid_pos_delta: warp.vec3,
 ):
     """Invoke kernels to extract vertices and indices to uniquely identify them."""
     device = field.device
     nnode_x, nnode_y, nnode_z = field.shape[0], field.shape[1], field.shape[2]
 
     ### First pass: count the vertices each thread will generate
-    thread_output_count = wp.zeros(shape=(nnode_x * nnode_y * nnode_z * 3), dtype=wp.int32, device=device)
-    wp.launch(
+    thread_output_count = warp.zeros(shape=(nnode_x * nnode_y * nnode_z * 3), dtype=warp.int32, device=device)
+    warp.launch(
         extract_vertices_kernel,
         dim=(nnode_x, nnode_y, nnode_z, 3),
         inputs=[
@@ -75,8 +75,8 @@ def marching_cubes_extract_vertices(
     )
 
     ### Evaluate a cumulative sum, to compute the output index for each generated vertex
-    vertex_result_ind = wp.zeros(shape=(nnode_x * nnode_y * nnode_z * 3), dtype=wp.int32, device=device)
-    wp._src.utils.array_scan(thread_output_count, vertex_result_ind, inclusive=True)
+    vertex_result_ind = warp.zeros(shape=(nnode_x * nnode_y * nnode_z * 3), dtype=warp.int32, device=device)
+    warp._src.utils.array_scan(thread_output_count, vertex_result_ind, inclusive=True)
 
     # (synchronization point!)
     N_vert = int(vertex_result_ind[-1:].numpy()[0])
@@ -84,14 +84,14 @@ def marching_cubes_extract_vertices(
     # Allocate output arrays
     # edge_generated_vert_ind: corresponds to the the 3 positive-facing edges emanating from each node.
     #   The last boundary entries of this array will be unused, but we can't make it any smaller.
-    edge_generated_vert_ind = wp.zeros(shape=(nnode_x, nnode_y, nnode_z, 3), dtype=wp.int32, device=device)
-    verts_pos_out = wp.empty(
-        shape=N_vert, dtype=wp.vec3, device=device, requires_grad=field.requires_grad
+    edge_generated_vert_ind = warp.zeros(shape=(nnode_x, nnode_y, nnode_z, 3), dtype=warp.int32, device=device)
+    verts_pos_out = warp.empty(
+        shape=N_vert, dtype=warp.vec3, device=device, requires_grad=field.requires_grad
     )  # TODO is this the right way to decide setting requires_grad?
-    verts_is_boundary_out = wp.empty(shape=N_vert, dtype=wp.bool, device=device)
+    verts_is_boundary_out = warp.empty(shape=N_vert, dtype=warp.bool, device=device)
 
     ### Second pass: actually generate the vertices and write to the output arrays
-    wp.launch(
+    warp.launch(
         extract_vertices_kernel,
         dim=(nnode_x, nnode_y, nnode_z, 3),
         inputs=[
@@ -114,18 +114,18 @@ def marching_cubes_extract_vertices(
     return (verts_pos_out, verts_is_boundary_out, edge_generated_vert_ind)
 
 
-@wp.kernel
+@warp.kernel
 def extract_vertices_kernel(
-    values: wp.array3d(dtype=wp.float32),
-    threshold: wp.float32,
-    domain_bounds_lower_corner: wp.vec3,
-    grid_pos_delta: wp.vec3,
-    vertex_result_ind: wp.array(dtype=wp.int32),
+    values: warp.array3d(dtype=warp.float32),
+    threshold: warp.float32,
+    domain_bounds_lower_corner: warp.vec3,
+    grid_pos_delta: warp.vec3,
+    vertex_result_ind: warp.array(dtype=warp.int32),
     count_only: bool,
-    thread_output_count: wp.array(dtype=wp.int32),
-    verts_pos_out: wp.array(dtype=wp.vec3),
-    verts_is_boundary_out: wp.array(dtype=wp.bool),
-    edge_generated_vert_ind: wp.array(dtype=wp.int32, ndim=4),
+    thread_output_count: warp.array(dtype=warp.int32),
+    verts_pos_out: warp.array(dtype=warp.vec3),
+    verts_is_boundary_out: warp.array(dtype=warp.bool),
+    edge_generated_vert_ind: warp.array(dtype=warp.int32, ndim=4),
 ):
     """Kernel for vertex extraction.
 
@@ -135,13 +135,13 @@ def extract_vertices_kernel(
     second pass when count_only==False, we actually generate the vertices and write them to
     the appropriate output location.
     """
-    ti, tj, tk, t_side = wp.tid()
+    ti, tj, tk, t_side = warp.tid()
     nnode_x, nnode_y, nnode_z = values.shape[0], values.shape[1], values.shape[2]
 
     # Assemble indices
-    i_opp = ti + wp.where(t_side == 0, 1, 0)
-    j_opp = tj + wp.where(t_side == 1, 1, 0)
-    k_opp = tk + wp.where(t_side == 2, 1, 0)
+    i_opp = ti + warp.where(t_side == 0, 1, 0)
+    j_opp = tj + warp.where(t_side == 1, 1, 0)
+    k_opp = tk + warp.where(t_side == 2, 1, 0)
     out_ind = -1
 
     # Out of bounds edges off the sides of the grid
@@ -165,18 +165,18 @@ def extract_vertices_kernel(
 
             # generated vertex along the edge
             t_interp = (threshold - this_val) / (opp_val - this_val)
-            t_interp = wp.clamp(t_interp, 0.0, 1.0)
-            this_pos = domain_bounds_lower_corner + wp.vec3(
-                wp.float32(ti) * grid_pos_delta.x,
-                wp.float32(tj) * grid_pos_delta.y,
-                wp.float32(tk) * grid_pos_delta.z,
+            t_interp = warp.clamp(t_interp, 0.0, 1.0)
+            this_pos = domain_bounds_lower_corner + warp.vec3(
+                warp.float32(ti) * grid_pos_delta.x,
+                warp.float32(tj) * grid_pos_delta.y,
+                warp.float32(tk) * grid_pos_delta.z,
             )
-            opp_pos = domain_bounds_lower_corner + wp.vec3(
-                wp.float32(i_opp) * grid_pos_delta.x,
-                wp.float32(j_opp) * grid_pos_delta.y,
-                wp.float32(k_opp) * grid_pos_delta.z,
+            opp_pos = domain_bounds_lower_corner + warp.vec3(
+                warp.float32(i_opp) * grid_pos_delta.x,
+                warp.float32(j_opp) * grid_pos_delta.y,
+                warp.float32(k_opp) * grid_pos_delta.z,
             )
-            interp_pos = wp.lerp(this_pos, opp_pos, t_interp)
+            interp_pos = warp.lerp(this_pos, opp_pos, t_interp)
             this_boundary = (
                 ti == 0 or (ti + 1) == nnode_x or tj == 0 or (tj + 1) == nnode_y or tk == 0 or (tk + 1) == nnode_z
             )
@@ -199,9 +199,9 @@ def extract_vertices_kernel(
 
 
 def marching_cubes_extract_faces(
-    values: wp.array3d(dtype=wp.float32),
-    threshold: wp.float32,
-    edge_generated_vert_ind: wp.array(dtype=wp.int32, ndim=4),
+    values: warp.array3d(dtype=warp.float32),
+    threshold: warp.float32,
+    edge_generated_vert_ind: warp.array(dtype=warp.int32, ndim=4),
 ):
     """Invoke kernels to extract faces and index the appropriate vertices."""
     device = values.device
@@ -209,8 +209,8 @@ def marching_cubes_extract_faces(
     ncell_x, ncell_y, ncell_z = nnode_x - 1, nnode_y - 1, nnode_z - 1
 
     # First pass: count the number of faces each thread will generate
-    thread_output_count = wp.zeros(shape=(ncell_x * ncell_y * ncell_z), dtype=wp.int32, device=device)
-    wp.launch(
+    thread_output_count = warp.zeros(shape=(ncell_x * ncell_y * ncell_z), dtype=warp.int32, device=device)
+    warp.launch(
         extract_faces_kernel,
         dim=(ncell_x, ncell_y, ncell_z),
         inputs=[
@@ -231,17 +231,17 @@ def marching_cubes_extract_faces(
     )
 
     ### Evaluate a cumulative sum, to compute the output index for each generated face
-    face_result_ind = wp.zeros(shape=(ncell_x * ncell_y * ncell_z), dtype=wp.int32, device=device)
-    wp._src.utils.array_scan(thread_output_count, face_result_ind, inclusive=True)
+    face_result_ind = warp.zeros(shape=(ncell_x * ncell_y * ncell_z), dtype=warp.int32, device=device)
+    warp._src.utils.array_scan(thread_output_count, face_result_ind, inclusive=True)
 
     # (synchronization point!)
     N_faces = int(face_result_ind[-1:].numpy()[0])
 
     # Allocate output array
-    faces_out = wp.empty(shape=3 * N_faces, dtype=wp.int32, device=device)
+    faces_out = warp.empty(shape=3 * N_faces, dtype=warp.int32, device=device)
 
     ### Second pass: actually generate the faces and write to the output array
-    wp.launch(
+    warp.launch(
         extract_faces_kernel,
         dim=(ncell_x, ncell_y, ncell_z),
         inputs=[
@@ -266,18 +266,18 @@ def marching_cubes_extract_faces(
 
 # NOTE: differentiating this kernel does nothing, since all of its outputs are discrete, but
 # Warp issues warnings if we set enable_backward=False
-@wp.kernel
+@warp.kernel
 def extract_faces_kernel(
-    values: wp.array3d(dtype=wp.float32),
-    threshold: wp.float32,
-    edge_generated_vert_ind: wp.array(dtype=wp.int32, ndim=4),
-    face_result_ind: wp.array(dtype=wp.int32),
-    mc_case_to_tri_range_table: wp.array(dtype=wp.int32),
-    mc_tri_local_inds_table: wp.array(dtype=wp.int32),
-    mc_edge_offset_table: wp.array(dtype=wp.int32, ndim=2),
+    values: warp.array3d(dtype=warp.float32),
+    threshold: warp.float32,
+    edge_generated_vert_ind: warp.array(dtype=warp.int32, ndim=4),
+    face_result_ind: warp.array(dtype=warp.int32),
+    mc_case_to_tri_range_table: warp.array(dtype=warp.int32),
+    mc_tri_local_inds_table: warp.array(dtype=warp.int32),
+    mc_edge_offset_table: warp.array(dtype=warp.int32, ndim=2),
     count_only: bool,
-    thread_output_count: wp.array(dtype=wp.int32),
-    faces_out: wp.array(dtype=wp.int32),
+    thread_output_count: warp.array(dtype=warp.int32),
+    faces_out: warp.array(dtype=warp.int32),
 ):
     """
     Kernel for face extraction
@@ -288,7 +288,7 @@ def extract_faces_kernel(
     second pass when count_only==False, we actually generate the faces and write them to
     the appropriate output location.
     """
-    ti, tj, tk = wp.tid()
+    ti, tj, tk = warp.tid()
     nnode_x, nnode_y, nnode_z = values.shape[0], values.shape[1], values.shape[2]
     _ncell_x, ncell_y, ncell_z = nnode_x - 1, nnode_y - 1, nnode_z - 1
     ind = ti * ncell_y * ncell_z + tj * ncell_z + tk
@@ -297,17 +297,17 @@ def extract_faces_kernel(
     # NOTE: this loop should get unrolled (confirmed it does in Warp 1.4.1)
     case_code = 0
     for i_c in range(8):
-        indX = ti + wp.static(MC_CUBE_CORNER_OFFSETS[i_c][0])
-        indY = tj + wp.static(MC_CUBE_CORNER_OFFSETS[i_c][1])
-        indZ = tk + wp.static(MC_CUBE_CORNER_OFFSETS[i_c][2])
+        indX = ti + warp.static(MC_CUBE_CORNER_OFFSETS[i_c][0])
+        indY = tj + warp.static(MC_CUBE_CORNER_OFFSETS[i_c][1])
+        indZ = tk + warp.static(MC_CUBE_CORNER_OFFSETS[i_c][2])
         val = values[indX, indY, indZ]
         if val >= threshold:
-            case_code += wp.static(2**i_c)
+            case_code += warp.static(2**i_c)
 
     # Gather the range of triangles we will emit
     tri_range_start = mc_case_to_tri_range_table[case_code]
     tri_range_end = mc_case_to_tri_range_table[case_code + 1]
-    N_tri = wp.int32(tri_range_end - tri_range_start) // 3
+    N_tri = warp.int32(tri_range_end - tri_range_start) // 3
 
     # If we are just counting, record the number of triangles and move on
     if count_only:
@@ -473,32 +473,32 @@ _MC_EDGE_OFFSETS = (
 # Internal: Caching for Warp's extraction algorithm
 # =============================================================================
 
-_mc_case_to_tri_range_cache: dict[str, wp.array] = {}
-_mc_tri_local_inds_cache: dict[str, wp.array] = {}
-_mc_edge_offset_cache: dict[str, wp.array] = {}
+_mc_case_to_tri_range_cache: dict[str, warp.array] = {}
+_mc_tri_local_inds_cache: dict[str, warp.array] = {}
+_mc_edge_offset_cache: dict[str, warp.array] = {}
 
 
-def _get_mc_case_to_tri_range_table(device) -> wp.array:
+def _get_mc_case_to_tri_range_table(device) -> warp.array:
     """Lazily creates and caches the case-to-tri-range table on the target device."""
     device = str(device)
     if device not in _mc_case_to_tri_range_cache:
-        _mc_case_to_tri_range_cache[device] = wp.array(MC_CASE_TO_TRI_RANGE, dtype=wp.int32, device=device)
+        _mc_case_to_tri_range_cache[device] = warp.array(MC_CASE_TO_TRI_RANGE, dtype=warp.int32, device=device)
     return _mc_case_to_tri_range_cache[device]
 
 
-def _get_mc_tri_local_inds_table(device) -> wp.array:
+def _get_mc_tri_local_inds_table(device) -> warp.array:
     """Lazily creates and caches the tri-local-indices table on the target device."""
     device = str(device)
     if device not in _mc_tri_local_inds_cache:
-        _mc_tri_local_inds_cache[device] = wp.array(MC_TRI_LOCAL_INDICES, dtype=wp.int32, device=device)
+        _mc_tri_local_inds_cache[device] = warp.array(MC_TRI_LOCAL_INDICES, dtype=warp.int32, device=device)
     return _mc_tri_local_inds_cache[device]
 
 
-def _get_mc_edge_offset_table(device) -> wp.array:
+def _get_mc_edge_offset_table(device) -> warp.array:
     """Lazily creates and caches the edge offset table on the target device."""
     device = str(device)
     if device not in _mc_edge_offset_cache:
-        _mc_edge_offset_cache[device] = wp.array(_MC_EDGE_OFFSETS, dtype=wp.int32, device=device)
+        _mc_edge_offset_cache[device] = warp.array(_MC_EDGE_OFFSETS, dtype=warp.int32, device=device)
     return _mc_edge_offset_cache[device]
 
 
@@ -610,12 +610,12 @@ class MarchingCubes:
         self.max_tris = max_tris
 
         # Output arrays
-        self.verts: warp.array(dtype=wp.vec3f) | None = None
-        self.indices: warp.array(dtype=wp.int32) | None = None
+        self.verts: warp.array(dtype=warp.vec3f) | None = None
+        self.indices: warp.array(dtype=warp.int32) | None = None
 
         # These are unused, but retained for backwards-compatibility for code which might use them
         self.id = 0
-        self.runtime = wp._src.context.runtime
+        self.runtime = warp._src.context.runtime
         self.device = self.runtime.get_device(device)
 
     def resize(self, nx: int, ny: int, nz: int, max_verts: int = 0, max_tris: int = 0) -> None:
@@ -660,7 +660,7 @@ class MarchingCubes:
 
         verts, faces = self.extract_surface_marching_cubes(
             field=field,
-            threshold=wp.float32(threshold),
+            threshold=warp.float32(threshold),
             domain_bounds_lower_corner=self.domain_bounds_lower_corner,
             domain_bounds_upper_corner=self.domain_bounds_upper_corner,
         )
@@ -670,11 +670,11 @@ class MarchingCubes:
 
     @staticmethod
     def extract_surface_marching_cubes(
-        field: warp.array3d(dtype=wp.float32),
+        field: warp.array3d(dtype=warp.float32),
         threshold: float = 0.0,
         domain_bounds_lower_corner: warp.vec3 | tuple[float, float, float] | None = None,
         domain_bounds_upper_corner: warp.vec3 | tuple[float, float, float] | None = None,
-    ) -> tuple[warp.array(dtype=wp.vec3), warp.array(dtype=wp.int32)]:
+    ) -> tuple[warp.array(dtype=warp.vec3), warp.array(dtype=warp.int32)]:
         """Extract a triangular mesh from a 3D scalar field.
 
         This function generates an isosurface by processing the entire input ``field``.
@@ -687,8 +687,8 @@ class MarchingCubes:
         (i.e., left as ``None``), it will be assigned a default value that
         aligns the mesh with the integer indices of the input grid.
 
-        For example, setting the bounds to ``wp.vec3(0.0, 0.0, 0.0)`` and
-        ``wp.vec3(1.0, 1.0, 1.0)`` will scale the output mesh to fit
+        For example, setting the bounds to ``warp.vec3(0.0, 0.0, 0.0)`` and
+        ``warp.vec3(1.0, 1.0, 1.0)`` will scale the output mesh to fit
         within the unit cube.
 
         Args:
@@ -709,7 +709,7 @@ class MarchingCubes:
 
         Raises:
             ValueError: If ``field`` is not a 3D array or is empty.
-            TypeError: If the ``field`` data type is not ``wp.float32``.
+            TypeError: If the ``field`` data type is not ``warp.float32``.
         """
         # Do some validation
         if len(field.shape) != 3:
@@ -718,8 +718,8 @@ class MarchingCubes:
         if field.size == 0:
             raise ValueError("The 'field' array cannot be empty.")
 
-        if field.dtype != wp.float32:
-            raise TypeError(f"Expected a dtype of wp.float32 for 'field', but got {field.dtype}.")
+        if field.dtype != warp.float32:
+            raise TypeError(f"Expected a dtype of warp.float32 for 'field', but got {field.dtype}.")
 
         # Parse out dimensions, being careful to distinguish between nodes and cells
         nnode_x, nnode_y, nnode_z = field.shape[0], field.shape[1], field.shape[2]
@@ -727,21 +727,21 @@ class MarchingCubes:
 
         # Apply default policies for bounds
         if domain_bounds_lower_corner is None:
-            domain_bounds_lower_corner = wp.vec3((0.0, 0.0, 0.0))
+            domain_bounds_lower_corner = warp.vec3((0.0, 0.0, 0.0))
         if domain_bounds_upper_corner is None:
             # The default convention is to treat the nodes of the grid as having integer coordinates at 0,1,2,...
             # This means the upper-rightmost node of the grid has coordinates (nnode_x-1, nnode_y-1, nnode_z-1)
             # (which happens to be the same as the number cells, although it may be more confusing to think of it that way)
-            domain_bounds_upper_corner = wp.vec3((float(nnode_x - 1), float(nnode_y - 1), float(nnode_z - 1)))
+            domain_bounds_upper_corner = warp.vec3((float(nnode_x - 1), float(nnode_y - 1), float(nnode_z - 1)))
 
         # quietly allow tuples as input too, although this technically violates
         # the type hinting
-        domain_bounds_lower_corner = wp.vec3(domain_bounds_lower_corner)
-        domain_bounds_upper_corner = wp.vec3(domain_bounds_upper_corner)
+        domain_bounds_lower_corner = warp.vec3(domain_bounds_lower_corner)
+        domain_bounds_upper_corner = warp.vec3(domain_bounds_upper_corner)
 
         # Compute the grid spacing
         domain_width = domain_bounds_upper_corner - domain_bounds_lower_corner
-        grid_delta = wp.cw_div(domain_width, wp.vec3(ncell_x, ncell_y, ncell_z))
+        grid_delta = warp.cw_div(domain_width, warp.vec3(ncell_x, ncell_y, ncell_z))
 
         # Extract the vertices
         # The second output of this kernel is an is-boundary flag for each vertex, which
