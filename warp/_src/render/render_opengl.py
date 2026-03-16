@@ -11,7 +11,7 @@ from typing import Union
 
 import numpy as np
 
-import warp as wp
+import warp
 
 from .utils import tab10_color_map
 
@@ -20,7 +20,7 @@ _wp_module_name_ = "warp.render.render_opengl"
 Mat44 = Union[list[float], list[list[float]], np.ndarray]
 
 
-wp.set_module_options({"enable_backward": False})
+warp.set_module_options({"enable_backward": False})
 
 shape_vertex_shader = """
 #version 330 core
@@ -262,17 +262,17 @@ void main() {
 """
 
 
-@wp.kernel
+@warp.kernel
 def update_vbo_transforms(
-    instance_id: wp.array(dtype=int),
-    instance_body: wp.array(dtype=int),
-    instance_transforms: wp.array(dtype=wp.transform),
-    instance_scalings: wp.array(dtype=wp.vec3),
-    body_q: wp.array(dtype=wp.transform),
+    instance_id: warp.array(dtype=int),
+    instance_body: warp.array(dtype=int),
+    instance_transforms: warp.array(dtype=warp.transform),
+    instance_scalings: warp.array(dtype=warp.vec3),
+    body_q: warp.array(dtype=warp.transform),
     # outputs
-    vbo_transforms: wp.array(dtype=wp.mat44),
+    vbo_transforms: warp.array(dtype=warp.mat44),
 ):
-    tid = wp.tid()
+    tid = warp.tid()
     i = instance_id[tid]
     X_ws = instance_transforms[i]
     if instance_body:
@@ -282,12 +282,12 @@ def update_vbo_transforms(
                 X_ws = body_q[body] * X_ws
             else:
                 return
-    p = wp.transform_get_translation(X_ws)
-    q = wp.transform_get_rotation(X_ws)
+    p = warp.transform_get_translation(X_ws)
+    q = warp.transform_get_rotation(X_ws)
     s = instance_scalings[i]
-    rot = wp.quat_to_matrix(q)
+    rot = warp.quat_to_matrix(q)
     # transposed definition
-    vbo_transforms[tid] = wp.mat44(
+    vbo_transforms[tid] = warp.mat44(
         rot[0, 0] * s[0],
         rot[1, 0] * s[0],
         rot[2, 0] * s[0],
@@ -307,34 +307,34 @@ def update_vbo_transforms(
     )
 
 
-@wp.kernel
+@warp.kernel
 def update_vbo_vertices(
-    points: wp.array(dtype=wp.vec3),
+    points: warp.array(dtype=warp.vec3),
     # outputs
-    vbo_vertices: wp.array(dtype=float, ndim=2),
+    vbo_vertices: warp.array(dtype=float, ndim=2),
 ):
-    tid = wp.tid()
+    tid = warp.tid()
     p = points[tid]
     vbo_vertices[tid, 0] = p[0]
     vbo_vertices[tid, 1] = p[1]
     vbo_vertices[tid, 2] = p[2]
 
 
-@wp.kernel
+@warp.kernel
 def update_points_positions(
-    instance_positions: wp.array(dtype=wp.vec3),
-    instance_scalings: wp.array(dtype=wp.vec3),
+    instance_positions: warp.array(dtype=warp.vec3),
+    instance_scalings: warp.array(dtype=warp.vec3),
     # outputs
-    vbo_transforms: wp.array(dtype=wp.mat44),
+    vbo_transforms: warp.array(dtype=warp.mat44),
 ):
-    tid = wp.tid()
+    tid = warp.tid()
     p = instance_positions[tid]
-    s = wp.vec3(1.0)
+    s = warp.vec3(1.0)
     if instance_scalings:
         s = instance_scalings[tid]
     # transposed definition
     # fmt: off
-    vbo_transforms[tid] = wp.mat44(
+    vbo_transforms[tid] = warp.mat44(
         s[0],  0.0,  0.0, 0.0,
          0.0, s[1],  0.0, 0.0,
          0.0,  0.0, s[2], 0.0,
@@ -342,27 +342,27 @@ def update_points_positions(
     # fmt: on
 
 
-@wp.kernel
+@warp.kernel
 def update_line_transforms(
-    lines: wp.array(dtype=wp.vec3, ndim=2),
+    lines: warp.array(dtype=warp.vec3, ndim=2),
     # outputs
-    vbo_transforms: wp.array(dtype=wp.mat44),
+    vbo_transforms: warp.array(dtype=warp.mat44),
 ):
-    tid = wp.tid()
+    tid = warp.tid()
     p0 = lines[tid, 0]
     p1 = lines[tid, 1]
     p = 0.5 * (p0 + p1)
     d = p1 - p0
-    s = wp.length(d)
-    axis = wp.normalize(d)
-    y_up = wp.vec3(0.0, 1.0, 0.0)
-    angle = wp.acos(wp.dot(axis, y_up))
-    axis = wp.normalize(wp.cross(axis, y_up))
-    q = wp.quat_from_axis_angle(axis, -angle)
-    rot = wp.quat_to_matrix(q)
+    s = warp.length(d)
+    axis = warp.normalize(d)
+    y_up = warp.vec3(0.0, 1.0, 0.0)
+    angle = warp.acos(warp.dot(axis, y_up))
+    axis = warp.normalize(warp.cross(axis, y_up))
+    q = warp.quat_from_axis_angle(axis, -angle)
+    rot = warp.quat_to_matrix(q)
     # transposed definition
     # fmt: off
-    vbo_transforms[tid] = wp.mat44(
+    vbo_transforms[tid] = warp.mat44(
             rot[0, 0],     rot[1, 0],     rot[2, 0], 0.0,
         s * rot[0, 1], s * rot[1, 1], s * rot[2, 1], 0.0,
             rot[0, 2],     rot[1, 2],     rot[2, 2], 0.0,
@@ -371,18 +371,18 @@ def update_line_transforms(
     # fmt: on
 
 
-@wp.kernel
+@warp.kernel
 def compute_gfx_vertices(
-    indices: wp.array(dtype=int, ndim=2),
-    vertices: wp.array(dtype=wp.vec3, ndim=1),
-    scale: wp.vec3,
+    indices: warp.array(dtype=int, ndim=2),
+    vertices: warp.array(dtype=warp.vec3, ndim=1),
+    scale: warp.vec3,
     # outputs
-    gfx_vertices: wp.array(dtype=float, ndim=2),
+    gfx_vertices: warp.array(dtype=float, ndim=2),
 ):
-    tid = wp.tid()
-    v0 = wp.cw_mul(vertices[indices[tid, 0]], scale)
-    v1 = wp.cw_mul(vertices[indices[tid, 1]], scale)
-    v2 = wp.cw_mul(vertices[indices[tid, 2]], scale)
+    tid = warp.tid()
+    v0 = warp.cw_mul(vertices[indices[tid, 0]], scale)
+    v1 = warp.cw_mul(vertices[indices[tid, 1]], scale)
+    v2 = warp.cw_mul(vertices[indices[tid, 2]], scale)
     i = tid * 3
     j = i + 1
     k = i + 2
@@ -395,7 +395,7 @@ def compute_gfx_vertices(
     gfx_vertices[k, 0] = v2[0]
     gfx_vertices[k, 1] = v2[1]
     gfx_vertices[k, 2] = v2[2]
-    n = wp.normalize(wp.cross(v1 - v0, v2 - v0))
+    n = warp.normalize(warp.cross(v1 - v0, v2 - v0))
     gfx_vertices[i, 3] = n[0]
     gfx_vertices[i, 4] = n[1]
     gfx_vertices[i, 5] = n[2]
@@ -407,41 +407,41 @@ def compute_gfx_vertices(
     gfx_vertices[k, 5] = n[2]
 
 
-@wp.kernel
+@warp.kernel
 def compute_average_normals(
-    indices: wp.array(dtype=int, ndim=2),
-    vertices: wp.array(dtype=wp.vec3),
-    scale: wp.vec3,
+    indices: warp.array(dtype=int, ndim=2),
+    vertices: warp.array(dtype=warp.vec3),
+    scale: warp.vec3,
     # outputs
-    normals: wp.array(dtype=wp.vec3),
-    faces_per_vertex: wp.array(dtype=int),
+    normals: warp.array(dtype=warp.vec3),
+    faces_per_vertex: warp.array(dtype=int),
 ):
-    tid = wp.tid()
+    tid = warp.tid()
     i = indices[tid, 0]
     j = indices[tid, 1]
     k = indices[tid, 2]
-    v0 = wp.cw_mul(vertices[i], scale)
-    v1 = wp.cw_mul(vertices[j], scale)
-    v2 = wp.cw_mul(vertices[k], scale)
-    n = wp.normalize(wp.cross(v1 - v0, v2 - v0))
-    wp.atomic_add(normals, i, n)
-    wp.atomic_add(faces_per_vertex, i, 1)
-    wp.atomic_add(normals, j, n)
-    wp.atomic_add(faces_per_vertex, j, 1)
-    wp.atomic_add(normals, k, n)
-    wp.atomic_add(faces_per_vertex, k, 1)
+    v0 = warp.cw_mul(vertices[i], scale)
+    v1 = warp.cw_mul(vertices[j], scale)
+    v2 = warp.cw_mul(vertices[k], scale)
+    n = warp.normalize(warp.cross(v1 - v0, v2 - v0))
+    warp.atomic_add(normals, i, n)
+    warp.atomic_add(faces_per_vertex, i, 1)
+    warp.atomic_add(normals, j, n)
+    warp.atomic_add(faces_per_vertex, j, 1)
+    warp.atomic_add(normals, k, n)
+    warp.atomic_add(faces_per_vertex, k, 1)
 
 
-@wp.kernel
+@warp.kernel
 def assemble_gfx_vertices(
-    vertices: wp.array(dtype=wp.vec3, ndim=1),
-    normals: wp.array(dtype=wp.vec3),
-    faces_per_vertex: wp.array(dtype=int),
-    scale: wp.vec3,
+    vertices: warp.array(dtype=warp.vec3, ndim=1),
+    normals: warp.array(dtype=warp.vec3),
+    faces_per_vertex: warp.array(dtype=int),
+    scale: warp.vec3,
     # outputs
-    gfx_vertices: wp.array(dtype=float, ndim=2),
+    gfx_vertices: warp.array(dtype=float, ndim=2),
 ):
-    tid = wp.tid()
+    tid = warp.tid()
     v = vertices[tid]
     n = normals[tid] / float(faces_per_vertex[tid])
     gfx_vertices[tid, 0] = v[0] * scale[0]
@@ -452,15 +452,15 @@ def assemble_gfx_vertices(
     gfx_vertices[tid, 5] = n[2]
 
 
-@wp.kernel
+@warp.kernel
 def copy_rgb_frame(
-    input_img: wp.array(dtype=wp.uint8),
+    input_img: warp.array(dtype=warp.uint8),
     width: int,
     height: int,
     # outputs
-    output_img: wp.array(dtype=float, ndim=3),
+    output_img: warp.array(dtype=float, ndim=3),
 ):
-    w, v = wp.tid()
+    w, v = warp.tid()
     pixel = v * width + w
     pixel *= 3
     r = float(input_img[pixel + 0])
@@ -473,15 +473,15 @@ def copy_rgb_frame(
     output_img[v, w, 2] = b / 255.0
 
 
-@wp.kernel
+@warp.kernel
 def copy_rgb_frame_uint8(
-    input_img: wp.array(dtype=wp.uint8),
+    input_img: warp.array(dtype=warp.uint8),
     width: int,
     height: int,
     # outputs
-    output_img: wp.array(dtype=wp.uint8, ndim=3),
+    output_img: warp.array(dtype=warp.uint8, ndim=3),
 ):
-    w, v = wp.tid()
+    w, v = warp.tid()
     pixel = v * width + w
     pixel *= 3
     # flip vertically (OpenGL coordinates start at bottom)
@@ -491,17 +491,17 @@ def copy_rgb_frame_uint8(
     output_img[v, w, 2] = input_img[pixel + 2]
 
 
-@wp.kernel
+@warp.kernel
 def copy_depth_frame(
-    input_img: wp.array(dtype=wp.float32),
+    input_img: warp.array(dtype=warp.float32),
     width: int,
     height: int,
     near: float,
     far: float,
     # outputs
-    output_img: wp.array(dtype=wp.float32, ndim=3),
+    output_img: warp.array(dtype=warp.float32, ndim=3),
 ):
-    w, v = wp.tid()
+    w, v = warp.tid()
     pixel = v * width + w
     # flip vertically (OpenGL coordinates start at bottom)
     v = height - v - 1
@@ -510,17 +510,17 @@ def copy_depth_frame(
     output_img[v, w, 0] = -d
 
 
-@wp.kernel
+@warp.kernel
 def copy_rgb_frame_tiles(
-    input_img: wp.array(dtype=wp.uint8),
-    positions: wp.array(dtype=int, ndim=2),
+    input_img: warp.array(dtype=warp.uint8),
+    positions: warp.array(dtype=int, ndim=2),
     screen_width: int,
     screen_height: int,
     tile_height: int,
     # outputs
-    output_img: wp.array(dtype=float, ndim=4),
+    output_img: warp.array(dtype=float, ndim=4),
 ):
-    tile, x, y = wp.tid()
+    tile, x, y = warp.tid()
     p = positions[tile]
     qx = x + p[0]
     qy = y + p[1]
@@ -541,17 +541,17 @@ def copy_rgb_frame_tiles(
     output_img[tile, y, x, 2] = b / 255.0
 
 
-@wp.kernel
+@warp.kernel
 def copy_rgb_frame_tiles_uint8(
-    input_img: wp.array(dtype=wp.uint8),
-    positions: wp.array(dtype=int, ndim=2),
+    input_img: warp.array(dtype=warp.uint8),
+    positions: warp.array(dtype=int, ndim=2),
     screen_width: int,
     screen_height: int,
     tile_height: int,
     # outputs
-    output_img: wp.array(dtype=wp.uint8, ndim=4),
+    output_img: warp.array(dtype=warp.uint8, ndim=4),
 ):
-    tile, x, y = wp.tid()
+    tile, x, y = warp.tid()
     p = positions[tile]
     qx = x + p[0]
     qy = y + p[1]
@@ -559,9 +559,9 @@ def copy_rgb_frame_tiles_uint8(
     # flip vertically (OpenGL coordinates start at bottom)
     y = tile_height - y - 1
     if qx >= screen_width or qy >= screen_height:
-        output_img[tile, y, x, 0] = wp.uint8(0)
-        output_img[tile, y, x, 1] = wp.uint8(0)
-        output_img[tile, y, x, 2] = wp.uint8(0)
+        output_img[tile, y, x, 0] = warp.uint8(0)
+        output_img[tile, y, x, 1] = warp.uint8(0)
+        output_img[tile, y, x, 2] = warp.uint8(0)
         return  # prevent out-of-bounds access
     pixel *= 3
     output_img[tile, y, x, 0] = input_img[pixel + 0]
@@ -569,19 +569,19 @@ def copy_rgb_frame_tiles_uint8(
     output_img[tile, y, x, 2] = input_img[pixel + 2]
 
 
-@wp.kernel
+@warp.kernel
 def copy_depth_frame_tiles(
-    input_img: wp.array(dtype=wp.float32),
-    positions: wp.array(dtype=int, ndim=2),
+    input_img: warp.array(dtype=warp.float32),
+    positions: warp.array(dtype=int, ndim=2),
     screen_width: int,
     screen_height: int,
     tile_height: int,
     near: float,
     far: float,
     # outputs
-    output_img: wp.array(dtype=wp.float32, ndim=4),
+    output_img: warp.array(dtype=warp.float32, ndim=4),
 ):
-    tile, x, y = wp.tid()
+    tile, x, y = warp.tid()
     p = positions[tile]
     qx = x + p[0]
     qy = y + p[1]
@@ -596,18 +596,18 @@ def copy_depth_frame_tiles(
     output_img[tile, y, x, 0] = -d
 
 
-@wp.kernel
+@warp.kernel
 def copy_rgb_frame_tile(
-    input_img: wp.array(dtype=wp.uint8),
+    input_img: warp.array(dtype=warp.uint8),
     offset_x: int,
     offset_y: int,
     screen_width: int,
     screen_height: int,
     tile_height: int,
     # outputs
-    output_img: wp.array(dtype=float, ndim=4),
+    output_img: warp.array(dtype=float, ndim=4),
 ):
-    tile, x, y = wp.tid()
+    tile, x, y = warp.tid()
     qx = x + offset_x
     qy = y + offset_y
     pixel = qy * screen_width + qx
@@ -627,27 +627,27 @@ def copy_rgb_frame_tile(
     output_img[tile, y, x, 2] = b / 255.0
 
 
-@wp.kernel
+@warp.kernel
 def copy_rgb_frame_tile_uint8(
-    input_img: wp.array(dtype=wp.uint8),
+    input_img: warp.array(dtype=warp.uint8),
     offset_x: int,
     offset_y: int,
     screen_width: int,
     screen_height: int,
     tile_height: int,
     # outputs
-    output_img: wp.array(dtype=wp.uint8, ndim=4),
+    output_img: warp.array(dtype=warp.uint8, ndim=4),
 ):
-    tile, x, y = wp.tid()
+    tile, x, y = warp.tid()
     qx = x + offset_x
     qy = y + offset_y
     pixel = qy * screen_width + qx
     # flip vertically (OpenGL coordinates start at bottom)
     y = tile_height - y - 1
     if qx >= screen_width or qy >= screen_height:
-        output_img[tile, y, x, 0] = wp.uint8(0)
-        output_img[tile, y, x, 1] = wp.uint8(0)
-        output_img[tile, y, x, 2] = wp.uint8(0)
+        output_img[tile, y, x, 0] = warp.uint8(0)
+        output_img[tile, y, x, 1] = warp.uint8(0)
+        output_img[tile, y, x, 2] = warp.uint8(0)
         return  # prevent out-of-bounds access
     pixel *= 3
     output_img[tile, y, x, 0] = input_img[pixel + 0]
@@ -812,28 +812,28 @@ class ShapeInstancer:
             gl.glGenBuffers(1, self.instance_transform_gl_buffer)
         gl.glBindBuffer(gl.GL_ARRAY_BUFFER, self.instance_transform_gl_buffer)
 
-        self.instance_ids = wp.array(np.arange(self.num_instances), dtype=wp.int32, device=self.device)
+        self.instance_ids = warp.array(np.arange(self.num_instances), dtype=warp.int32, device=self.device)
         if rotations is None:
-            self.instance_transforms = wp.array(
-                [(*pos, 0.0, 0.0, 0.0, 1.0) for pos in positions], dtype=wp.transform, device=self.device
+            self.instance_transforms = warp.array(
+                [(*pos, 0.0, 0.0, 0.0, 1.0) for pos in positions], dtype=warp.transform, device=self.device
             )
         else:
-            self.instance_transforms = wp.array(
+            self.instance_transforms = warp.array(
                 [(*pos, *rot) for pos, rot in zip(positions, rotations)],
-                dtype=wp.transform,
+                dtype=warp.transform,
                 device=self.device,
             )
 
         if scalings is None:
-            self.instance_scalings = wp.array(
-                np.tile((1.0, 1.0, 1.0), (self.num_instances, 1)), dtype=wp.vec3, device=self.device
+            self.instance_scalings = warp.array(
+                np.tile((1.0, 1.0, 1.0), (self.num_instances, 1)), dtype=warp.vec3, device=self.device
             )
         else:
-            self.instance_scalings = wp.array(scalings, dtype=wp.vec3, device=self.device)
+            self.instance_scalings = warp.array(scalings, dtype=warp.vec3, device=self.device)
 
-        vbo_transforms = wp.zeros(dtype=wp.mat44, shape=(self.num_instances,), device=self.device)
+        vbo_transforms = warp.zeros(dtype=warp.mat44, shape=(self.num_instances,), device=self.device)
 
-        wp.launch(
+        warp.launch(
             update_vbo_transforms,
             dim=self.num_instances,
             inputs=[
@@ -854,7 +854,7 @@ class ShapeInstancer:
         gl.glBufferData(gl.GL_ARRAY_BUFFER, vbo_transforms.nbytes, vbo_transforms.ctypes.data, gl.GL_DYNAMIC_DRAW)
 
         # Create CUDA buffer for instance transforms
-        self._instance_transform_cuda_buffer = wp.RegisteredGLBuffer(
+        self._instance_transform_cuda_buffer = warp.RegisteredGLBuffer(
             int(self.instance_transform_gl_buffer.value), self.device
         )
 
@@ -875,7 +875,7 @@ class ShapeInstancer:
 
         gl.glBindVertexArray(0)
 
-    def update_instances(self, transforms: wp.array = None, scalings: wp.array = None, colors1=None, colors2=None):
+    def update_instances(self, transforms: warp.array = None, scalings: warp.array = None, colors1=None, colors2=None):
         gl = ShapeInstancer.gl
 
         if transforms is not None:
@@ -893,9 +893,9 @@ class ShapeInstancer:
 
         if transforms is not None or scalings is not None:
             gl.glBindVertexArray(self.vao)
-            vbo_transforms = self._instance_transform_cuda_buffer.map(dtype=wp.mat44, shape=(self.num_instances,))
+            vbo_transforms = self._instance_transform_cuda_buffer.map(dtype=warp.mat44, shape=(self.num_instances,))
 
-            wp.launch(
+            warp.launch(
                 update_vbo_transforms,
                 dim=self.num_instances,
                 inputs=[
@@ -931,7 +931,7 @@ class ShapeInstancer:
         gl = ShapeInstancer.gl
 
         gl.glBindVertexArray(self.vao)
-        self.vbo_transforms = self._instance_transform_cuda_buffer.map(dtype=wp.mat44, shape=(self.num_instances,))
+        self.vbo_transforms = self._instance_transform_cuda_buffer.map(dtype=warp.mat44, shape=(self.num_instances,))
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -1085,9 +1085,9 @@ class OpenGLRenderer:
             self.use_legacy_opengl = use_legacy_opengl
 
         if device is None:
-            self._device = wp.get_preferred_device()
+            self._device = warp.get_preferred_device()
         else:
-            self._device = wp.get_device(device)
+            self._device = warp.get_device(device)
 
         self._title = title
 
@@ -2413,7 +2413,7 @@ Instances: {len(self._instances)}"""
         gl.glBindBuffer(gl.GL_ARRAY_BUFFER, vbo)
         gl.glBufferData(gl.GL_ARRAY_BUFFER, vertices.nbytes, vertices.ctypes.data, gl.GL_STATIC_DRAW)
 
-        vertex_cuda_buffer = wp.RegisteredGLBuffer(int(vbo.value), self._device)
+        vertex_cuda_buffer = warp.RegisteredGLBuffer(int(vbo.value), self._device)
 
         ebo = gl.GLuint()
         gl.glGenBuffers(1, ebo)
@@ -2565,14 +2565,14 @@ Instances: {len(self._instances)}"""
         self._switch_context()
 
         self._add_shape_instances = False
-        self._wp_instance_transforms = wp.array(
-            [instance[3] for instance in self._instances.values()], dtype=wp.transform, device=self._device
+        self._wp_instance_transforms = warp.array(
+            [instance[3] for instance in self._instances.values()], dtype=warp.transform, device=self._device
         )
-        self._wp_instance_scalings = wp.array(
-            [instance[4] for instance in self._instances.values()], dtype=wp.vec3, device=self._device
+        self._wp_instance_scalings = warp.array(
+            [instance[4] for instance in self._instances.values()], dtype=warp.vec3, device=self._device
         )
-        self._wp_instance_bodies = wp.array(
-            [instance[1] for instance in self._instances.values()], dtype=wp.int32, device=self._device
+        self._wp_instance_bodies = warp.array(
+            [instance[1] for instance in self._instances.values()], dtype=warp.int32, device=self._device
         )
 
         gl.glUseProgram(self._shape_shader.id)
@@ -2586,7 +2586,7 @@ Instances: {len(self._instances)}"""
         gl.glBufferData(gl.GL_ARRAY_BUFFER, transforms.nbytes, transforms.ctypes.data, gl.GL_DYNAMIC_DRAW)
 
         # create CUDA buffer for instance transforms
-        self._instance_transform_cuda_buffer = wp.RegisteredGLBuffer(
+        self._instance_transform_cuda_buffer = warp.RegisteredGLBuffer(
             int(self._instance_transform_gl_buffer.value), self._device
         )
 
@@ -2637,8 +2637,8 @@ Instances: {len(self._instances)}"""
         # trigger update to the instance transforms
         self._update_shape_instances = True
 
-        self._wp_instance_ids = wp.array(instance_ids, dtype=wp.int32, device=self._device)
-        self._wp_instance_custom_ids = wp.array(instance_custom_ids, dtype=wp.int32, device=self._device)
+        self._wp_instance_ids = warp.array(instance_ids, dtype=warp.int32, device=self._device)
+        self._wp_instance_custom_ids = warp.array(instance_custom_ids, dtype=warp.int32, device=self._device)
         self._np_instance_visible = np.array(instance_visible)
         self._instance_ids = instance_ids
         self._inverse_instance_ids = inverse_instance_ids
@@ -2692,12 +2692,12 @@ Instances: {len(self._instances)}"""
         """Rebuild instance buffers after instance updates."""
         with self._shape_shader:
             self._update_shape_instances = False
-            self._wp_instance_transforms = wp.array(
-                [instance[3] for instance in self._instances.values()], dtype=wp.transform, device=self._device
+            self._wp_instance_transforms = warp.array(
+                [instance[3] for instance in self._instances.values()], dtype=warp.transform, device=self._device
             )
             self.update_body_transforms(None)
 
-    def update_body_transforms(self, body_tf: wp.array):
+    def update_body_transforms(self, body_tf: warp.array):
         """Update instance transforms from body transforms.
 
         Args:
@@ -2714,9 +2714,9 @@ Instances: {len(self._instances)}"""
             else:
                 body_q = body_tf.to(self._device)
 
-        vbo_transforms = self._instance_transform_cuda_buffer.map(dtype=wp.mat44, shape=(self._instance_count,))
+        vbo_transforms = self._instance_transform_cuda_buffer.map(dtype=warp.mat44, shape=(self._instance_count,))
 
-        wp.launch(
+        warp.launch(
             update_vbo_transforms,
             dim=self._instance_count,
             inputs=[
@@ -2769,7 +2769,7 @@ Instances: {len(self._instances)}"""
             self.clear()
             self.app.event_loop.exit()
 
-    def get_pixels(self, target_image: wp.array, split_up_tiles=True, mode="rgb", use_uint8=False):
+    def get_pixels(self, target_image: warp.array, split_up_tiles=True, mode="rgb", use_uint8=False):
         """
         Read the pixels from the frame buffer (RGB or depth are supported) into the given array.
 
@@ -2837,17 +2837,17 @@ Instances: {len(self._instances)}"""
         gl.glBindTexture(gl.GL_TEXTURE_2D, 0)
         gl.glBindBuffer(gl.GL_PIXEL_PACK_BUFFER, 0)
 
-        pbo_buffer = wp.RegisteredGLBuffer(int(self._frame_pbo.value), self._device, wp.RegisteredGLBuffer.READ_ONLY)
+        pbo_buffer = warp.RegisteredGLBuffer(int(self._frame_pbo.value), self._device, warp.RegisteredGLBuffer.READ_ONLY)
         screen_size = self.screen_height * self.screen_width
         if mode == "rgb":
-            img = pbo_buffer.map(dtype=wp.uint8, shape=(screen_size * channels))
+            img = pbo_buffer.map(dtype=warp.uint8, shape=(screen_size * channels))
         elif mode == "depth":
-            img = pbo_buffer.map(dtype=wp.float32, shape=(screen_size * channels))
+            img = pbo_buffer.map(dtype=warp.float32, shape=(screen_size * channels))
         img = img.to(target_image.device)
         if split_up_tiles:
-            positions = wp.array(self._tile_viewports, ndim=2, dtype=wp.int32, device=target_image.device)
+            positions = warp.array(self._tile_viewports, ndim=2, dtype=warp.int32, device=target_image.device)
             if mode == "rgb":
-                wp.launch(
+                warp.launch(
                     copy_rgb_frame_tiles_uint8 if use_uint8 else copy_rgb_frame_tiles,
                     dim=(self.num_tiles, self._tile_width, self._tile_height),
                     inputs=[img, positions, self.screen_width, self.screen_height, self._tile_height],
@@ -2855,7 +2855,7 @@ Instances: {len(self._instances)}"""
                     device=target_image.device,
                 )
             elif mode == "depth":
-                wp.launch(
+                warp.launch(
                     copy_depth_frame_tiles,
                     dim=(self.num_tiles, self._tile_width, self._tile_height),
                     inputs=[
@@ -2872,7 +2872,7 @@ Instances: {len(self._instances)}"""
                 )
         else:
             if mode == "rgb":
-                wp.launch(
+                warp.launch(
                     copy_rgb_frame_uint8 if use_uint8 else copy_rgb_frame,
                     dim=(self.screen_width, self.screen_height),
                     inputs=[img, self.screen_width, self.screen_height],
@@ -2880,7 +2880,7 @@ Instances: {len(self._instances)}"""
                     device=target_image.device,
                 )
             elif mode == "depth":
-                wp.launch(
+                warp.launch(
                     copy_depth_frame,
                     dim=(self.screen_width, self.screen_height),
                     inputs=[img, self.screen_width, self.screen_height, self.camera_near_plane, self.camera_far_plane],
@@ -3013,10 +3013,10 @@ Instances: {len(self._instances)}"""
                 q = (0.0, 0.0, 0.0, 1.0)
             else:
                 c = np.cross(normal, (0.0, 1.0, 0.0))
-                angle = wp.float32(np.arcsin(np.linalg.norm(c)))
-                axis = wp.vec3(np.abs(c))
-                axis = wp.normalize(axis)
-                q = wp.quat_from_axis_angle(axis, angle)
+                angle = warp.float32(np.arcsin(np.linalg.norm(c)))
+                axis = warp.vec3(np.abs(c))
+                axis = warp.normalize(axis)
+                q = warp.quat_from_axis_angle(axis, angle)
         return self.render_plane(
             "ground",
             pos,
@@ -3293,20 +3293,20 @@ Instances: {len(self._instances)}"""
 
         # No existing shape for the given mesh was found, or its topology may have changed,
         # so we need to define a new one either way.
-        with wp.ScopedDevice(self._device):
+        with warp.ScopedDevice(self._device):
             if smooth_shading:
-                normals = wp.zeros(point_count, dtype=wp.vec3)
-                vertices = wp.array(points, dtype=wp.vec3)
-                faces_per_vertex = wp.zeros(point_count, dtype=int)
-                wp.launch(
+                normals = warp.zeros(point_count, dtype=warp.vec3)
+                vertices = warp.array(points, dtype=warp.vec3)
+                faces_per_vertex = warp.zeros(point_count, dtype=int)
+                warp.launch(
                     compute_average_normals,
                     dim=idx_count,
-                    inputs=[wp.array(indices, dtype=int), vertices, scale],
+                    inputs=[warp.array(indices, dtype=int), vertices, scale],
                     outputs=[normals, faces_per_vertex],
                     record_tape=False,
                 )
-                gfx_vertices = wp.zeros((point_count, 8), dtype=float)
-                wp.launch(
+                gfx_vertices = warp.zeros((point_count, 8), dtype=float)
+                warp.launch(
                     assemble_gfx_vertices,
                     dim=point_count,
                     inputs=[vertices, normals, faces_per_vertex, scale],
@@ -3316,11 +3316,11 @@ Instances: {len(self._instances)}"""
                 gfx_vertices = gfx_vertices.numpy()
                 gfx_indices = indices.flatten()
             else:
-                gfx_vertices = wp.zeros((idx_count * 3, 8), dtype=float)
-                wp.launch(
+                gfx_vertices = warp.zeros((idx_count * 3, 8), dtype=float)
+                warp.launch(
                     compute_gfx_vertices,
                     dim=idx_count,
-                    inputs=[wp.array(indices, dtype=int), wp.array(points, dtype=wp.vec3), scale],
+                    inputs=[warp.array(indices, dtype=int), warp.array(points, dtype=warp.vec3), scale],
                     outputs=[gfx_vertices],
                     record_tape=False,
                 )
@@ -3426,13 +3426,13 @@ Instances: {len(self._instances)}"""
         if len(points) == 0:
             return
 
-        if isinstance(points, wp.array):
+        if isinstance(points, warp.array):
             wp_points = points
         else:
-            wp_points = wp.array(points, dtype=wp.vec3, device=self._device)
+            wp_points = warp.array(points, dtype=warp.vec3, device=self._device)
 
         if name not in self._shape_instancers:
-            np_points = points.numpy() if isinstance(points, wp.array) else points
+            np_points = points.numpy() if isinstance(points, warp.array) else points
             instancer = ShapeInstancer(self._shape_shader, self._device)
             radius_is_scalar = np.isscalar(radius)
             if radius_is_scalar:
@@ -3452,11 +3452,11 @@ Instances: {len(self._instances)}"""
         else:
             instancer = self._shape_instancers[name]
             if len(points) != instancer.num_instances:
-                np_points = points.numpy() if isinstance(points, wp.array) else points
+                np_points = points.numpy() if isinstance(points, warp.array) else points
                 instancer.allocate_instances(np_points)
 
         with instancer:
-            wp.launch(
+            warp.launch(
                 update_points_positions,
                 dim=len(points),
                 inputs=[wp_points, instancer.instance_scalings],
@@ -3482,9 +3482,9 @@ Instances: {len(self._instances)}"""
                 instancer.allocate_instances(np.zeros((len(lines), 3)))
             instancer.update_colors(color, color)
 
-        lines_wp = wp.array(lines, dtype=wp.vec3, ndim=2, device=self._device)
+        lines_wp = warp.array(lines, dtype=warp.vec3, ndim=2, device=self._device)
         with instancer:
-            wp.launch(
+            warp.launch(
                 update_line_transforms,
                 dim=len(lines),
                 inputs=[lines_wp],
@@ -3547,16 +3547,16 @@ Instances: {len(self._instances)}"""
             shape: Shape ID returned by :meth:`register_shape`.
             points: Vertex positions as a :class:`warp.array` or array-like.
         """
-        if isinstance(points, wp.array):
+        if isinstance(points, warp.array):
             wp_points = points.to(self._device)
         else:
-            wp_points = wp.array(points, dtype=wp.vec3, device=self._device)
+            wp_points = warp.array(points, dtype=warp.vec3, device=self._device)
 
         cuda_buffer = self._shape_gl_buffers[shape][4]
         vertices_shape = self._shapes[shape][0].shape
-        vbo_vertices = cuda_buffer.map(dtype=wp.float32, shape=vertices_shape)
+        vbo_vertices = cuda_buffer.map(dtype=warp.float32, shape=vertices_shape)
 
-        wp.launch(
+        warp.launch(
             update_vbo_vertices,
             dim=vertices_shape[0],
             inputs=[wp_points],

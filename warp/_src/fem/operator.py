@@ -30,7 +30,7 @@ class Integrand:
         module (Any): Warp module where the integrand is registered.
         argspec (Any): Full argument specification for the integrand function.
         kernel_options (dict[str, Any]): Kernel options used during kernel generation.
-        operators (Optional[dict[str, set["Operator"]]]): Resolved operators for field arguments, populated on first integrate call.
+        operators (Optional[dict[str, set[Operator]]]): Resolved operators for field arguments, populated on first integrate call.
         cached_kernels (dict[Any, Any]): Cache of compiled kernels by specialization key.
         cached_funcs (dict[Any, Any]): Cache of specialized functions by specialization key.
     """

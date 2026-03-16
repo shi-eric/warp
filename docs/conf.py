@@ -89,7 +89,8 @@ nitpick_ignore_regex = [
     ),
     # Concrete numeric types
     (r"py:class", r"(int|uint|float)\d+"),
-    # Array type parameters from wp.array() annotations (e.g., "dtype=wp.float32", "ndim=3")
+    # Array type parameters from warp.array() annotations (e.g., "dtype=warp.float32", "ndim=3")
+    # Sphinx splits "warp.array(dtype=float, ndim=3)" and tries to resolve each part as a class.
     (r"py:class", r"(ndim|dtype)=.*"),
     # Internal _src paths
     (r"py:class", r"warp\._src\..*"),
@@ -115,10 +116,6 @@ nitpick_ignore_regex = [
     (r"py:class", r"(optional|array-like|-|\d+)"),
     # Stringified property/cached_property objects leaking into type annotations
     (r"py:class", r"<(property|functools\.cached_property) object at .*>"),
-    # Quoted string annotations (e.g., "Operator")
-    (r"py:class", r'".*"'),
-    # Descriptive text accidentally parsed as type references
-    (r"py:class", r"The output format to use"),
     # warp.DType / warp.dtype (not a real class in the Sphinx object inventory)
     (r"py:class", r"warp\.[Dd][Tt]ype"),
     # Autosummary-generated member stubs for Warp classes (Texture*, fem.*, etc.)
