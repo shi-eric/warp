@@ -69,7 +69,7 @@ extensions = [
 ]
 
 # Enable nitpicky mode to warn about unresolved references.
-nitpicky = False
+nitpicky = True
 
 # Ignore warnings for Warp types in function signatures that Sphinx can't
 # resolve without fully qualified names (e.g., "int32" vs "warp.int32").
@@ -87,10 +87,38 @@ nitpick_ignore_regex = [
     ),
     # Concrete numeric types
     (r"py:class", r"(int|uint|float)\d+"),
-    # Array type parameters from wp.array() annotations
-    (r"py:class", r"(ndim|dtype)=\w+"),
+    # Array type parameters from wp.array() annotations (e.g., "dtype=wp.float32", "ndim=3")
+    (r"py:class", r"(ndim|dtype)=.*"),
     # Internal _src paths
     (r"py:class", r"warp\._src\..*"),
+    # wp.-prefixed types that Sphinx can't resolve (e.g., wp.array, wp.vec3, wp.Kernel)
+    (r"py:class", r"wp\..*"),
+    # Short type names used in FEM annotations (e.g., DeviceLike, Graph, Sample, Coords)
+    (
+        r"py:class",
+        r"(DeviceLike|Graph|Struct|BlockType|Rows|Cols|Sample|Coords|ElementIndex|"
+        r"ElementArg|ElementEvalArg|ElementIndexArg|TopologyArg|EvalArg|"
+        r"BsrMatrixOrExpression|_Var|_FuncParams|FunctionMetadata|KernelHooks|"
+        r"launch_bounds_t|FieldRestriction|scalar|vec3)",
+    ),
+    # FEM nested type annotations (e.g., Geometry.CellArg, FieldLike.EvalArg)
+    (r"py:class", r"\w+\.\w+Arg"),
+    # External types from mocked or optional dependencies
+    (r"py:class", r"(np\.ndarray|paddle\.Tensor|Usd\.Stage|_ctypes\.Structure|builtins\.bool)"),
+    # numpy internal type annotations
+    (r"py:class", r"numpy\..*"),
+    # Annotation artifacts from type signatures (e.g., "optional", "array-like", "-", "3", "4")
+    (r"py:class", r"(optional|array-like|-|\d+)"),
+    # Stringified property/cached_property objects leaking into type annotations
+    (r"py:class", r"<(property|functools\.cached_property) object at .*>"),
+    # Quoted string annotations (e.g., "Operator")
+    (r"py:class", r'".*"'),
+    # Descriptive text accidentally parsed as type references
+    (r"py:class", r"The output format to use"),
+    # warp.DType / warp.dtype (not a real class in the Sphinx object inventory)
+    (r"py:class", r"warp\.[Dd][Tt]ype"),
+    # Autosummary-generated member stubs for Warp classes (Texture*, fem.*, etc.)
+    (r"py:obj", r"warp\.(Texture\w+|fixedarray|indexedarray|indexedfabricarray|fabricarray|fem\.).*"),
     # Internal C++/Python interop methods on geometric types
     (
         r"py:obj",
@@ -103,6 +131,14 @@ nitpick_ignore_regex = [
         r"py:obj",
         r".*\.(conjugate|bit_length|bit_count|to_bytes|from_bytes|as_integer_ratio|is_integer|real|imag|numerator|denominator)",
     ),
+    # FEM OUTSIDE constant (module-level, not exported to public API)
+    (r"py:data", r"OUTSIDE"),
+    # jax_callable lives in a mocked/optional submodule
+    (r"py:func", r"warp\.jax_experimental\.jax_callable"),
+    # Internal/unexported FEM functions referenced in docstrings
+    (r"py:func", r"warp\.fem\.enforce_nanogrid_grading"),
+    # Deprecated/internal OmniGraph function
+    (r"py:func", r"warp\.from_omni_graph_ptr"),
 ]
 
 

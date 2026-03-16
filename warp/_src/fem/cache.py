@@ -434,7 +434,7 @@ class TemporaryStore:
     """
     Shared pool of temporary arrays that will be persisted and reused across invocations of ``warp.fem`` functions.
 
-    A :class:`TemporaryStore` instance may either be passed explicitly to ``warp.fem`` functions that accept such an argument, for instance :func:`.integrate.integrate`,
+    A :class:`TemporaryStore` instance may either be passed explicitly to ``warp.fem`` functions that accept such an argument, for instance :func:`warp.fem.integrate`,
     or can be set globally as the default store using :func:`set_default_temporary_store`.
 
     By default, there is no default temporary store, so that temporary allocations are not persisted.
