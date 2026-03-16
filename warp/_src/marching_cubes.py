@@ -48,7 +48,7 @@ MC_EDGE_TO_CORNERS: Final[tuple[tuple[int, int], ...]] = (
 
 
 def marching_cubes_extract_vertices(
-    field: warp.array3d(dtype=warp.float32),
+    field: warp.array3d[warp.float32],
     threshold: float,
     domain_bounds_lower_corner: warp.vec3,
     grid_pos_delta: warp.vec3,
@@ -116,16 +116,16 @@ def marching_cubes_extract_vertices(
 
 @warp.kernel
 def extract_vertices_kernel(
-    values: warp.array3d(dtype=warp.float32),
+    values: warp.array3d[warp.float32],
     threshold: warp.float32,
     domain_bounds_lower_corner: warp.vec3,
     grid_pos_delta: warp.vec3,
-    vertex_result_ind: warp.array(dtype=warp.int32),
+    vertex_result_ind: warp.array[warp.int32],
     count_only: bool,
-    thread_output_count: warp.array(dtype=warp.int32),
-    verts_pos_out: warp.array(dtype=warp.vec3),
-    verts_is_boundary_out: warp.array(dtype=warp.bool),
-    edge_generated_vert_ind: warp.array(dtype=warp.int32, ndim=4),
+    thread_output_count: warp.array[warp.int32],
+    verts_pos_out: warp.array[warp.vec3],
+    verts_is_boundary_out: warp.array[warp.bool],
+    edge_generated_vert_ind: warp.array4d[warp.int32],
 ):
     """Kernel for vertex extraction.
 
@@ -199,9 +199,9 @@ def extract_vertices_kernel(
 
 
 def marching_cubes_extract_faces(
-    values: warp.array3d(dtype=warp.float32),
+    values: warp.array3d[warp.float32],
     threshold: warp.float32,
-    edge_generated_vert_ind: warp.array(dtype=warp.int32, ndim=4),
+    edge_generated_vert_ind: warp.array4d[warp.int32],
 ):
     """Invoke kernels to extract faces and index the appropriate vertices."""
     device = values.device
@@ -268,16 +268,16 @@ def marching_cubes_extract_faces(
 # Warp issues warnings if we set enable_backward=False
 @warp.kernel
 def extract_faces_kernel(
-    values: warp.array3d(dtype=warp.float32),
+    values: warp.array3d[warp.float32],
     threshold: warp.float32,
-    edge_generated_vert_ind: warp.array(dtype=warp.int32, ndim=4),
-    face_result_ind: warp.array(dtype=warp.int32),
-    mc_case_to_tri_range_table: warp.array(dtype=warp.int32),
-    mc_tri_local_inds_table: warp.array(dtype=warp.int32),
-    mc_edge_offset_table: warp.array(dtype=warp.int32, ndim=2),
+    edge_generated_vert_ind: warp.array4d[warp.int32],
+    face_result_ind: warp.array[warp.int32],
+    mc_case_to_tri_range_table: warp.array[warp.int32],
+    mc_tri_local_inds_table: warp.array[warp.int32],
+    mc_edge_offset_table: warp.array2d[warp.int32],
     count_only: bool,
-    thread_output_count: warp.array(dtype=warp.int32),
-    faces_out: warp.array(dtype=warp.int32),
+    thread_output_count: warp.array[warp.int32],
+    faces_out: warp.array[warp.int32],
 ):
     """
     Kernel for face extraction
@@ -610,8 +610,8 @@ class MarchingCubes:
         self.max_tris = max_tris
 
         # Output arrays
-        self.verts: warp.array(dtype=warp.vec3f) | None = None
-        self.indices: warp.array(dtype=warp.int32) | None = None
+        self.verts: warp.array[warp.vec3f] | None = None
+        self.indices: warp.array[warp.int32] | None = None
 
         # These are unused, but retained for backwards-compatibility for code which might use them
         self.id = 0
@@ -636,7 +636,7 @@ class MarchingCubes:
         self.ny = ny
         self.nz = nz
 
-    def surface(self, field: warp.array(dtype=float, ndim=3), threshold: float) -> None:
+    def surface(self, field: warp.array3d[float], threshold: float) -> None:
         """Compute a 2D surface mesh of a given isosurface from a 3D scalar field.
 
         This method is a convenience wrapper that calls the core static method
@@ -670,11 +670,11 @@ class MarchingCubes:
 
     @staticmethod
     def extract_surface_marching_cubes(
-        field: warp.array3d(dtype=warp.float32),
+        field: warp.array3d[warp.float32],
         threshold: float = 0.0,
         domain_bounds_lower_corner: warp.vec3 | tuple[float, float, float] | None = None,
         domain_bounds_upper_corner: warp.vec3 | tuple[float, float, float] | None = None,
-    ) -> tuple[warp.array(dtype=warp.vec3), warp.array(dtype=warp.int32)]:
+    ) -> tuple[warp.array[warp.vec3], warp.array[warp.int32]]:
         """Extract a triangular mesh from a 3D scalar field.
 
         This function generates an isosurface by processing the entire input ``field``.

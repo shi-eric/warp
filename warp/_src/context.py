@@ -8350,7 +8350,7 @@ condition_host = None
 
 
 def capture_if(
-    condition: warp.array(dtype=int),
+    condition: warp.array[int],
     on_true: Callable | Graph | None = None,
     on_false: Callable | Graph | None = None,
     stream: Stream = None,
@@ -8498,7 +8498,7 @@ def capture_if(
 
 
 def capture_while(
-    condition: warp.array(dtype=int), while_body: Callable | Graph, stream: Stream | None = None, **kwargs
+    condition: warp.array[int], while_body: Callable | Graph, stream: Stream | None = None, **kwargs
 ):
     """Create a dynamic loop based on a condition.
 
