@@ -84,7 +84,7 @@ class CollocatedFunctionSpace(FunctionSpace):
     def make_field(
         self,
         space_partition: Optional[SpacePartition] = None,
-    ) -> "wp._src.fem.NodalField":
+    ) -> "warp._src.fem.NodalField":
         """Create a discrete field over this function space.
 
         Args:
@@ -230,7 +230,7 @@ class VectorValuedFunctionSpace(FunctionSpace):
     def make_field(
         self,
         space_partition: Optional[SpacePartition] = None,
-    ) -> "wp._src.fem.NodalField":
+    ) -> "warp._src.fem.NodalField":
         """Create a discrete field over this function space.
 
         Args:

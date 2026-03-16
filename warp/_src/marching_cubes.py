@@ -575,7 +575,7 @@ class MarchingCubes:
         nz: int,
         max_verts: int = 0,
         max_tris: int = 0,
-        device: wp.DeviceLike = None,
+        device: warp.DeviceLike = None,
         domain_bounds_lower_corner=None,
         domain_bounds_upper_corner=None,
     ):
@@ -610,8 +610,8 @@ class MarchingCubes:
         self.max_tris = max_tris
 
         # Output arrays
-        self.verts: wp.array(dtype=wp.vec3f) | None = None
-        self.indices: wp.array(dtype=wp.int32) | None = None
+        self.verts: warp.array(dtype=wp.vec3f) | None = None
+        self.indices: warp.array(dtype=wp.int32) | None = None
 
         # These are unused, but retained for backwards-compatibility for code which might use them
         self.id = 0
@@ -636,7 +636,7 @@ class MarchingCubes:
         self.ny = ny
         self.nz = nz
 
-    def surface(self, field: wp.array(dtype=float, ndim=3), threshold: float) -> None:
+    def surface(self, field: warp.array(dtype=float, ndim=3), threshold: float) -> None:
         """Compute a 2D surface mesh of a given isosurface from a 3D scalar field.
 
         This method is a convenience wrapper that calls the core static method
@@ -670,11 +670,11 @@ class MarchingCubes:
 
     @staticmethod
     def extract_surface_marching_cubes(
-        field: wp.array3d(dtype=wp.float32),
+        field: warp.array3d(dtype=wp.float32),
         threshold: float = 0.0,
-        domain_bounds_lower_corner: wp.vec3 | tuple[float, float, float] | None = None,
-        domain_bounds_upper_corner: wp.vec3 | tuple[float, float, float] | None = None,
-    ) -> tuple[wp.array(dtype=wp.vec3), wp.array(dtype=wp.int32)]:
+        domain_bounds_lower_corner: warp.vec3 | tuple[float, float, float] | None = None,
+        domain_bounds_upper_corner: warp.vec3 | tuple[float, float, float] | None = None,
+    ) -> tuple[warp.array(dtype=wp.vec3), warp.array(dtype=wp.int32)]:
         """Extract a triangular mesh from a 3D scalar field.
 
         This function generates an isosurface by processing the entire input ``field``.

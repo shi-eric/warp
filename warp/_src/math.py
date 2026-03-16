@@ -15,7 +15,7 @@
 
 from typing import Any
 
-import warp as wp
+import warp
 
 """
 Math helper functions for vector norms, quaternions, and transforms.
@@ -44,7 +44,7 @@ __all__ = [
 ]
 
 
-@wp.func
+@warp.func
 def norm_l1(v: Any) -> float:
     """Compute the L1 norm of a vector v.
 
@@ -58,11 +58,11 @@ def norm_l1(v: Any) -> float:
     """
     n = float(0.0)
     for i in range(len(v)):
-        n += wp.abs(v[i])
+        n += warp.abs(v[i])
     return n
 
 
-@wp.func
+@warp.func
 def norm_l2(v: Any) -> float:
     """Compute the L2 norm of a vector v.
 
@@ -74,10 +74,10 @@ def norm_l2(v: Any) -> float:
     Returns:
         float: The L2 norm of the vector.
     """
-    return wp.length(v)
+    return warp.length(v)
 
 
-@wp.func
+@warp.func
 def norm_huber(v: Any, delta: float = 1.0) -> float:
     """Compute the Huber norm of a vector v with a given delta.
 
@@ -94,13 +94,13 @@ def norm_huber(v: Any, delta: float = 1.0) -> float:
     Returns:
         float: The Huber norm of the vector.
     """
-    a = wp.dot(v, v)
+    a = warp.dot(v, v)
     if a <= delta * delta:
         return 0.5 * a
-    return delta * (wp.sqrt(a) - 0.5 * delta)
+    return delta * (warp.sqrt(a) - 0.5 * delta)
 
 
-@wp.func
+@warp.func
 def norm_pseudo_huber(v: Any, delta: float = 1.0) -> float:
     """Compute the "pseudo" Huber norm of a vector v with a given delta.
 
@@ -117,11 +117,11 @@ def norm_pseudo_huber(v: Any, delta: float = 1.0) -> float:
     Returns:
         float: The Huber norm of the vector.
     """
-    a = wp.dot(v, v)
-    return delta * wp.sqrt(1.0 + a / (delta * delta))
+    a = warp.dot(v, v)
+    return delta * warp.sqrt(1.0 + a / (delta * delta))
 
 
-@wp.func
+@warp.func
 def smooth_normalize(v: Any, delta: float = 1.0) -> Any:
     """Normalize a vector using the pseudo-Huber norm.
 
@@ -140,8 +140,8 @@ def smooth_normalize(v: Any, delta: float = 1.0) -> Any:
     return v / norm_pseudo_huber(v, delta)
 
 
-@wp.func
-def velocity_at_point(qd: wp.spatial_vector, r: wp.vec3) -> wp.vec3:
+@warp.func
+def velocity_at_point(qd: "warp.spatial_vector", r: "warp.vec3") -> "warp.vec3":
     """Evaluate the linear velocity of an offset point on a rigid body.
 
     Given a spatial twist ``qd = (w, v)`` and a point offset ``r`` from the twist
@@ -155,13 +155,13 @@ def velocity_at_point(qd: wp.spatial_vector, r: wp.vec3) -> wp.vec3:
         r: Point position relative to the same frame origin.
 
     Returns:
-        wp.vec3: Linear velocity of the point.
+        warp.vec3: Linear velocity of the point.
     """
-    return wp.spatial_bottom(qd) + wp.cross(wp.spatial_top(qd), r)
+    return warp.spatial_bottom(qd) + warp.cross(warp.spatial_top(qd), r)
 
 
-@wp.func
-def quat_twist(axis: wp.vec3, q: wp.quat) -> wp.quat:
+@warp.func
+def quat_twist(axis: "warp.vec3", q: "warp.quat") -> "warp.quat":
     """Extract the twist quaternion of ``q`` around ``axis``.
 
     This performs a swing-twist decomposition and returns the component of
@@ -172,16 +172,16 @@ def quat_twist(axis: wp.vec3, q: wp.quat) -> wp.quat:
         q: Input quaternion in ``(x, y, z, w)`` layout.
 
     Returns:
-        wp.quat: Unit twist quaternion.
+        warp.quat: Unit twist quaternion.
     """
-    a = wp.vec3(q[0], q[1], q[2])
-    proj = wp.dot(a, axis)
+    a = warp.vec3(q[0], q[1], q[2])
+    proj = warp.dot(a, axis)
     a = proj * axis
-    return wp.normalize(wp.quat(a[0], a[1], a[2], q[3]))
+    return warp.normalize(warp.quat(a[0], a[1], a[2], q[3]))
 
 
-@wp.func
-def quat_twist_angle(axis: wp.vec3, q: wp.quat) -> float:
+@warp.func
+def quat_twist_angle(axis: "warp.vec3", q: "warp.quat") -> float:
     """Return the twist magnitude of ``q`` around ``axis``.
 
     This returns an unsigned twist magnitude. For canonicalized quaternions
@@ -195,11 +195,11 @@ def quat_twist_angle(axis: wp.vec3, q: wp.quat) -> float:
     Returns:
         float: Twist angle in radians in ``[0, pi]`` for canonicalized inputs.
     """
-    return 2.0 * wp.acos(quat_twist(axis, q)[3])
+    return 2.0 * warp.acos(quat_twist(axis, q)[3])
 
 
-@wp.func
-def quat_to_rpy(q: wp.quat) -> wp.vec3:
+@warp.func
+def quat_to_rpy(q: "warp.quat") -> "warp.vec3":
     """Convert a quaternion to roll-pitch-yaw angles (ZYX convention).
 
     The output is ``(roll, pitch, yaw)`` in radians using extrinsic rotations
@@ -209,7 +209,7 @@ def quat_to_rpy(q: wp.quat) -> wp.vec3:
         q: Input quaternion in ``(x, y, z, w)`` order.
 
     Returns:
-        wp.vec3: ``(roll, pitch, yaw)`` in radians.
+        warp.vec3: ``(roll, pitch, yaw)`` in radians.
     """
 
     x = q[0]
@@ -218,21 +218,21 @@ def quat_to_rpy(q: wp.quat) -> wp.vec3:
     w = q[3]
     t0 = 2.0 * (w * x + y * z)
     t1 = 1.0 - 2.0 * (x * x + y * y)
-    roll_x = wp.atan2(t0, t1)
+    roll_x = warp.atan2(t0, t1)
 
     t2 = 2.0 * (w * y - z * x)
-    t2 = wp.clamp(t2, -1.0, 1.0)
-    pitch_y = wp.asin(t2)
+    t2 = warp.clamp(t2, -1.0, 1.0)
+    pitch_y = warp.asin(t2)
 
     t3 = 2.0 * (w * z + x * y)
     t4 = 1.0 - 2.0 * (y * y + z * z)
-    yaw_z = wp.atan2(t3, t4)
+    yaw_z = warp.atan2(t3, t4)
 
-    return wp.vec3(roll_x, pitch_y, yaw_z)
+    return warp.vec3(roll_x, pitch_y, yaw_z)
 
 
-@wp.func
-def quat_to_euler(q: wp.quat, i: int, j: int, k: int) -> wp.vec3:
+@warp.func
+def quat_to_euler(q: "warp.quat", i: int, j: int, k: int) -> "warp.vec3":
     """Convert a quaternion into Euler angles for an axis sequence.
 
     The integers ``i``, ``j``, and ``k`` are axis indices in ``{0, 1, 2}``
@@ -260,7 +260,7 @@ def quat_to_euler(q: wp.quat, i: int, j: int, k: int) -> wp.vec3:
         k: Index of the third axis.
 
     Returns:
-        wp.vec3: Euler angles in radians.
+        warp.vec3: Euler angles in radians.
     """
     # The conversion formula below is derived for scalar-first quaternions
     # q = (w, x, y, z). Warp stores quaternions as (x, y, z, w), so remap
@@ -321,20 +321,20 @@ def quat_to_euler(q: wp.quat, i: int, j: int, k: int) -> wp.vec3:
         b += qk * e
         c += q0
         d -= qi
-    t2 = wp.acos(2.0 * (a * a + b * b) / (a * a + b * b + c * c + d * d) - 1.0)
-    tp = wp.atan2(b, a)
-    tm = wp.atan2(d, c)
+    t2 = warp.acos(2.0 * (a * a + b * b) / (a * a + b * b + c * c + d * d) - 1.0)
+    tp = warp.atan2(b, a)
+    tm = warp.atan2(d, c)
     t1 = 0.0
     t3 = 0.0
-    if wp.abs(t2) < 1e-6:
+    if warp.abs(t2) < 1e-6:
         t3 = 2.0 * tp - t1
-    elif wp.abs(t2 - wp.pi) < 1e-6:
+    elif warp.abs(t2 - warp.pi) < 1e-6:
         t3 = 2.0 * tm + t1
     else:
         t1 = tp - tm
         t3 = tp + tm
     if not_proper:
-        t2 -= wp.HALF_PI
+        t2 -= warp.HALF_PI
         t3 *= e
 
     # Place the solved angles back into (x, y, z) by axis index.
@@ -364,11 +364,11 @@ def quat_to_euler(q: wp.quat, i: int, j: int, k: int) -> wp.vec3:
     else:
         ez = t3
 
-    return wp.vec3(ex, ey, ez)
+    return warp.vec3(ex, ey, ez)
 
 
-@wp.func
-def quat_from_euler(e: wp.vec3, i: int, j: int, k: int) -> wp.quat:
+@warp.func
+def quat_from_euler(e: "warp.vec3", i: int, j: int, k: int) -> "warp.quat":
     """Construct a quaternion from Euler angles and an axis sequence.
 
     Args:
@@ -383,7 +383,7 @@ def quat_from_euler(e: wp.vec3, i: int, j: int, k: int) -> wp.quat:
         :func:`quat_to_euler`.
 
     Returns:
-        wp.quat: Quaternion in ``(x, y, z, w)`` layout.
+        warp.quat: Quaternion in ``(x, y, z, w)`` layout.
     """
     ei = e[i]
     ej = e[j]
@@ -393,45 +393,45 @@ def quat_from_euler(e: wp.vec3, i: int, j: int, k: int) -> wp.quat:
     hj = 0.5 * ej
     hk = 0.5 * ek
 
-    qi = wp.quat(0.0, 0.0, 0.0, 1.0)
-    qj = wp.quat(0.0, 0.0, 0.0, 1.0)
-    qk = wp.quat(0.0, 0.0, 0.0, 1.0)
+    qi = warp.quat(0.0, 0.0, 0.0, 1.0)
+    qj = warp.quat(0.0, 0.0, 0.0, 1.0)
+    qk = warp.quat(0.0, 0.0, 0.0, 1.0)
 
-    si = wp.sin(hi)
-    sj = wp.sin(hj)
-    sk = wp.sin(hk)
-    ci = wp.cos(hi)
-    cj = wp.cos(hj)
-    ck = wp.cos(hk)
+    si = warp.sin(hi)
+    sj = warp.sin(hj)
+    sk = warp.sin(hk)
+    ci = warp.cos(hi)
+    cj = warp.cos(hj)
+    ck = warp.cos(hk)
 
     if i == 0:
-        qi = wp.quat(si, 0.0, 0.0, ci)
+        qi = warp.quat(si, 0.0, 0.0, ci)
     elif i == 1:
-        qi = wp.quat(0.0, si, 0.0, ci)
+        qi = warp.quat(0.0, si, 0.0, ci)
     else:
-        qi = wp.quat(0.0, 0.0, si, ci)
+        qi = warp.quat(0.0, 0.0, si, ci)
 
     if j == 0:
-        qj = wp.quat(sj, 0.0, 0.0, cj)
+        qj = warp.quat(sj, 0.0, 0.0, cj)
     elif j == 1:
-        qj = wp.quat(0.0, sj, 0.0, cj)
+        qj = warp.quat(0.0, sj, 0.0, cj)
     else:
-        qj = wp.quat(0.0, 0.0, sj, cj)
+        qj = warp.quat(0.0, 0.0, sj, cj)
 
     if k == 0:
-        qk = wp.quat(sk, 0.0, 0.0, ck)
+        qk = warp.quat(sk, 0.0, 0.0, ck)
     elif k == 1:
-        qk = wp.quat(0.0, sk, 0.0, ck)
+        qk = warp.quat(0.0, sk, 0.0, ck)
     else:
-        qk = wp.quat(0.0, 0.0, sk, ck)
+        qk = warp.quat(0.0, 0.0, sk, ck)
 
     # For extrinsic rotations about fixed axes i -> j -> k, quaternion
     # composition is q = q_k * q_j * q_i.
-    return wp.mul(qk, wp.mul(qj, qi))
+    return warp.mul(qk, warp.mul(qj, qi))
 
 
-@wp.func
-def transform_twist(t: wp.transform, x: wp.spatial_vector) -> wp.spatial_vector:
+@warp.func
+def transform_twist(t: "warp.transform", x: "warp.spatial_vector") -> "warp.spatial_vector":
     """Transform a spatial twist between coordinate frames.
 
     For transform ``t = (R, p)`` and twist ``x = (w, v)``, the mapped twist is:
@@ -444,23 +444,23 @@ def transform_twist(t: wp.transform, x: wp.spatial_vector) -> wp.spatial_vector:
         x: Spatial twist ``(angular, linear)`` expressed in the source frame.
 
     Returns:
-        wp.spatial_vector: Twist expressed in the destination frame.
+        warp.spatial_vector: Twist expressed in the destination frame.
     """
 
-    q = wp.transform_get_rotation(t)
-    p = wp.transform_get_translation(t)
+    q = warp.transform_get_rotation(t)
+    p = warp.transform_get_translation(t)
 
-    w = wp.spatial_top(x)
-    v = wp.spatial_bottom(x)
+    w = warp.spatial_top(x)
+    v = warp.spatial_bottom(x)
 
-    w = wp.quat_rotate(q, w)
-    v = wp.quat_rotate(q, v) + wp.cross(p, w)
+    w = warp.quat_rotate(q, w)
+    v = warp.quat_rotate(q, v) + warp.cross(p, w)
 
-    return wp.spatial_vector(w, v)
+    return warp.spatial_vector(w, v)
 
 
-@wp.func
-def transform_wrench(t: wp.transform, x: wp.spatial_vector) -> wp.spatial_vector:
+@warp.func
+def transform_wrench(t: "warp.transform", x: "warp.spatial_vector") -> "warp.spatial_vector":
     """Transform a spatial wrench between coordinate frames.
 
     For transform ``t = (R, p)`` and wrench ``x = (tau, f)``, the mapped wrench is:
@@ -473,25 +473,25 @@ def transform_wrench(t: wp.transform, x: wp.spatial_vector) -> wp.spatial_vector
         x: Spatial wrench ``(torque, force)`` expressed in the source frame.
 
     Returns:
-        wp.spatial_vector: Wrench expressed in the destination frame.
+        warp.spatial_vector: Wrench expressed in the destination frame.
     """
 
-    q = wp.transform_get_rotation(t)
-    p = wp.transform_get_translation(t)
+    q = warp.transform_get_rotation(t)
+    p = warp.transform_get_translation(t)
 
-    tau = wp.spatial_top(x)
-    f = wp.spatial_bottom(x)
+    tau = warp.spatial_top(x)
+    f = warp.spatial_bottom(x)
 
-    f = wp.quat_rotate(q, f)
-    tau = wp.quat_rotate(q, tau) + wp.cross(p, f)
+    f = warp.quat_rotate(q, f)
+    tau = warp.quat_rotate(q, tau) + warp.cross(p, f)
 
-    return wp.spatial_vector(tau, f)
+    return warp.spatial_vector(tau, f)
 
 
 def create_transform_from_matrix_func(dtype):
-    mat44 = wp._src.types.matrix((4, 4), dtype)
-    vec3 = wp._src.types.vector(3, dtype)
-    transform = wp._src.types.transformation(dtype)
+    mat44 = warp._src.types.matrix((4, 4), dtype)
+    vec3 = warp._src.types.vector(3, dtype)
+    transform = warp._src.types.transformation(dtype)
 
     def transform_from_matrix(mat: mat44) -> transform:
         """Construct a transformation from a 4x4 matrix.
@@ -516,29 +516,29 @@ def create_transform_from_matrix_func(dtype):
             Transformation[Float]: The transformation.
         """
         p = vec3(mat[0][3], mat[1][3], mat[2][3])
-        q = wp.quat_from_matrix(mat)
+        q = warp.quat_from_matrix(mat)
         return transform(p, q)
 
     return transform_from_matrix
 
 
-transform_from_matrix = wp.func(
-    create_transform_from_matrix_func(wp.float32),
+transform_from_matrix = warp.func(
+    create_transform_from_matrix_func(warp.float32),
     name="transform_from_matrix",
 )
-wp.func(
-    create_transform_from_matrix_func(wp.float16),
+warp.func(
+    create_transform_from_matrix_func(warp.float16),
     name="transform_from_matrix",
 )
-wp.func(
-    create_transform_from_matrix_func(wp.float64),
+warp.func(
+    create_transform_from_matrix_func(warp.float64),
     name="transform_from_matrix",
 )
 
 
 def create_transform_to_matrix_func(dtype):
-    mat44 = wp._src.types.matrix((4, 4), dtype)
-    transform = wp._src.types.transformation(dtype)
+    mat44 = warp._src.types.matrix((4, 4), dtype)
+    transform = warp._src.types.transformation(dtype)
 
     def transform_to_matrix(xform: transform) -> mat44:
         """Convert a transformation to a 4x4 matrix.
@@ -562,9 +562,9 @@ def create_transform_to_matrix_func(dtype):
         Returns:
             Matrix[Float, 4, 4]: The matrix.
         """
-        p = wp.transform_get_translation(xform)
-        q = wp.transform_get_rotation(xform)
-        rot = wp.quat_to_matrix(q)
+        p = warp.transform_get_translation(xform)
+        q = warp.transform_get_rotation(xform)
+        rot = warp.quat_to_matrix(q)
         # fmt: off
         return mat44(
             rot[0][0], rot[0][1], rot[0][2], p[0],
@@ -577,24 +577,24 @@ def create_transform_to_matrix_func(dtype):
     return transform_to_matrix
 
 
-transform_to_matrix = wp.func(
-    create_transform_to_matrix_func(wp.float32),
+transform_to_matrix = warp.func(
+    create_transform_to_matrix_func(warp.float32),
     name="transform_to_matrix",
 )
-wp.func(
-    create_transform_to_matrix_func(wp.float16),
+warp.func(
+    create_transform_to_matrix_func(warp.float16),
     name="transform_to_matrix",
 )
-wp.func(
-    create_transform_to_matrix_func(wp.float64),
+warp.func(
+    create_transform_to_matrix_func(warp.float64),
     name="transform_to_matrix",
 )
 
 
 def create_transform_compose_func(dtype):
-    mat44 = wp._src.types.matrix((4, 4), dtype)
-    quat = wp._src.types.quaternion(dtype)
-    vec3 = wp._src.types.vector(3, dtype)
+    mat44 = warp._src.types.matrix((4, 4), dtype)
+    quat = warp._src.types.quaternion(dtype)
+    vec3 = warp._src.types.vector(3, dtype)
 
     def transform_compose(position: vec3, rotation: quat, scale: vec3):
         """Compose a 4x4 transformation matrix from a 3D position, quaternion orientation, and 3D scale.
@@ -621,7 +621,7 @@ def create_transform_compose_func(dtype):
         Returns:
             Matrix[Float, 4, 4]: The transformation matrix.
         """
-        R = wp.quat_to_matrix(rotation)
+        R = warp.quat_to_matrix(rotation)
         # fmt: off
         return mat44(
             scale[0] * R[0,0], scale[1] * R[0,1], scale[2] * R[0,2], position[0],
@@ -634,24 +634,24 @@ def create_transform_compose_func(dtype):
     return transform_compose
 
 
-transform_compose = wp.func(
-    create_transform_compose_func(wp.float32),
+transform_compose = warp.func(
+    create_transform_compose_func(warp.float32),
     name="transform_compose",
 )
-wp.func(
-    create_transform_compose_func(wp.float16),
+warp.func(
+    create_transform_compose_func(warp.float16),
     name="transform_compose",
 )
-wp.func(
-    create_transform_compose_func(wp.float64),
+warp.func(
+    create_transform_compose_func(warp.float64),
     name="transform_compose",
 )
 
 
 def create_transform_decompose_func(dtype):
-    mat44 = wp._src.types.matrix((4, 4), dtype)
-    vec3 = wp._src.types.vector(3, dtype)
-    mat33 = wp._src.types.matrix((3, 3), dtype)
+    mat44 = warp._src.types.matrix((4, 4), dtype)
+    vec3 = warp._src.types.vector(3, dtype)
+    mat33 = warp._src.types.matrix((3, 3), dtype)
     zero = dtype(0.0)
 
     def transform_decompose(m: mat44):
@@ -684,9 +684,9 @@ def create_transform_decompose_func(dtype):
         r10, r11, r12 = m[1, 0], m[1, 1], m[1, 2]
         r20, r21, r22 = m[2, 0], m[2, 1], m[2, 2]
         # get scale magnitudes
-        sx = wp.sqrt(r00 * r00 + r10 * r10 + r20 * r20)
-        sy = wp.sqrt(r01 * r01 + r11 * r11 + r21 * r21)
-        sz = wp.sqrt(r02 * r02 + r12 * r12 + r22 * r22)
+        sx = warp.sqrt(r00 * r00 + r10 * r10 + r20 * r20)
+        sy = warp.sqrt(r01 * r01 + r11 * r11 + r21 * r21)
+        sz = warp.sqrt(r02 * r02 + r12 * r12 + r22 * r22)
         # normalize rotation matrix components
         if sx != zero:
             r00 /= sx
@@ -701,7 +701,7 @@ def create_transform_decompose_func(dtype):
             r12 /= sz
             r22 /= sz
         # extract rotation (quaternion)
-        rotation = wp.quat_from_matrix(mat33(r00, r01, r02, r10, r11, r12, r20, r21, r22))
+        rotation = warp.quat_from_matrix(mat33(r00, r01, r02, r10, r11, r12, r20, r21, r22))
         # extract scale
         scale = vec3(sx, sy, sz)
         return position, rotation, scale
@@ -709,87 +709,87 @@ def create_transform_decompose_func(dtype):
     return transform_decompose
 
 
-transform_decompose = wp.func(
-    create_transform_decompose_func(wp.float32),
+transform_decompose = warp.func(
+    create_transform_decompose_func(warp.float32),
     name="transform_decompose",
 )
-wp.func(
-    create_transform_decompose_func(wp.float16),
+warp.func(
+    create_transform_decompose_func(warp.float16),
     name="transform_decompose",
 )
-wp.func(
-    create_transform_decompose_func(wp.float64),
+warp.func(
+    create_transform_decompose_func(warp.float64),
     name="transform_decompose",
 )
 
 
 # register API functions so they appear in the documentation
 
-wp._src.context.register_api_function(
+warp._src.context.register_api_function(
     norm_l1,
     group="Vector Math",
 )
-wp._src.context.register_api_function(
+warp._src.context.register_api_function(
     norm_l2,
     group="Vector Math",
 )
-wp._src.context.register_api_function(
+warp._src.context.register_api_function(
     norm_huber,
     group="Vector Math",
 )
-wp._src.context.register_api_function(
+warp._src.context.register_api_function(
     norm_pseudo_huber,
     group="Vector Math",
 )
-wp._src.context.register_api_function(
+warp._src.context.register_api_function(
     smooth_normalize,
     group="Vector Math",
 )
-wp._src.context.register_api_function(
+warp._src.context.register_api_function(
     quat_from_euler,
     group="Quaternion Math",
 )
-wp._src.context.register_api_function(
+warp._src.context.register_api_function(
     quat_to_euler,
     group="Quaternion Math",
 )
-wp._src.context.register_api_function(
+warp._src.context.register_api_function(
     quat_to_rpy,
     group="Quaternion Math",
 )
-wp._src.context.register_api_function(
+warp._src.context.register_api_function(
     quat_twist,
     group="Quaternion Math",
 )
-wp._src.context.register_api_function(
+warp._src.context.register_api_function(
     quat_twist_angle,
     group="Quaternion Math",
 )
-wp._src.context.register_api_function(
+warp._src.context.register_api_function(
     velocity_at_point,
     group="Spatial Math",
 )
-wp._src.context.register_api_function(
+warp._src.context.register_api_function(
     transform_from_matrix,
     group="Transformations",
 )
-wp._src.context.register_api_function(
+warp._src.context.register_api_function(
     transform_to_matrix,
     group="Transformations",
 )
-wp._src.context.register_api_function(
+warp._src.context.register_api_function(
     transform_compose,
     group="Transformations",
 )
-wp._src.context.register_api_function(
+warp._src.context.register_api_function(
     transform_decompose,
     group="Transformations",
 )
-wp._src.context.register_api_function(
+warp._src.context.register_api_function(
     transform_twist,
     group="Spatial Math",
 )
-wp._src.context.register_api_function(
+warp._src.context.register_api_function(
     transform_wrench,
     group="Spatial Math",
 )

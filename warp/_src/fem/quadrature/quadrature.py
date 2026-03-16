@@ -574,8 +574,8 @@ class ExplicitQuadrature(_QuadratureWithRegularEvaluationPoints):
     def __init__(
         self,
         domain: GeometryDomain,
-        points: "wp.array2d(dtype=Coords)",
-        weights: "wp.array2d(dtype=float)",
+        points: "warp.array2d(dtype=Coords)",
+        weights: "warp.array2d(dtype=float)",
     ):
         if points.shape != weights.shape:
             raise ValueError("Points and weights arrays must have the same shape")
