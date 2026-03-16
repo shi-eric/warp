@@ -91,8 +91,12 @@ nitpick_ignore_regex = [
     (r"py:class", r"(ndim|dtype)=.*"),
     # Internal _src paths
     (r"py:class", r"warp\._src\..*"),
-    # wp.-prefixed types that Sphinx can't resolve (e.g., wp.array, wp.vec3, wp.Kernel)
-    (r"py:class", r"wp\..*"),
+    # Ctypes-based geometric types that can't be documented as classes (vec*, mat*, quat, etc.)
+    (r"py:class", r"warp\.(vec\d*[ifd]?|mat\d+[ifd]?|quat[fd]?|spatial_vector[fd]?|transform[fd]?)"),
+    # Short names for the same ctypes types (when not fully qualified)
+    (r"py:class", r"(vec\d*[ifd]?|mat\d+[ifd]?|quat[fd]?|spatial_vector[fd]?|transform[fd]?)"),
+    # Type aliases (DeviceLike is Union[Device, str, None])
+    (r"py:class", r"warp\.DeviceLike"),
     # Short type names used in FEM annotations (e.g., DeviceLike, Graph, Sample, Coords)
     (
         r"py:class",
@@ -410,6 +414,18 @@ def filter_builtin_docstrings(app, what, name, obj, options, lines):
             return
 
 
+def rewrite_wp_in_docstrings(app, what, name, obj, options, lines):
+    """Rewrite ``wp.`` import aliases to ``warp.`` in docstrings.
+
+    This complements rewrite_wp_aliases (which handles signatures) by also
+    fixing docstring content that references ``wp.`` types.
+    """
+    import re
+    for i, line in enumerate(lines):
+        if "wp." in line:
+            lines[i] = re.sub(r"\bwp\.", "warp.", line)
+
+
 def build_constant_docs_cache():
     """Build a cache of constant docstrings from all warp._src modules."""
     out = {}
@@ -485,6 +501,60 @@ def rewrite_internal_module_paths(app, doctree, docname):
             node.parent.replace(node, docutils.nodes.Text(new_text))
 
 
+def rewrite_wp_aliases(app, what, name, obj, options, signature, return_annotation):
+    """Rewrite ``wp.`` import aliases to ``warp.`` in autodoc signatures.
+
+    Modules that use ``from __future__ import annotations`` with ``import warp
+    as wp`` produce stringified annotations like ``"wp.array"`` instead of
+    ``"warp.array"``.  Sphinx cannot resolve the ``wp`` alias, so this hook
+    normalises them before cross-reference resolution.
+    """
+    import re
+
+    def _fix(text):
+        if text is None:
+            return None
+        return re.sub(r"\bwp\.", "warp.", text)
+
+    return _fix(signature), _fix(return_annotation)
+
+
+def resolve_wp_aliases(app, env, node, contnode):
+    """Resolve ``wp.*`` cross-references by retrying as ``warp.*``.
+
+    When ``from __future__ import annotations`` is active and a module uses
+    ``import warp as wp``, stringified annotations like ``wp.array`` end up in
+    Sphinx's type-description output.  The signature and docstring hooks cannot
+    intercept every code path (e.g. ``autodoc_typehints = "description"``), so
+    this ``missing-reference`` handler rewrites the target at resolution time.
+    """
+    import re
+
+    reftarget = node.get("reftarget", "")
+    if not re.match(r"^wp\.", reftarget):
+        return None  # not a wp.* reference, let Sphinx handle it
+
+    new_target = re.sub(r"^wp\.", "warp.", reftarget)
+    node["reftarget"] = new_target
+
+    # Also fix the displayed text if it still shows the wp.* name
+    if contnode and hasattr(contnode, "children") and contnode.children:
+        text_node = contnode.children[0]
+        if hasattr(text_node, "astext") and text_node.astext().startswith("wp."):
+            text_node.parent.replace(text_node, docutils.nodes.Text(
+                re.sub(r"^wp\.", "warp.", text_node.astext())
+            ))
+
+    # Re-resolve using Sphinx's domain
+    domain = env.get_domain("py")
+    try:
+        return domain.resolve_xref(env, node.get("refdoc", ""), app.builder,
+                                   node.get("reftype", "class"), new_target,
+                                   node, contnode)
+    except Exception:
+        return None
+
+
 def generate_reference_docs(app):
     """Generate API and language reference .rst files before Sphinx reads sources."""
     docs.generate_reference.run()
@@ -496,5 +566,8 @@ def setup(app):
     # reference .rst files exist before autosummary scans for stub directives.
     app.connect("builder-inited", generate_reference_docs, priority=400)
     app.connect("autodoc-process-docstring", filter_builtin_docstrings)
+    app.connect("autodoc-process-docstring", rewrite_wp_in_docstrings)
     app.connect("autodoc-process-docstring", populate_reexported_docstrings)
+    app.connect("autodoc-process-signature", rewrite_wp_aliases)
+    app.connect("missing-reference", resolve_wp_aliases)
     app.connect("doctree-resolved", rewrite_internal_module_paths)

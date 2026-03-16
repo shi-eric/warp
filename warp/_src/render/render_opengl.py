@@ -1018,7 +1018,7 @@ class OpenGLRenderer:
         enable_backface_culling: bool = True,
         enable_mouse_interaction: bool = True,
         enable_keyboard_interaction: bool = True,
-        device: wp.DeviceLike = None,
+        device: warp.DeviceLike = None,
         use_legacy_opengl: bool | None = None,
     ):
         """Initialize the OpenGL renderer.

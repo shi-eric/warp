@@ -49,18 +49,18 @@ class PicQuadrature(Quadrature):
         self,
         domain: GeometryDomain,
         positions: Union[
-            "wp.array",
+            "warp.array",
             tuple[
-                "wp.array(dtype=ElementIndex)",
-                "wp.array(dtype=Coords)",
+                "warp.array(dtype=ElementIndex)",
+                "warp.array(dtype=Coords)",
             ],
             tuple[
-                "wp.array2d(dtype=ElementIndex)",
-                "wp.array2d(dtype=Coords)",
-                "wp.array2d(dtype=float)",
+                "warp.array2d(dtype=ElementIndex)",
+                "warp.array2d(dtype=Coords)",
+                "warp.array2d(dtype=float)",
             ],
         ],
-        measures: Optional["wp.array(dtype=float)"] = None,
+        measures: Optional["warp.array(dtype=float)"] = None,
         requires_grad: bool = False,
         max_dist: float = 0.0,
         use_domain_element_indices: bool = False,
@@ -243,7 +243,7 @@ class PicQuadrature(Quadrature):
     ):
         return qp_arg.cell_particle_offsets[domain_element_index] + index
 
-    def fill_element_mask(self, mask: "wp.array(dtype=int)"):
+    def fill_element_mask(self, mask: "warp.array(dtype=int)"):
         """Fills a mask array such that all non-empty elements are set to 1, all empty elements to zero.
 
         Args:

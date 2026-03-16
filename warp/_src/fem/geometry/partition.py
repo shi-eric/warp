@@ -452,7 +452,7 @@ class ExplicitGeometryPartition(CellBasedGeometryPartition):
     def __init__(
         self,
         geometry: Geometry,
-        cell_mask: "wp.array(dtype=int)",
+        cell_mask: "warp.array(dtype=int)",
         max_cell_count: int = -1,
         max_side_count: int = -1,
         temporary_store: Optional[cache.TemporaryStore] = None,
@@ -482,7 +482,7 @@ class ExplicitGeometryPartition(CellBasedGeometryPartition):
 
     def rebuild(
         self,
-        cell_mask: "wp.array(dtype=int)",
+        cell_mask: "warp.array(dtype=int)",
         temporary_store: Optional[cache.TemporaryStore] = None,
     ):
         """Rebuild the geometry partition from a new active cell mask.
