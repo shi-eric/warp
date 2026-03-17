@@ -1052,7 +1052,7 @@ class NativeRenderer:
             ],
         )
 
-    def render_ground(self, y=0.0, checker_scale=0.5, color_a=(0.35, 0.35, 0.38), color_b=(0.25, 0.25, 0.28)):
+    def render_ground(self, y=0.0, checker_scale=0.5, color_a=(0.35, 0.37, 0.4), color_b=(0.15, 0.16, 0.18)):
         """Render an infinite checkerboard ground plane."""
         wp.launch(
             kernel=render_ground_kernel,
