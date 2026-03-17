@@ -105,6 +105,150 @@ def fresnel_rim(normal: wp.vec3, view_dir: wp.vec3, rim_power: float, rim_streng
 
 
 @wp.func
+def schlick_fresnel(cos_theta: float, ior: float) -> float:
+    """Schlick approximation to Fresnel reflectance."""
+    r0 = (1.0 - ior) / (1.0 + ior)
+    r0 = r0 * r0
+    return r0 + (1.0 - r0) * wp.pow(1.0 - cos_theta, 5.0)
+
+
+@wp.func
+def refract_ray(incident: wp.vec3, normal: wp.vec3, eta: float) -> wp.vec3:
+    """Snell's law refraction. Returns zero vector for total internal reflection."""
+    cos_i = -wp.dot(incident, normal)
+    sin2_t = eta * eta * (1.0 - cos_i * cos_i)
+    if sin2_t > 1.0:
+        return wp.vec3(0.0, 0.0, 0.0)  # Total internal reflection
+    cos_t = wp.sqrt(1.0 - sin2_t)
+    return incident * eta + normal * (eta * cos_i - cos_t)
+
+
+@wp.func
+def shade_glass_sphere(
+    ray_origin: wp.vec3,
+    ray_dir: wp.vec3,
+    hit_t: float,
+    center: wp.vec3,
+    radius: float,
+    ior: float,
+    tint: wp.vec3,
+    # For reflected ray: scene query via BVH
+    bvh_id: wp.uint64,
+    positions: wp.array[wp.vec3],
+    radii: wp.array[wp.float32],
+    colors: wp.array[wp.vec3],
+    materials: wp.array[wp.int32],
+    # Lighting
+    key_dir: wp.vec3,
+    key_color: wp.vec3,
+    fill_dir: wp.vec3,
+    fill_color: wp.vec3,
+    sky_color: wp.vec3,
+    ground_color: wp.vec3,
+    bg: wp.vec3,
+    specular_power: float,
+) -> wp.vec3:
+    """Shade a glass sphere with refraction + Fresnel reflection (2-bounce)."""
+
+    hit_pos = ray_origin + ray_dir * hit_t
+    normal = wp.normalize(hit_pos - center)
+
+    cos_i = wp.max(-wp.dot(ray_dir, normal), 0.0)
+    fresnel = schlick_fresnel(cos_i, ior)
+
+    # ── Refracted ray (enters sphere) ──
+    refr_dir = refract_ray(ray_dir, normal, 1.0 / ior)
+    refr_color = bg  # Default if total internal reflection
+
+    refr_len = wp.length(refr_dir)
+    if refr_len > 0.5:
+        refr_dir = wp.normalize(refr_dir)
+        # Find exit point (second intersection from inside)
+        # Ray from hit_pos+epsilon inward, intersect same sphere from inside
+        inner_origin = hit_pos + refr_dir * 0.01
+        # Solve for exit: |inner_origin + t*refr_dir - center|² = r²
+        oc = inner_origin - center
+        b = wp.dot(oc, refr_dir)
+        c = wp.dot(oc, oc) - radius * radius
+        disc = b * b - c
+        exit_t = float(0.0)
+        if disc >= 0.0:
+            exit_t = -b + wp.sqrt(disc)  # Far intersection (exit)
+
+        if exit_t > 0.01:
+            exit_pos = inner_origin + refr_dir * exit_t
+            exit_normal = wp.normalize(exit_pos - center)  # Points outward
+            # Refract again exiting (flip normal, use inverse IOR)
+            exit_refr = refract_ray(refr_dir, -exit_normal, ior)
+            exit_len = wp.length(exit_refr)
+
+            if exit_len > 0.5:
+                exit_refr = wp.normalize(exit_refr)
+                # Trace refracted ray into scene
+                exit_origin = exit_pos + exit_refr * 0.01
+
+                closest_t2 = float(1.0e10)
+                closest_idx2 = int(-1)
+                query2 = wp.bvh_query_ray(bvh_id, exit_origin, exit_refr)
+                cand2 = int(0)
+                while wp.bvh_query_next(query2, cand2):
+                    t2 = ray_sphere_intersect(exit_origin, exit_refr, positions[cand2], radii[cand2])
+                    if t2 > 0.0 and t2 < closest_t2:
+                        closest_t2 = t2
+                        closest_idx2 = cand2
+
+                if closest_idx2 >= 0 and materials[closest_idx2] == 0:
+                    # Hit an opaque sphere — shade it
+                    hp2 = exit_origin + exit_refr * closest_t2
+                    n2 = wp.normalize(hp2 - positions[closest_idx2])
+                    bc2 = colors[closest_idx2]
+                    vd2 = -exit_refr
+                    amb2 = hemisphere_ambient(n2, sky_color, ground_color)
+                    ndl2 = wp.max(wp.dot(n2, key_dir), 0.0)
+                    refr_color = wp.cw_mul(bc2, amb2) * 0.5 + bc2 * ndl2
+                else:
+                    refr_color = bg
+
+                # Tint by glass color and path length
+                refr_color = wp.cw_mul(refr_color, tint)
+            else:
+                # Total internal reflection at exit — just tint
+                refr_color = wp.cw_mul(bg, tint) * 0.3
+
+    # ── Reflected ray ──
+    refl_dir = ray_dir - normal * 2.0 * wp.dot(ray_dir, normal)
+    refl_origin = hit_pos + normal * 0.01
+    refl_color = bg
+
+    closest_tr = float(1.0e10)
+    closest_ir = int(-1)
+    qr = wp.bvh_query_ray(bvh_id, refl_origin, refl_dir)
+    cr = int(0)
+    while wp.bvh_query_next(qr, cr):
+        tr = ray_sphere_intersect(refl_origin, refl_dir, positions[cr], radii[cr])
+        if tr > 0.0 and tr < closest_tr:
+            closest_tr = tr
+            closest_ir = cr
+
+    if closest_ir >= 0 and materials[closest_ir] == 0:
+        hpr = refl_origin + refl_dir * closest_tr
+        nr = wp.normalize(hpr - positions[closest_ir])
+        bcr = colors[closest_ir]
+        amr = hemisphere_ambient(nr, sky_color, ground_color)
+        ndlr = wp.max(wp.dot(nr, key_dir), 0.0)
+        refl_color = wp.cw_mul(bcr, amr) * 0.5 + bcr * ndlr
+
+    # Specular highlight on glass surface
+    half_vec = wp.normalize(key_dir - ray_dir)
+    spec = wp.pow(wp.max(wp.dot(normal, half_vec), 0.0), specular_power * 2.0) * 0.8
+
+    # Blend reflection + refraction by Fresnel
+    color = refl_color * fresnel + refr_color * (1.0 - fresnel) + key_color * spec
+
+    return color
+
+
+@wp.func
 def compute_lighting_directional(
     normal: wp.vec3,
     view_dir: wp.vec3,
@@ -131,7 +275,11 @@ def render_particles_kernel(
     positions: wp.array[wp.vec3],
     radii: wp.array[wp.float32],
     colors: wp.array[wp.vec3],
+    materials: wp.array[wp.int32],
     num_particles: int,
+    # Glass
+    glass_ior: float,
+    glass_tint: wp.vec3,
     # Camera
     cam_pos: wp.vec3,
     cam_fwd: wp.vec3,
@@ -192,38 +340,53 @@ def render_particles_kernel(
         return
 
     depth_buf[tid] = closest_t
-    hit_pos = cam_pos + ray_dir * closest_t
-    normal = wp.normalize(hit_pos - positions[closest_idx])
-    base_color = colors[closest_idx]
     view_dir = -ray_dir
 
-    # Hemisphere ambient
-    ambient = hemisphere_ambient(normal, sky_color, ground_color)
-    color = wp.cw_mul(base_color, ambient) * 0.5
+    mat = materials[closest_idx]
 
-    # Key light with shadow
-    key_visible = float(1.0)
-    if shadow_enabled == 1:
-        shadow_origin = hit_pos + normal * SHADOW_EPS
-        shadow_q = wp.bvh_query_ray(bvh_id, shadow_origin, key_dir)
-        sc = int(0)
-        while wp.bvh_query_next(shadow_q, sc):
-            if sc != closest_idx:
-                st = ray_sphere_intersect(shadow_origin, key_dir, positions[sc], radii[sc])
-                if st > 0.0:
-                    key_visible = SHADOW_MIN_VIS
-                    break
+    if mat == 1:
+        # ── Glass material ──
+        color = shade_glass_sphere(
+            cam_pos, ray_dir, closest_t,
+            positions[closest_idx], radii[closest_idx],
+            glass_ior, glass_tint,
+            bvh_id, positions, radii, colors, materials,
+            key_dir, key_color, fill_dir, fill_color,
+            sky_color, ground_color, bg, specular_power,
+        )
+    else:
+        # ── Opaque material ──
+        hit_pos = cam_pos + ray_dir * closest_t
+        normal = wp.normalize(hit_pos - positions[closest_idx])
+        base_color = colors[closest_idx]
 
-    key_contrib = compute_lighting_directional(normal, view_dir, key_dir, key_color, specular_power, key_visible)
-    color = color + wp.cw_mul(base_color, key_contrib)
+        # Hemisphere ambient
+        ambient = hemisphere_ambient(normal, sky_color, ground_color)
+        color = wp.cw_mul(base_color, ambient) * 0.5
 
-    # Fill light (no shadow)
-    fill_contrib = compute_lighting_directional(normal, view_dir, fill_dir, fill_color, specular_power * 0.5, 1.0)
-    color = color + wp.cw_mul(base_color, fill_contrib)
+        # Key light with shadow
+        key_visible = float(1.0)
+        if shadow_enabled == 1:
+            shadow_origin = hit_pos + normal * SHADOW_EPS
+            shadow_q = wp.bvh_query_ray(bvh_id, shadow_origin, key_dir)
+            sc = int(0)
+            while wp.bvh_query_next(shadow_q, sc):
+                if sc != closest_idx:
+                    st = ray_sphere_intersect(shadow_origin, key_dir, positions[sc], radii[sc])
+                    if st > 0.0:
+                        key_visible = SHADOW_MIN_VIS
+                        break
 
-    # Rim lighting (Fresnel)
-    rim = fresnel_rim(normal, view_dir, 3.0, 0.25)
-    color = color + key_color * rim
+        key_contrib = compute_lighting_directional(normal, view_dir, key_dir, key_color, specular_power, key_visible)
+        color = color + wp.cw_mul(base_color, key_contrib)
+
+        # Fill light
+        fill_contrib = compute_lighting_directional(normal, view_dir, fill_dir, fill_color, specular_power * 0.5, 1.0)
+        color = color + wp.cw_mul(base_color, fill_contrib)
+
+        # Rim lighting
+        rim = fresnel_rim(normal, view_dir, 3.0, 0.25)
+        color = color + key_color * rim
 
     # Exponential fog
     fog = wp.clamp(1.0 - wp.exp(-closest_t * fog_density), 0.0, 0.8)
@@ -679,11 +842,18 @@ class ExampleRenderer:
             ],
         )
 
-    def render_points(self, positions, radius=0.1, color=(0.5, 0.5, 0.5), colors=None):
+    def render_points(self, positions, radius=0.1, color=(0.5, 0.5, 0.5), colors=None,
+                       materials=None, glass_ior=1.5, glass_tint=(0.9, 0.95, 1.0)):
         """Render particles as BVH-accelerated ray-traced spheres.
 
-        For realtime use, pass warp arrays directly and use a uniform
-        radius (float) to avoid per-frame allocations.
+        Args:
+            positions: (N, 3) numpy array or wp.array of vec3.
+            radius: float or (N,) array of radii.
+            color: (r, g, b) default color if colors is None.
+            colors: (N, 3) per-particle colors.
+            materials: (N,) int array. 0=opaque (default), 1=glass.
+            glass_ior: Index of refraction for glass (default 1.5).
+            glass_tint: (r, g, b) transmission tint for glass.
         """
         if isinstance(positions, np.ndarray):
             pos_wp = wp.array(positions.astype(np.float32), dtype=wp.vec3)
@@ -715,6 +885,19 @@ class ExampleRenderer:
                 self._cached_colors_key = color_key
             colors_wp = self._cached_colors
 
+        # Materials
+        if materials is not None:
+            if isinstance(materials, np.ndarray):
+                materials_wp = wp.array(materials.astype(np.int32))
+            else:
+                materials_wp = materials
+        else:
+            if not hasattr(self, '_cached_mats') or len(self._cached_mats) != n:
+                self._cached_mats = wp.zeros(n, dtype=wp.int32)  # All opaque
+            materials_wp = self._cached_mats
+
+        glass_tint_wp = wp.vec3(float(glass_tint[0]), float(glass_tint[1]), float(glass_tint[2]))
+
         # Build BVH bounds — cache arrays to avoid re-allocation
         if not hasattr(self, '_bvh_lowers') or len(self._bvh_lowers) != n:
             self._bvh_lowers = wp.zeros(n, dtype=wp.vec3)
@@ -734,7 +917,8 @@ class ExampleRenderer:
             dim=self.render_w * self.render_h,
             inputs=[
                 bvh.id,
-                pos_wp, radii_wp, colors_wp, n,
+                pos_wp, radii_wp, colors_wp, materials_wp, n,
+                float(glass_ior), glass_tint_wp,
                 self.cam_pos, self.cam_fwd, self.cam_right, self.cam_up, self.fov,
                 self.pixels, self.depth, self.render_w, self.render_h,
                 self.key_dir, self.key_color,
