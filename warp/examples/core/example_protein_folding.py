@@ -174,7 +174,7 @@ def integrate(
 
 
 class Example:
-    def __init__(self, stage_path="example_protein_folding.usd", num_beads=100):
+    def __init__(self, stage_path="example_protein_folding.usd", num_beads=200):
         self.num_beads = num_beads
         self.sim_time = 0.0
         self.frame_dt = 1.0 / 60.0
@@ -268,28 +268,40 @@ class Example:
         with wp.ScopedTimer("render", active=False):
             pos = self.positions.numpy()
             types = self.residue_type.numpy()
+            n = len(pos)
+
+            # Rainbow gradient along chain (N→C terminus)
+            colors = np.zeros((n, 3), dtype=np.float32)
+            for i in range(n):
+                t = float(i) / max(n - 1, 1)
+                # Smooth rainbow: blue → cyan → green → yellow → red
+                if t < 0.25:
+                    s = t / 0.25
+                    colors[i] = [0.1, 0.2 + 0.6 * s, 0.9 - 0.2 * s]
+                elif t < 0.5:
+                    s = (t - 0.25) / 0.25
+                    colors[i] = [0.1 + 0.5 * s, 0.8, 0.7 - 0.5 * s]
+                elif t < 0.75:
+                    s = (t - 0.5) / 0.25
+                    colors[i] = [0.6 + 0.3 * s, 0.8 - 0.3 * s, 0.2]
+                else:
+                    s = (t - 0.75) / 0.25
+                    colors[i] = [0.9, 0.5 - 0.3 * s, 0.2 - 0.1 * s]
+
+                # Desaturate polar residues slightly
+                if types[i] == POLAR:
+                    colors[i] = colors[i] * 0.7 + 0.3
+
+            # Hydrophobic beads slightly larger
+            radii = np.where(types == HYDROPHOBIC, 0.55, 0.4).astype(np.float32)
 
             self.renderer.begin_frame(self.sim_time)
-
-            # Render hydrophobic beads (red) and polar beads (blue)
-            h_mask = types == HYDROPHOBIC
-            p_mask = types == POLAR
-
-            if h_mask.sum() > 0:
-                self.renderer.render_points(
-                    points=pos[h_mask],
-                    radius=0.5,
-                    name="hydrophobic",
-                    colors=(0.9, 0.3, 0.2),
-                )
-            if p_mask.sum() > 0:
-                self.renderer.render_points(
-                    points=pos[p_mask],
-                    radius=0.5,
-                    name="polar",
-                    colors=(0.2, 0.4, 0.9),
-                )
-
+            self.renderer.render_points(
+                name="chain",
+                points=pos,
+                radius=radii,
+                colors=colors,
+            )
             self.renderer.end_frame()
 
 
@@ -305,7 +317,7 @@ if __name__ == "__main__":
         help="Path to the output USD file.",
     )
     parser.add_argument("--num-frames", type=int, default=500, help="Total number of frames.")
-    parser.add_argument("--num-beads", type=int, default=100, help="Number of amino acid beads.")
+    parser.add_argument("--num-beads", type=int, default=200, help="Number of amino acid beads.")
 
     args = parser.parse_known_args()[0]
 
