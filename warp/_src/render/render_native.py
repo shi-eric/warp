@@ -853,20 +853,6 @@ class NativeRenderer:
             self.sun_color = wp.vec3(1.2, 1.1, 0.9)
             self.sun_intensity = 1.0
             self.sun_size = 0.005
-        elif preset == "tropical":
-            self.bg_top = wp.vec3(0.1, 0.3, 0.7)
-            self.bg_bottom = wp.vec3(0.1, 0.15, 0.1)
-            self.sky_color = wp.vec3(0.5, 0.55, 0.6)
-            self.ground_color = wp.vec3(0.15, 0.18, 0.12)
-            self.key_color = wp.vec3(1.1, 1.05, 0.95)
-            self.fill_color = wp.vec3(0.2, 0.3, 0.4)
-            self.key_dir = wp.normalize(wp.vec3(0.3, 0.9, 0.2))
-            self.sky_top = wp.vec3(0.1, 0.3, 0.7)
-            self.sky_horizon = wp.vec3(0.5, 0.7, 0.85)
-            self.sky_ground = wp.vec3(0.1, 0.15, 0.1)
-            self.sun_color = wp.vec3(1.3, 1.2, 1.0)
-            self.sun_intensity = 2.5
-            self.sun_size = 0.004
         elif preset == "overcast":
             self.bg_top = wp.vec3(0.55, 0.58, 0.65)
             self.bg_bottom = wp.vec3(0.25, 0.25, 0.28)
