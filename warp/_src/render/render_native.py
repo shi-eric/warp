@@ -834,56 +834,30 @@ class NativeRenderer:
             raise ValueError(f"Unknown quality mode: {mode!r}. Use 'fast', 'gallery', or 'realtime'.")
 
     def set_environment(self, preset="dark"):
-        """Set environment lighting and sky preset.
+        """Set environment lighting preset.
 
-        Args:
-            preset: One of ``"dark"`` (default), ``"tropical"``,
-                ``"overcast"``, ``"space"``.
+        Currently only ``"dark"`` is supported as a built-in preset.
+        For custom environments, set ``sky_top``, ``sky_horizon``,
+        ``sky_ground``, ``sun_color``, ``sun_intensity``, ``sun_size``,
+        ``key_color``, ``fill_color`` directly.
         """
-        if preset == "dark":
-            self.bg_top = wp.vec3(0.15, 0.18, 0.25)
-            self.bg_bottom = wp.vec3(0.04, 0.04, 0.06)
-            self.sky_color = wp.vec3(0.4, 0.4, 0.45)
-            self.ground_color = wp.vec3(0.1, 0.1, 0.12)
-            self.key_color = wp.vec3(0.85, 0.83, 0.80)
-            self.fill_color = wp.vec3(0.15, 0.18, 0.25)
-            self.sky_top = wp.vec3(0.1, 0.12, 0.2)
-            self.sky_horizon = wp.vec3(0.2, 0.22, 0.28)
-            self.sky_ground = wp.vec3(0.04, 0.04, 0.06)
-            self.sun_color = wp.vec3(1.2, 1.1, 0.9)
-            self.sun_intensity = 1.0
-            self.sun_size = 0.005
-        elif preset == "overcast":
-            self.bg_top = wp.vec3(0.55, 0.58, 0.65)
-            self.bg_bottom = wp.vec3(0.25, 0.25, 0.28)
-            self.sky_color = wp.vec3(0.5, 0.5, 0.55)
-            self.ground_color = wp.vec3(0.2, 0.2, 0.22)
-            self.key_color = wp.vec3(0.75, 0.75, 0.78)
-            self.fill_color = wp.vec3(0.4, 0.42, 0.45)
-            self.key_dir = wp.normalize(wp.vec3(0.3, 0.8, 0.3))
-            self.sky_top = wp.vec3(0.55, 0.58, 0.65)
-            self.sky_horizon = wp.vec3(0.7, 0.72, 0.75)
-            self.sky_ground = wp.vec3(0.25, 0.25, 0.28)
-            self.sun_color = wp.vec3(0.9, 0.9, 0.9)
-            self.sun_intensity = 0.3
-            self.sun_size = 0.05
-        elif preset == "space":
-            self.bg_top = wp.vec3(0.02, 0.02, 0.05)
-            self.bg_bottom = wp.vec3(0.01, 0.01, 0.02)
-            self.sky_color = wp.vec3(0.2, 0.2, 0.25)
-            self.ground_color = wp.vec3(0.05, 0.05, 0.07)
-            self.key_color = wp.vec3(0.9, 0.9, 0.95)
-            self.fill_color = wp.vec3(0.08, 0.1, 0.15)
-            self.sky_top = wp.vec3(0.02, 0.02, 0.06)
-            self.sky_horizon = wp.vec3(0.05, 0.05, 0.1)
-            self.sky_ground = wp.vec3(0.01, 0.01, 0.02)
-            self.sun_color = wp.vec3(1.0, 1.0, 1.05)
-            self.sun_intensity = 0.5
-            self.sun_size = 0.003
-        else:
-            raise ValueError(f"Unknown environment preset: {preset!r}.")
+        if preset != "dark":
+            raise ValueError(f"Unknown environment preset: {preset!r}. Use 'dark' or set parameters directly.")
 
-    # ── CUDA graph capture for realtime ──────────────────────────────
+        self.bg_top = wp.vec3(0.15, 0.18, 0.25)
+        self.bg_bottom = wp.vec3(0.04, 0.04, 0.06)
+        self.sky_color = wp.vec3(0.4, 0.4, 0.45)
+        self.ground_color = wp.vec3(0.1, 0.1, 0.12)
+        self.key_color = wp.vec3(0.85, 0.83, 0.80)
+        self.fill_color = wp.vec3(0.15, 0.18, 0.25)
+        self.sky_top = wp.vec3(0.1, 0.12, 0.2)
+        self.sky_horizon = wp.vec3(0.2, 0.22, 0.28)
+        self.sky_ground = wp.vec3(0.04, 0.04, 0.06)
+        self.sun_color = wp.vec3(1.2, 1.1, 0.9)
+        self.sun_intensity = 1.0
+        self.sun_size = 0.005
+
+        # ── CUDA graph capture for realtime ──────────────────────────────
 
     def capture_graph(self, positions, radius=0.1, color=(0.5, 0.5, 0.5),
                       colors=None, ground_y=None):
