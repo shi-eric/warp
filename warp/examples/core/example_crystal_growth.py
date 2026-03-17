@@ -164,13 +164,13 @@ class Example:
         # Phase-field parameters (tuned for visible dendritic growth)
         self.tau = 0.3          # Relaxation time
         self.eps0 = 0.5         # Interface width parameter
-        self.delta_aniso = 0.05 # Anisotropy strength (4-fold)
-        self.D_thermal = 1.0    # Thermal diffusivity
-        self.latent = 0.5       # Latent heat coefficient
-        self.coupling = 0.8     # Coupling: m = coupling * T
-        self.dt = 0.005         # Substep dt
+        self.delta_aniso = 0.25 # Strong 4-fold anisotropy for dramatic branching
+        self.D_thermal = 0.5    # Thermal diffusivity (slower → sharper dendrites)
+        self.latent = 0.4       # Latent heat coefficient
+        self.coupling = 1.2     # Stronger coupling for more growth
+        self.dt = 0.003         # Smaller dt for stability with stronger aniso
 
-        self.undercooling = -0.65  # Initial supercooling (stronger)
+        self.undercooling = -0.8  # Deeper supercooling → faster, more branched growth
 
         # Fields
         self.phi = wp.zeros((self.nx, self.ny, self.nz), dtype=wp.float32)
@@ -209,7 +209,7 @@ class Example:
         """Place a small solid sphere at the center."""
         phi_np = self.phi.numpy()
         cx, cy, cz = self.nx // 2, self.ny // 2, self.nz // 2
-        radius = 15
+        radius = 8
 
         for i in range(max(0, cx - radius), min(self.nx, cx + radius + 1)):
             for j in range(max(0, cy - radius), min(self.ny, cy + radius + 1)):
