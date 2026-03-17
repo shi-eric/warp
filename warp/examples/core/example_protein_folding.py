@@ -220,10 +220,11 @@ class Example:
         self.temperature = 0.5
         self.collapse_strength = 3.0  # Mimics solvent pressure
 
-        if stage_path:
+        if stage_path and stage_path.endswith((".usd", ".usda", ".usdc")):
             self.renderer = wp.render.UsdRenderer(stage_path)
         else:
-            self.renderer = None
+            self.renderer = wp.render.NativeRenderer(512, 512)
+            self.renderer.setup_camera(pos=(30, 15, 30), target=(0, 0, 0), fov=50)
 
     def step(self):
         with wp.ScopedTimer("step", active=False):
@@ -234,7 +235,7 @@ class Example:
                 self.forces.zero_()
 
                 # Compute center of mass for collapse force
-                pos_np = self.positions.numpy()
+                pos_np = self.positions
                 com = pos_np.mean(axis=0)
 
                 wp.launch(
@@ -265,7 +266,7 @@ class Example:
             return
 
         with wp.ScopedTimer("render", active=False):
-            pos = self.positions.numpy()
+            pos = self.positions
             types = self.residue_type.numpy()
 
             self.renderer.begin_frame(self.sim_time)
@@ -300,7 +301,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--stage-path",
         type=lambda x: None if x == "None" else str(x),
-        default="example_protein_folding.usd",
+        default=None,
         help="Path to the output USD file.",
     )
     parser.add_argument("--num-frames", type=int, default=500, help="Total number of frames.")
@@ -321,4 +322,8 @@ if __name__ == "__main__":
                 print(f"Frame {i}: Rg={rg:.2f}")
 
         if example.renderer:
-            example.renderer.save()
+            if hasattr(example.renderer, 'save'):
+                example.renderer.save()
+            if hasattr(example.renderer, 'save_image'):
+                example.renderer.save_image("example_protein_folding.png")
+                print("Saved example_protein_folding.png")

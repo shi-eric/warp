@@ -140,10 +140,14 @@ class Example:
         self.positions = wp.array(positions, dtype=wp.vec3)
         self.velocities = wp.array(velocities, dtype=wp.vec3)
 
-        if stage_path:
+        if stage_path and stage_path.endswith((".usd", ".usda", ".usdc")):
             self.renderer = wp.render.UsdRenderer(stage_path)
         else:
-            self.renderer = None
+            self.renderer = wp.render.NativeRenderer(512, 512)
+            self.renderer.setup_camera(pos=(8, 6, 20), target=(0, 0, 0), fov=45)
+            self.renderer.bg_top = wp.vec3(0.03, 0.04, 0.10)
+            self.renderer.bg_bottom = wp.vec3(0.01, 0.01, 0.04)
+            self.renderer.shadows = False
 
     def step(self):
         with wp.ScopedTimer("step", active=False):
@@ -169,7 +173,7 @@ class Example:
         the Boris integrator. For a good integrator, μ should be
         conserved to within a few percent.
         """
-        pos = self.positions.numpy()
+        pos = self.positions
         vel = self.velocities.numpy()
 
         # Compute B at each particle position
@@ -198,7 +202,7 @@ class Example:
         So the escape fraction is 1 - √(1 - 1/R).
         With mirror_ratio R=5: f_escape = 1 - √(0.8) ≈ 10.6%.
         """
-        pos = self.positions.numpy()
+        pos = self.positions
         half_l = self.mirror_length * 0.5
 
         escaped = np.abs(pos[:, 2]) > half_l
@@ -224,7 +228,7 @@ class Example:
         with wp.ScopedTimer("render", active=False):
             self.renderer.begin_frame(self.sim_time)
             self.renderer.render_points(
-                points=self.positions.numpy(),
+                points=self.positions,
                 radius=0.03,
                 name="plasma",
                 colors=(0.4, 0.7, 1.0),
@@ -240,7 +244,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--stage-path",
         type=lambda x: None if x == "None" else str(x),
-        default="example_magnetic_mirror.usd",
+        default=None,
         help="Path to the output USD file.",
     )
     parser.add_argument("--num-frames", type=int, default=300, help="Total number of frames.")
@@ -260,4 +264,8 @@ if __name__ == "__main__":
                 print(f"Frame {i}: z_range=[{pos[:,2].min():.2f}, {pos[:,2].max():.2f}]")
 
         if example.renderer:
-            example.renderer.save()
+            if hasattr(example.renderer, 'save'):
+                example.renderer.save()
+            if hasattr(example.renderer, 'save_image'):
+                example.renderer.save_image("example_magnetic_mirror.png")
+                print("Saved example_magnetic_mirror.png")

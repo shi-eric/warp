@@ -201,10 +201,11 @@ class Example:
         self.positions = wp.zeros(self.max_points, dtype=wp.vec3)
         self.point_count = wp.zeros(1, dtype=wp.int32)
 
-        if stage_path:
+        if stage_path and stage_path.endswith((".usd", ".usda", ".usdc")):
             self.renderer = wp.render.UsdRenderer(stage_path)
         else:
-            self.renderer = None
+            self.renderer = wp.render.NativeRenderer(512, 512)
+            self.renderer.setup_camera(pos=(80, 40, 80), target=(0, 0, 0), fov=50)
 
     def step(self):
         with wp.ScopedTimer("step", active=False):
@@ -258,7 +259,7 @@ class Example:
         )
 
         count = self.point_count.numpy()[0]
-        return self.positions.numpy()[:count]
+        return self.positions[:count]
 
     def render(self):
         if self.renderer is None:
@@ -285,7 +286,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--stage-path",
         type=lambda x: None if x == "None" else str(x),
-        default="example_dla.usd",
+        default=None,
         help="Path to the output USD file.",
     )
     parser.add_argument("--num-frames", type=int, default=500, help="Total number of frames.")
@@ -305,4 +306,8 @@ if __name__ == "__main__":
                 print(f"Frame {i}: {count} attached particles")
 
         if example.renderer:
-            example.renderer.save()
+            if hasattr(example.renderer, 'save'):
+                example.renderer.save()
+            if hasattr(example.renderer, 'save_image'):
+                example.renderer.save_image("example_dla.png")
+                print("Saved example_dla.png")

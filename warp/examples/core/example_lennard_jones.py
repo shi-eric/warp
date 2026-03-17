@@ -207,9 +207,18 @@ class Example:
         self.ke_buf = wp.zeros(1, dtype=wp.float32)
 
         if stage_path:
-            self.renderer = wp.render.UsdRenderer(stage_path)
+            if stage_path.endswith((".usd", ".usda", ".usdc")):
+                self.renderer = wp.render.UsdRenderer(stage_path)
+            else:
+                self.renderer = None
         else:
-            self.renderer = None
+            self.renderer = wp.render.NativeRenderer(512, 512)
+            half = self.box_size / 2.0
+            self.renderer.setup_camera(
+                pos=(half + self.box_size, half + self.box_size * 0.6, half + self.box_size),
+                target=(half, half, half),
+                fov=45,
+            )
 
     def step(self):
         with wp.ScopedTimer("step", active=False):
@@ -361,10 +370,10 @@ class Example:
         with wp.ScopedTimer("render", active=False):
             self.renderer.begin_frame(self.sim_time)
             self.renderer.render_points(
-                points=self.positions.numpy(),
-                radius=self.sigma * 0.5,
                 name="atoms",
-                colors=(0.2, 0.6, 0.9),
+                points=self.positions,
+                radius=self.sigma * 0.5,
+                colors=(0.25, 0.55, 0.9),
             )
             self.renderer.end_frame()
 
@@ -377,8 +386,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--stage-path",
         type=lambda x: None if x == "None" else str(x),
-        default="example_lennard_jones.usd",
-        help="Path to the output USD file.",
+        default=None,
+        help="Path to output USD file. If None, uses NativeRenderer.",
     )
     parser.add_argument("--num-frames", type=int, default=300, help="Total number of frames.")
     parser.add_argument("--num-atoms", type=int, default=1000, help="Number of atoms.")
@@ -402,4 +411,8 @@ if __name__ == "__main__":
                 print(f"Frame {i}: T={T:.3f}")
 
         if example.renderer:
-            example.renderer.save()
+            if hasattr(example.renderer, 'save'):
+                example.renderer.save()
+            if hasattr(example.renderer, 'save_image'):
+                example.renderer.save_image("example_lennard_jones.png")
+                print("Saved example_lennard_jones.png")

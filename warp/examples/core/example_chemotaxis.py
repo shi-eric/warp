@@ -226,10 +226,14 @@ class Example:
         self.decay = 0.02
         self.secrete_amount = 0.05
 
-        if stage_path:
+        if stage_path and stage_path.endswith((".usd", ".usda", ".usdc")):
             self.renderer = wp.render.UsdRenderer(stage_path)
         else:
-            self.renderer = None
+            self.renderer = wp.render.NativeRenderer(512, 512)
+            self.renderer.setup_camera(pos=(25, 15, 25), target=(10, 10, 10), fov=50)
+            self.renderer.bg_top = wp.vec3(0.05, 0.08, 0.05)
+            self.renderer.bg_bottom = wp.vec3(0.02, 0.03, 0.02)
+            self.renderer.shadows = False
 
     def step(self):
         with wp.ScopedTimer("step", active=False):
@@ -274,7 +278,7 @@ class Example:
         with wp.ScopedTimer("render", active=False):
             self.renderer.begin_frame(self.sim_time)
             self.renderer.render_points(
-                points=self.positions.numpy(),
+                points=self.positions,
                 radius=0.08,
                 name="bacteria",
                 colors=(0.2, 0.85, 0.3),
@@ -290,7 +294,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--stage-path",
         type=lambda x: None if x == "None" else str(x),
-        default="example_chemotaxis.usd",
+        default=None,
         help="Path to the output USD file.",
     )
     parser.add_argument("--num-frames", type=int, default=300, help="Total number of frames.")
@@ -310,4 +314,8 @@ if __name__ == "__main__":
                 print(f"Frame {i}: chem max={c.max():.3f}")
 
         if example.renderer:
-            example.renderer.save()
+            if hasattr(example.renderer, 'save'):
+                example.renderer.save()
+            if hasattr(example.renderer, 'save_image'):
+                example.renderer.save_image("example_chemotaxis.png")
+                print("Saved example_chemotaxis.png")

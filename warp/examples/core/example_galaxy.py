@@ -130,10 +130,15 @@ class Example:
         self.positions = wp.array(positions, dtype=wp.vec3)
         self.velocities = wp.array(velocities, dtype=wp.vec3)
 
-        if stage_path:
+        if stage_path and stage_path.endswith((".usd", ".usda", ".usdc")):
             self.renderer = wp.render.UsdRenderer(stage_path)
         else:
-            self.renderer = None
+            self.renderer = wp.render.NativeRenderer(512, 512)
+            self.renderer.setup_camera(pos=(0, 25, 35), target=(0, 0, 0), fov=50)
+            self.renderer.bg_top = wp.vec3(0.03, 0.03, 0.08)
+            self.renderer.bg_bottom = wp.vec3(0.01, 0.01, 0.03)
+            self.renderer.shadows = False
+            self.renderer.fog_density = 0.003
 
     def step(self):
         with wp.ScopedTimer("step", active=False):
@@ -161,7 +166,7 @@ class Example:
         with wp.ScopedTimer("render", active=False):
             self.renderer.begin_frame(self.sim_time)
             self.renderer.render_points(
-                points=self.positions.numpy(),
+                points=self.positions,
                 radius=0.05,
                 name="stars",
                 colors=(0.95, 0.92, 0.85),
@@ -177,7 +182,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--stage-path",
         type=lambda x: None if x == "None" else str(x),
-        default="example_galaxy.usd",
+        default=None,
         help="Path to the output USD file.",
     )
     parser.add_argument("--num-frames", type=int, default=500, help="Total number of frames.")
@@ -196,4 +201,8 @@ if __name__ == "__main__":
                 print(f"Frame {i}/{args.num_frames}")
 
         if example.renderer:
-            example.renderer.save()
+            if hasattr(example.renderer, 'save'):
+                example.renderer.save()
+            if hasattr(example.renderer, 'save_image'):
+                example.renderer.save_image("example_galaxy.png")
+                print("Saved example_galaxy.png")

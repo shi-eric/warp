@@ -150,10 +150,13 @@ class Example:
         self.life = wp.array(lifetimes, dtype=wp.float32)
         self.colors = wp.zeros(n, dtype=wp.vec3)
 
-        if stage_path:
+        if stage_path and stage_path.endswith((".usd", ".usda", ".usdc")):
             self.renderer = wp.render.UsdRenderer(stage_path)
         else:
-            self.renderer = None
+            self.renderer = wp.render.NativeRenderer(512, 512)
+            self.renderer.setup_camera(pos=(15, 15, 30), target=(0, 8, 0), fov=50)
+            self.renderer.bg_top = wp.vec3(0.08, 0.08, 0.12)
+            self.renderer.bg_bottom = wp.vec3(0.02, 0.02, 0.04)
 
     def step(self):
         with wp.ScopedTimer("step", active=False):
@@ -191,7 +194,7 @@ class Example:
         with wp.ScopedTimer("render", active=False):
             self.renderer.begin_frame(self.sim_time)
             self.renderer.render_points(
-                points=self.pos.numpy(),
+                points=self.pos,
                 radius=0.15,
                 name="smoke",
                 colors=self.colors.numpy(),
@@ -207,7 +210,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--stage-path",
         type=lambda x: None if x == "None" else str(x),
-        default="example_smoke_particles.usd",
+        default=None,
         help="Path to the output USD file.",
     )
     parser.add_argument("--num-frames", type=int, default=500, help="Total number of frames.")
@@ -223,4 +226,8 @@ if __name__ == "__main__":
             example.render()
 
         if example.renderer:
-            example.renderer.save()
+            if hasattr(example.renderer, 'save'):
+                example.renderer.save()
+            if hasattr(example.renderer, 'save_image'):
+                example.renderer.save_image("example_smoke_particles.png")
+                print("Saved example_smoke_particles.png")
