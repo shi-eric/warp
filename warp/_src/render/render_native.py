@@ -647,18 +647,81 @@ def _compute_sphere_bounds(
     uppers[tid] = wp.vec3(p[0] + r, p[1] + r, p[2] + r)
 
 
+@wp.func
+def procedural_sky(
+    ray_dir: wp.vec3,
+    sun_dir: wp.vec3,
+    sun_color: wp.vec3,
+    sky_top: wp.vec3,
+    sky_horizon: wp.vec3,
+    ground_color: wp.vec3,
+    sun_size: float,
+    sun_intensity: float,
+) -> wp.vec3:
+    """Compute procedural sky color for a ray direction.
+
+    Features:
+    - Vertical gradient from horizon to zenith
+    - Ground plane below horizon
+    - Sun disk with glow
+    - Horizon brightening
+    """
+    up = wp.vec3(0.0, 1.0, 0.0)
+    y = ray_dir[1]
+
+    if y < 0.0:
+        # Below horizon — ground with slight gradient
+        t = wp.clamp(-y * 3.0, 0.0, 1.0)
+        return ground_color * (1.0 - t * 0.5)
+
+    # Sky gradient: horizon → zenith
+    # Use sqrt for a more natural sky falloff
+    sky_t = wp.sqrt(wp.clamp(y, 0.0, 1.0))
+    sky = sky_horizon * (1.0 - sky_t) + sky_top * sky_t
+
+    # Horizon brightening
+    horizon_glow = wp.exp(-y * 8.0) * 0.3
+    sky = sky + sun_color * horizon_glow
+
+    # Sun disk
+    cos_sun = wp.dot(ray_dir, sun_dir)
+    if cos_sun > 0.0:
+        # Sharp sun disk
+        sun_disk = wp.pow(wp.clamp(cos_sun, 0.0, 1.0), 1.0 / sun_size)
+        sky = sky + sun_color * sun_disk * sun_intensity
+
+        # Wider sun glow
+        sun_glow = wp.pow(wp.clamp(cos_sun, 0.0, 1.0), 8.0) * 0.4
+        sky = sky + sun_color * sun_glow
+
+    return sky
+
+
 @wp.kernel
 def _fill_background(
     pixels: wp.array[wp.vec3],
     width: int,
     height: int,
-    bg_top: wp.vec3,
-    bg_bottom: wp.vec3,
+    cam_fwd: wp.vec3,
+    cam_right: wp.vec3,
+    cam_up: wp.vec3,
+    fov: float,
+    sun_dir: wp.vec3,
+    sun_color: wp.vec3,
+    sky_top: wp.vec3,
+    sky_horizon: wp.vec3,
+    ground_col: wp.vec3,
+    sun_size: float,
+    sun_intensity: float,
 ):
     tid = wp.tid()
+    px = tid % width
     py = tid / width
-    t = float(py) / float(height)
-    pixels[tid] = bg_bottom * (1.0 - t) + bg_top * t
+
+    ray_dir = generate_ray(px, py, width, height, cam_fwd, cam_right, cam_up, fov)
+
+    color = procedural_sky(ray_dir, sun_dir, sun_color, sky_top, sky_horizon, ground_col, sun_size, sun_intensity)
+    pixels[tid] = linear_to_srgb(color)
 
 
 # ── High-level renderer class ───────────────────────────────────────
@@ -725,6 +788,14 @@ class NativeRenderer:
         self.bg_bottom = wp.vec3(0.04, 0.04, 0.06)
         self.fog_density = 0.012
 
+        # Procedural sky
+        self.sky_top = wp.vec3(0.15, 0.25, 0.55)     # Deep blue zenith
+        self.sky_horizon = wp.vec3(0.5, 0.55, 0.6)   # Pale blue/gray horizon
+        self.sky_ground = wp.vec3(0.08, 0.08, 0.1)   # Dark ground below horizon
+        self.sun_color = wp.vec3(1.2, 1.1, 0.9)      # Warm sun
+        self.sun_size = 0.005                          # Angular size (smaller = sharper)
+        self.sun_intensity = 2.0                       # Brightness of disk
+
     def setup_camera(self, pos, target, up=(0.0, 1.0, 0.0), fov=50.0):
         """Set camera position looking at target."""
         pos = np.array(pos, dtype=np.float32)
@@ -763,10 +834,10 @@ class NativeRenderer:
             raise ValueError(f"Unknown quality mode: {mode!r}. Use 'fast', 'gallery', or 'realtime'.")
 
     def set_environment(self, preset="dark"):
-        """Set environment lighting preset.
+        """Set environment lighting and sky preset.
 
         Args:
-            preset: One of ``"dark"`` (default), ``"studio"``, ``"clean"``, ``"sunset"``.
+            preset: One of ``"dark"`` (default), ``"studio"``, ``"clean"``, ``"sunset"``, ``"space"``.
         """
         if preset == "dark":
             self.bg_top = wp.vec3(0.15, 0.18, 0.25)
@@ -775,6 +846,10 @@ class NativeRenderer:
             self.ground_color = wp.vec3(0.1, 0.1, 0.12)
             self.key_color = wp.vec3(0.85, 0.83, 0.80)
             self.fill_color = wp.vec3(0.15, 0.18, 0.25)
+            self.sky_top = wp.vec3(0.1, 0.12, 0.2)
+            self.sky_horizon = wp.vec3(0.2, 0.22, 0.28)
+            self.sky_ground = wp.vec3(0.04, 0.04, 0.06)
+            self.sun_intensity = 1.0
         elif preset == "studio":
             self.bg_top = wp.vec3(0.85, 0.88, 0.95)
             self.bg_bottom = wp.vec3(0.55, 0.58, 0.65)
@@ -782,6 +857,10 @@ class NativeRenderer:
             self.ground_color = wp.vec3(0.25, 0.25, 0.3)
             self.key_color = wp.vec3(1.0, 0.98, 0.95)
             self.fill_color = wp.vec3(0.3, 0.35, 0.45)
+            self.sky_top = wp.vec3(0.4, 0.5, 0.7)
+            self.sky_horizon = wp.vec3(0.7, 0.72, 0.78)
+            self.sky_ground = wp.vec3(0.3, 0.3, 0.35)
+            self.sun_intensity = 1.5
         elif preset == "clean":
             self.bg_top = wp.vec3(0.95, 0.95, 0.97)
             self.bg_bottom = wp.vec3(0.8, 0.82, 0.85)
@@ -789,13 +868,34 @@ class NativeRenderer:
             self.ground_color = wp.vec3(0.3, 0.3, 0.32)
             self.key_color = wp.vec3(1.0, 1.0, 1.0)
             self.fill_color = wp.vec3(0.35, 0.38, 0.45)
+            self.sky_top = wp.vec3(0.6, 0.65, 0.8)
+            self.sky_horizon = wp.vec3(0.85, 0.87, 0.9)
+            self.sky_ground = wp.vec3(0.5, 0.5, 0.52)
+            self.sun_intensity = 1.0
         elif preset == "sunset":
             self.bg_top = wp.vec3(0.4, 0.5, 0.7)
             self.bg_bottom = wp.vec3(0.9, 0.7, 0.5)
             self.sky_color = wp.vec3(0.5, 0.5, 0.6)
             self.ground_color = wp.vec3(0.3, 0.2, 0.15)
-            self.key_color = wp.vec3(1.0, 0.9, 0.75)
+            self.key_color = wp.vec3(1.0, 0.85, 0.6)
             self.fill_color = wp.vec3(0.2, 0.25, 0.4)
+            self.sky_top = wp.vec3(0.2, 0.3, 0.6)
+            self.sky_horizon = wp.vec3(0.95, 0.6, 0.3)
+            self.sky_ground = wp.vec3(0.15, 0.1, 0.08)
+            self.sun_color = wp.vec3(1.5, 0.9, 0.4)
+            self.sun_intensity = 3.0
+            self.sun_size = 0.008
+        elif preset == "space":
+            self.bg_top = wp.vec3(0.02, 0.02, 0.05)
+            self.bg_bottom = wp.vec3(0.01, 0.01, 0.02)
+            self.sky_color = wp.vec3(0.2, 0.2, 0.25)
+            self.ground_color = wp.vec3(0.05, 0.05, 0.07)
+            self.key_color = wp.vec3(0.9, 0.9, 0.95)
+            self.fill_color = wp.vec3(0.08, 0.1, 0.15)
+            self.sky_top = wp.vec3(0.02, 0.02, 0.06)
+            self.sky_horizon = wp.vec3(0.05, 0.05, 0.1)
+            self.sky_ground = wp.vec3(0.01, 0.01, 0.02)
+            self.sun_intensity = 0.5
         else:
             raise ValueError(f"Unknown environment preset: {preset!r}.")
 
@@ -933,7 +1033,7 @@ class NativeRenderer:
         wp.capture_launch(self._graph)
 
     def begin_frame(self, time=0.0):
-        """Clear framebuffer and draw background gradient.
+        """Clear framebuffer and draw procedural sky background.
 
         Args:
             time: Current simulation time (unused, for API compatibility).
@@ -943,7 +1043,13 @@ class NativeRenderer:
         wp.launch(
             kernel=_fill_background,
             dim=self.render_w * self.render_h,
-            inputs=[self.pixels, self.render_w, self.render_h, self.bg_top, self.bg_bottom],
+            inputs=[
+                self.pixels, self.render_w, self.render_h,
+                self.cam_fwd, self.cam_right, self.cam_up, self.fov,
+                self.key_dir,  # Sun direction = key light direction
+                self.sun_color, self.sky_top, self.sky_horizon, self.sky_ground,
+                self.sun_size, self.sun_intensity,
+            ],
         )
 
     def render_ground(self, y=0.0, checker_scale=0.5, color_a=(0.35, 0.35, 0.38), color_b=(0.25, 0.25, 0.28)):
