@@ -646,7 +646,7 @@ def _fill_background(
 # ── High-level renderer class ───────────────────────────────────────
 
 
-class RayTracedRenderer:
+class NativeRenderer:
     """BVH-accelerated GPU ray-traced renderer for Warp examples.
 
     Two-light setup (key + fill) with hemisphere ambient, BVH-accelerated
@@ -654,7 +654,7 @@ class RayTracedRenderer:
 
     Usage::
 
-        renderer = RayTracedRenderer(width=1024, height=1024)
+        renderer = NativeRenderer(width=1024, height=1024)
         renderer.setup_camera(pos=(5, 3, 5), target=(0, 0, 0))
 
         renderer.begin_frame()
