@@ -108,8 +108,8 @@ def phase_field_step(
     eps_val = eps0 * (1.0 + delta_aniso * cos4_theta)
     eps2 = eps_val * eps_val
 
-    # Driving force: m = coupling * T (undercooling drives solidification)
-    m = coupling * t
+    # Driving force: m = -coupling * T (negative T = undercooling favors solidification)
+    m = -coupling * t
 
     # Double-well potential + driving
     # f'(φ) = φ(1-φ)(φ - 0.5 + m)
@@ -159,18 +159,18 @@ class Example:
         self.nz = grid_z
         self.sim_time = 0.0
         self.frame_dt = 1.0 / 30.0
-        self.substeps = 20
+        self.substeps = 50
 
-        # Phase-field parameters
-        self.tau = 1.0          # Relaxation time
-        self.eps0 = 0.01        # Interface width parameter
+        # Phase-field parameters (tuned for visible dendritic growth)
+        self.tau = 0.3          # Relaxation time
+        self.eps0 = 0.5         # Interface width parameter
         self.delta_aniso = 0.05 # Anisotropy strength (4-fold)
-        self.D_thermal = 2.0    # Thermal diffusivity
-        self.latent = 1.5       # Latent heat coefficient
-        self.coupling = 6.0     # Coupling: m = coupling * T
-        self.dt = 0.0002        # Substep dt
+        self.D_thermal = 1.0    # Thermal diffusivity
+        self.latent = 0.5       # Latent heat coefficient
+        self.coupling = 0.8     # Coupling: m = coupling * T
+        self.dt = 0.005         # Substep dt
 
-        self.undercooling = -0.5  # Initial supercooling (T < 0)
+        self.undercooling = -0.65  # Initial supercooling (stronger)
 
         # Fields
         self.phi = wp.zeros((self.nx, self.ny, self.nz), dtype=wp.float32)
@@ -209,7 +209,7 @@ class Example:
         """Place a small solid sphere at the center."""
         phi_np = self.phi.numpy()
         cx, cy, cz = self.nx // 2, self.ny // 2, self.nz // 2
-        radius = 5
+        radius = 15
 
         for i in range(max(0, cx - radius), min(self.nx, cx + radius + 1)):
             for j in range(max(0, cy - radius), min(self.ny, cy + radius + 1)):
