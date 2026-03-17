@@ -132,10 +132,11 @@ class Example:
         # Marching cubes
         self.mc = wp.MarchingCubes(nx=n, ny=n, nz=n)
 
-        if stage_path:
+        if stage_path and stage_path.endswith((".usd", ".usda", ".usdc")):
             self.renderer = wp.render.UsdRenderer(stage_path)
         else:
-            self.renderer = None
+            self.renderer = wp.render.NativeRenderer(512, 512)
+            self.renderer.setup_camera(pos=(100, 60, 100), target=(40, 40, 40), fov=50)
 
     def step(self):
         with wp.ScopedTimer("step", active=False):
@@ -175,8 +176,8 @@ class Example:
             self.renderer.begin_frame(self.sim_time)
             if self.mc.verts is not None and len(self.mc.verts) > 0:
                 self.renderer.render_mesh(
-                    points=self.mc.verts.numpy(),
-                    indices=self.mc.indices.numpy(),
+                    points=self.mc.verts,
+                    indices=self.mc.indices,
                     name="wavefront",
                     colors=(0.2, 0.5, 0.9),
                 )
@@ -238,7 +239,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--stage-path",
         type=lambda x: None if x == "None" else str(x),
-        default="example_wave_3d.usd",
+        default=None,
         help="Path to the output USD file.",
     )
     parser.add_argument("--num-frames", type=int, default=300, help="Total number of frames.")
@@ -254,4 +255,8 @@ if __name__ == "__main__":
             example.render()
 
         if example.renderer:
-            example.renderer.save()
+            if hasattr(example.renderer, 'save'):
+                example.renderer.save()
+            if hasattr(example.renderer, 'save_image'):
+                example.renderer.save_image("example_wave_3d.png")
+                print("Saved example_wave_3d.png")
