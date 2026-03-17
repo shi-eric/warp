@@ -481,7 +481,7 @@ if __name__ == "__main__":
         help="Path to output USD file. If None, uses NativeRenderer.",
     )
     parser.add_argument("--num-frames", type=int, default=200, help="Total number of frames.")
-    parser.add_argument("--grid-dim", type=int, default=32, help="Grid dimension (N³ neurons).")
+    parser.add_argument("--grid-dim", type=int, default=64, help="Grid dimension (N³ neurons).")
 
     args = parser.parse_known_args()[0]
 

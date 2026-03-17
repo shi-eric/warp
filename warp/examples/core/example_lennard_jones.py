@@ -157,7 +157,7 @@ def compute_kinetic_energy(
 
 
 class Example:
-    def __init__(self, stage_path="example_lennard_jones.usd", num_atoms=1000, temperature=1.0):
+    def __init__(self, stage_path="example_lennard_jones.usd", num_atoms=5000, temperature=1.0):
         self.num_atoms = num_atoms
         self.sim_time = 0.0
         self.frame_dt = 1.0 / 60.0
@@ -390,7 +390,7 @@ if __name__ == "__main__":
         help="Path to output USD file. If None, uses NativeRenderer.",
     )
     parser.add_argument("--num-frames", type=int, default=300, help="Total number of frames.")
-    parser.add_argument("--num-atoms", type=int, default=1000, help="Number of atoms.")
+    parser.add_argument("--num-atoms", type=int, default=5000, help="Number of atoms.")
     parser.add_argument("--temperature", type=float, default=0.5, help="Initial temperature (reduced units).")
 
     args = parser.parse_known_args()[0]

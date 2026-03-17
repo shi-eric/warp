@@ -102,7 +102,7 @@ def extract_live_cells(
 
 
 class Example:
-    def __init__(self, stage_path="example_cellular_automata_3d.usd", grid_size=64):
+    def __init__(self, stage_path="example_cellular_automata_3d.usd", grid_size=128):
         self.grid_size = grid_size
         self.sim_time = 0.0
         self.frame_dt = 1.0 / 30.0
@@ -205,7 +205,7 @@ if __name__ == "__main__":
         help="Path to the output USD file.",
     )
     parser.add_argument("--num-frames", type=int, default=200, help="Total number of frames.")
-    parser.add_argument("--grid-size", type=int, default=64, help="Grid resolution per axis.")
+    parser.add_argument("--grid-size", type=int, default=128, help="Grid resolution per axis.")
 
     args = parser.parse_known_args()[0]
 

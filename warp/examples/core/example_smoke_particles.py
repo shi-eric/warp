@@ -122,7 +122,7 @@ def compute_colors(
 
 
 class Example:
-    def __init__(self, stage_path="example_smoke_particles.usd", num_particles=50000):
+    def __init__(self, stage_path="example_smoke_particles.usd", num_particles=200000):
         self.num_particles = num_particles
         self.sim_time = 0.0
         self.frame_dt = 1.0 / 60.0
@@ -214,7 +214,7 @@ if __name__ == "__main__":
         help="Path to the output USD file.",
     )
     parser.add_argument("--num-frames", type=int, default=500, help="Total number of frames.")
-    parser.add_argument("--num-particles", type=int, default=50000, help="Number of particles.")
+    parser.add_argument("--num-particles", type=int, default=200000, help="Number of particles.")
 
     args = parser.parse_known_args()[0]
 

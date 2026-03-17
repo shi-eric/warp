@@ -287,7 +287,7 @@ def compute_colors_from_velocity(
 
 
 class Example:
-    def __init__(self, stage_path="example_flocking_predator.usd", num_prey=800, num_pred=3):
+    def __init__(self, stage_path="example_flocking_predator.usd", num_prey=20000, num_pred=3):
         self.num_prey = num_prey
         self.num_pred = num_pred
         self.domain = 50.0
@@ -510,7 +510,7 @@ if __name__ == "__main__":
         help="Path to output USD file. If None, uses NativeRenderer.",
     )
     parser.add_argument("--num-frames", type=int, default=300, help="Total number of frames.")
-    parser.add_argument("--num-prey", type=int, default=800, help="Number of prey boids.")
+    parser.add_argument("--num-prey", type=int, default=20000, help="Number of prey boids.")
     parser.add_argument("--num-pred", type=int, default=3, help="Number of predators.")
 
     args = parser.parse_known_args()[0]
