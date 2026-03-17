@@ -169,6 +169,28 @@ def flock_step(
             force = penetration * penetration * 2.0  # Quadratic repulsion
             steer = steer + wp.vec3(ox / dist_xz * force, 0.0, oz / dist_xz * force)
 
+    # Soft boundary containment — pull toward domain center
+    dom_center = domain * 0.5
+    dom_margin = domain * 0.35
+    for dim in range(3):
+        dist_from_center = p[dim] - dom_center
+        if wp.abs(dist_from_center) > dom_margin:
+            overshoot = wp.abs(dist_from_center) - dom_margin
+            pull = -wp.sign(dist_from_center) * overshoot * 2.0
+            if dim == 0:
+                steer = steer + wp.vec3(pull, 0.0, 0.0)
+            elif dim == 1:
+                steer = steer + wp.vec3(0.0, pull, 0.0)
+            else:
+                steer = steer + wp.vec3(0.0, 0.0, pull)
+
+    # Vertical confinement — keep boids in a flat band
+    y_center = domain * 0.5
+    y_margin = domain * 0.15
+    dy = p[1] - y_center
+    if wp.abs(dy) > y_margin:
+        steer = steer + wp.vec3(0.0, -wp.sign(dy) * (wp.abs(dy) - y_margin) * 4.0, 0.0)
+
     # Update velocity
     v_new = v + steer * dt
     spd = wp.length(v_new)
@@ -371,20 +393,25 @@ class Example:
         self.pred_pos = wp.array(pred_pos, dtype=wp.vec3)
         self.pred_vel = wp.array(pred_vel, dtype=wp.vec3)
 
-        # Cylindrical pillar obstacles
-        # Arranged in a grid pattern with varying sizes
+        # Cylindrical pillar obstacles — arranged as a maze-like corridor
         obs_positions = []
         obs_radii = []
-        spacing = self.domain / 5.0
-        for ix in range(1, 5):
-            for iz in range(1, 5):
-                # Skip center area (leave room for initial flock)
-                cx = ix * spacing
-                cz = iz * spacing
-                dist_to_center = np.sqrt((cx - center)**2 + (cz - center)**2)
-                if dist_to_center > 8.0:  # Don't block the spawn area
-                    obs_positions.append([cx, center, cz])
-                    obs_radii.append(1.5 + 1.0 * np.sin(ix * 1.7 + iz * 2.3))
+        center = self.domain / 2.0
+
+        # Two rows of staggered pillars creating channels
+        for row in [-1, 1]:
+            for col in range(6):
+                x = center + row * 8.0 + (col % 2) * 4.0
+                z = center - 15.0 + col * 6.0
+                obs_positions.append([x, center, z])
+                obs_radii.append(2.0 + 0.5 * (col % 3))
+
+        # A few large pillars in the center
+        for angle_deg in [0, 90, 180, 270]:
+            a = np.radians(angle_deg + 45)
+            r = 12.0
+            obs_positions.append([center + r * np.cos(a), center, center + r * np.sin(a)])
+            obs_radii.append(3.0)
 
         self.num_obstacles = len(obs_positions)
         if self.num_obstacles > 0:
