@@ -132,7 +132,7 @@ def shade_glass_sphere(
     radius: float,
     ior: float,
     tint: wp.vec3,
-    # For reflected ray: scene query via BVH
+    # Scene
     bvh_id: wp.uint64,
     positions: wp.array[wp.vec3],
     radii: wp.array[wp.float32],
@@ -148,7 +148,7 @@ def shade_glass_sphere(
     bg: wp.vec3,
     specular_power: float,
 ) -> wp.vec3:
-    """Shade a glass sphere with refraction + Fresnel reflection (2-bounce)."""
+    """Shade a glass sphere: refraction + Fresnel reflection + Beer's law."""
 
     hit_pos = ray_origin + ray_dir * hit_t
     normal = wp.normalize(hit_pos - center)
@@ -158,35 +158,46 @@ def shade_glass_sphere(
 
     # ── Refracted ray (enters sphere) ──
     refr_dir = refract_ray(ray_dir, normal, 1.0 / ior)
-    refr_color = bg  # Default if total internal reflection
+    refr_color = bg
 
     refr_len = wp.length(refr_dir)
     if refr_len > 0.5:
         refr_dir = wp.normalize(refr_dir)
-        # Find exit point (second intersection from inside)
-        # Ray from hit_pos+epsilon inward, intersect same sphere from inside
+
+        # Find exit point (ray travels through sphere interior)
         inner_origin = hit_pos + refr_dir * 0.01
-        # Solve for exit: |inner_origin + t*refr_dir - center|² = r²
         oc = inner_origin - center
         b = wp.dot(oc, refr_dir)
         c = wp.dot(oc, oc) - radius * radius
         disc = b * b - c
         exit_t = float(0.0)
         if disc >= 0.0:
-            exit_t = -b + wp.sqrt(disc)  # Far intersection (exit)
+            exit_t = -b + wp.sqrt(disc)
 
         if exit_t > 0.01:
             exit_pos = inner_origin + refr_dir * exit_t
-            exit_normal = wp.normalize(exit_pos - center)  # Points outward
-            # Refract again exiting (flip normal, use inverse IOR)
-            exit_refr = refract_ray(refr_dir, -exit_normal, ior)
-            exit_len = wp.length(exit_refr)
+            exit_normal = wp.normalize(exit_pos - center)
 
-            if exit_len > 0.5:
+            # Beer's law: absorb light based on path length through glass
+            path_len = exit_t
+            # absorption = exp(-absorption_coeff * path_len)
+            # Higher path = more tint. absorption_coeff ~2/radius for visible effect
+            abs_coeff = 1.5 / radius
+            absorption = wp.vec3(
+                wp.exp(-abs_coeff * (1.0 - tint[0]) * path_len),
+                wp.exp(-abs_coeff * (1.0 - tint[1]) * path_len),
+                wp.exp(-abs_coeff * (1.0 - tint[2]) * path_len),
+            )
+
+            # Refract exiting
+            exit_refr = refract_ray(refr_dir, -exit_normal, ior)
+            exit_refr_len = wp.length(exit_refr)
+
+            if exit_refr_len > 0.5:
                 exit_refr = wp.normalize(exit_refr)
-                # Trace refracted ray into scene
                 exit_origin = exit_pos + exit_refr * 0.01
 
+                # Trace into scene
                 closest_t2 = float(1.0e10)
                 closest_idx2 = int(-1)
                 query2 = wp.bvh_query_ray(bvh_id, exit_origin, exit_refr)
@@ -197,23 +208,25 @@ def shade_glass_sphere(
                         closest_t2 = t2
                         closest_idx2 = cand2
 
-                if closest_idx2 >= 0 and materials[closest_idx2] == 0:
-                    # Hit an opaque sphere — shade it
+                if closest_idx2 >= 0:
+                    # Shade whatever we hit (opaque shading for simplicity)
                     hp2 = exit_origin + exit_refr * closest_t2
                     n2 = wp.normalize(hp2 - positions[closest_idx2])
                     bc2 = colors[closest_idx2]
-                    vd2 = -exit_refr
                     amb2 = hemisphere_ambient(n2, sky_color, ground_color)
                     ndl2 = wp.max(wp.dot(n2, key_dir), 0.0)
-                    refr_color = wp.cw_mul(bc2, amb2) * 0.5 + bc2 * ndl2
+                    ndl2f = wp.max(wp.dot(n2, fill_dir), 0.0)
+                    refr_color = wp.cw_mul(bc2, amb2) * 0.4 + bc2 * (ndl2 * 0.6 + ndl2f * 0.2)
                 else:
                     refr_color = bg
 
-                # Tint by glass color and path length
-                refr_color = wp.cw_mul(refr_color, tint)
+                # Apply Beer's law absorption
+                refr_color = wp.cw_mul(refr_color, absorption)
+
             else:
-                # Total internal reflection at exit — just tint
-                refr_color = wp.cw_mul(bg, tint) * 0.3
+                # Total internal reflection at exit
+                # Bounce inside and take hemisphere ambient color
+                refr_color = wp.cw_mul(hemisphere_ambient(normal, sky_color, ground_color), absorption) * 0.4
 
     # ── Reflected ray ──
     refl_dir = ray_dir - normal * 2.0 * wp.dot(ray_dir, normal)
@@ -230,20 +243,23 @@ def shade_glass_sphere(
             closest_tr = tr
             closest_ir = cr
 
-    if closest_ir >= 0 and materials[closest_ir] == 0:
+    if closest_ir >= 0:
         hpr = refl_origin + refl_dir * closest_tr
         nr = wp.normalize(hpr - positions[closest_ir])
         bcr = colors[closest_ir]
         amr = hemisphere_ambient(nr, sky_color, ground_color)
         ndlr = wp.max(wp.dot(nr, key_dir), 0.0)
-        refl_color = wp.cw_mul(bcr, amr) * 0.5 + bcr * ndlr
+        refl_color = wp.cw_mul(bcr, amr) * 0.4 + bcr * ndlr * 0.6
 
-    # Specular highlight on glass surface
+    # Strong specular highlight (glass is very smooth)
     half_vec = wp.normalize(key_dir - ray_dir)
-    spec = wp.pow(wp.max(wp.dot(normal, half_vec), 0.0), specular_power * 2.0) * 0.8
+    spec = wp.pow(wp.max(wp.dot(normal, half_vec), 0.0), specular_power * 4.0)
+    # Secondary specular from fill light
+    half_vec2 = wp.normalize(fill_dir - ray_dir)
+    spec2 = wp.pow(wp.max(wp.dot(normal, half_vec2), 0.0), specular_power * 2.0) * 0.3
 
-    # Blend reflection + refraction by Fresnel
-    color = refl_color * fresnel + refr_color * (1.0 - fresnel) + key_color * spec
+    # Blend reflection + refraction by Fresnel, add specular
+    color = refl_color * fresnel + refr_color * (1.0 - fresnel) + key_color * (spec + spec2)
 
     return color
 
