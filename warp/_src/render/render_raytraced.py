@@ -105,6 +105,35 @@ def fresnel_rim(normal: wp.vec3, view_dir: wp.vec3, rim_power: float, rim_streng
 
 
 @wp.func
+def linear_to_srgb(color: wp.vec3) -> wp.vec3:
+    """Convert linear RGB to sRGB gamma space."""
+    return wp.vec3(
+        wp.pow(wp.clamp(color[0], 0.0, 1.0), 0.4545),
+        wp.pow(wp.clamp(color[1], 0.0, 1.0), 0.4545),
+        wp.pow(wp.clamp(color[2], 0.0, 1.0), 0.4545),
+    )
+
+
+@wp.func
+def generate_ray(
+    px: int,
+    py: int,
+    width: int,
+    height: int,
+    cam_fwd: wp.vec3,
+    cam_right: wp.vec3,
+    cam_up: wp.vec3,
+    fov: float,
+) -> wp.vec3:
+    """Generate a normalized ray direction for a pixel."""
+    aspect = float(width) / float(height)
+    half_fov = wp.tan(fov * 0.5)
+    u = (2.0 * (float(px) + 0.5) / float(width) - 1.0) * half_fov * aspect
+    v = (2.0 * (float(py) + 0.5) / float(height) - 1.0) * half_fov
+    return wp.normalize(cam_fwd + cam_right * u + cam_up * v)
+
+
+@wp.func
 def schlick_fresnel(cos_theta: float, ior: float) -> float:
     """Schlick approximation to Fresnel reflectance."""
     r0 = (1.0 - ior) / (1.0 + ior)
@@ -328,14 +357,13 @@ def render_particles_kernel(
     px = tid % width
     py = tid / width
 
-    aspect = float(width) / float(height)
-    half_fov = wp.tan(fov * 0.5)
-    u = (2.0 * (float(px) + 0.5) / float(width) - 1.0) * half_fov * aspect
-    v = (2.0 * (float(py) + 0.5) / float(height) - 1.0) * half_fov
-    ray_dir = wp.normalize(cam_fwd + cam_right * u + cam_up * v)
+    ray_dir = generate_ray(px, py, width, height, cam_fwd, cam_right, cam_up, fov)
 
-    # BVH ray query
+    # BVH ray query — respect existing depth (e.g. from ground or mesh)
+    existing_depth = depth_buf[tid]
     closest_t = float(1.0e10)
+    if existing_depth > 0.0:
+        closest_t = existing_depth
     closest_idx = int(-1)
 
     query = wp.bvh_query_ray(bvh_id, cam_pos, ray_dir)
@@ -409,11 +437,7 @@ def render_particles_kernel(
     color = color * (1.0 - fog) + bg * fog
 
     # sRGB gamma
-    pixels[tid] = wp.vec3(
-        wp.pow(wp.clamp(color[0], 0.0, 1.0), 0.4545),
-        wp.pow(wp.clamp(color[1], 0.0, 1.0), 0.4545),
-        wp.pow(wp.clamp(color[2], 0.0, 1.0), 0.4545),
-    )
+    pixels[tid] = linear_to_srgb(color)
 
 
 # ── Mesh render kernel (wp.Mesh + cuBQL) ────────────────────────────
@@ -456,11 +480,7 @@ def render_mesh_kernel(
     px = tid % width
     py = tid / width
 
-    aspect = float(width) / float(height)
-    half_fov = wp.tan(fov * 0.5)
-    u = (2.0 * (float(px) + 0.5) / float(width) - 1.0) * half_fov * aspect
-    v = (2.0 * (float(py) + 0.5) / float(height) - 1.0) * half_fov
-    ray_dir = wp.normalize(cam_fwd + cam_right * u + cam_up * v)
+    ray_dir = generate_ray(px, py, width, height, cam_fwd, cam_right, cam_up, fov)
 
     existing_depth = depth_buf[tid]
     max_t = float(1.0e6)
@@ -519,11 +539,7 @@ def render_mesh_kernel(
     color = color * (1.0 - fog) + bg * fog
 
     # sRGB
-    pixels[tid] = wp.vec3(
-        wp.pow(wp.clamp(color[0], 0.0, 1.0), 0.4545),
-        wp.pow(wp.clamp(color[1], 0.0, 1.0), 0.4545),
-        wp.pow(wp.clamp(color[2], 0.0, 1.0), 0.4545),
-    )
+    pixels[tid] = linear_to_srgb(color)
 
 
 # ── Ground plane kernel ─────────────────────────────────────────────
@@ -554,11 +570,7 @@ def render_ground_kernel(
     px = tid % width
     py = tid / width
 
-    aspect = float(width) / float(height)
-    half_fov = wp.tan(fov * 0.5)
-    u = (2.0 * (float(px) + 0.5) / float(width) - 1.0) * half_fov * aspect
-    v = (2.0 * (float(py) + 0.5) / float(height) - 1.0) * half_fov
-    ray_dir = wp.normalize(cam_fwd + cam_right * u + cam_up * v)
+    ray_dir = generate_ray(px, py, width, height, cam_fwd, cam_right, cam_up, fov)
 
     # Ray-plane intersection (y = ground_y)
     if wp.abs(ray_dir[1]) < 1.0e-6:
@@ -577,7 +589,7 @@ def render_ground_kernel(
     # Checkerboard
     cx = int(wp.floor(hit[0] * checker_scale))
     cz = int(wp.floor(hit[2] * checker_scale))
-    check = (cx + cz) % 2
+    check = (cx ^ cz) & 1  # Robust odd/even for negative coords
     base = color_a
     if check != 0:
         base = color_b
@@ -594,11 +606,7 @@ def render_ground_kernel(
     color = color * (1.0 - fog) + bg * fog
 
     depth_buf[tid] = t
-    pixels[tid] = wp.vec3(
-        wp.pow(wp.clamp(color[0], 0.0, 1.0), 0.4545),
-        wp.pow(wp.clamp(color[1], 0.0, 1.0), 0.4545),
-        wp.pow(wp.clamp(color[2], 0.0, 1.0), 0.4545),
-    )
+    pixels[tid] = linear_to_srgb(color)
 
 
 @wp.kernel
@@ -717,17 +725,19 @@ class RayTracedRenderer:
 
         Args:
             mode: One of:
-                - ``"fast"``: No SSAA. ~0.5ms for 1K spheres.
-                - ``"gallery"``: SSAA=2 for smooth edges. For documentation stills.
-                - ``"realtime"``: Like fast. Call ``capture_graph()`` for
-                  CUDA graph capture if needed.
+                - ``"fast"``: Shadows enabled, no SSAA. Best for realtime/animation.
+                - ``"gallery"``: Shadows enabled, SSAA=2 (must be set at init).
+                  For documentation stills.
+                - ``"realtime"``: Shadows disabled for maximum speed.
         """
-        if mode in ("fast", "realtime"):
+        if mode == "fast":
             self.shadows = True
         elif mode == "gallery":
             self.shadows = True
+        elif mode == "realtime":
+            self.shadows = False
         else:
-            raise ValueError(f"Unknown quality mode: {mode!r}.")
+            raise ValueError(f"Unknown quality mode: {mode!r}. Use 'fast', 'gallery', or 'realtime'.")
 
     # ── CUDA graph capture for realtime ──────────────────────────────
 
@@ -805,13 +815,18 @@ class RayTracedRenderer:
                 ],
             )
 
+        # Materials for graph (default all opaque)
+        self._graph_materials = wp.zeros(n, dtype=wp.int32)
+        glass_tint_wp = wp.vec3(0.9, 0.95, 1.0)
+
         # 5. Render particles
         wp.launch(
             kernel=render_particles_kernel,
             dim=self.render_w * self.render_h,
             inputs=[
                 self._graph_bvh.id,
-                positions, self._graph_radii, self._graph_colors, n,
+                positions, self._graph_radii, self._graph_colors, self._graph_materials, n,
+                1.5, glass_tint_wp,
                 self.cam_pos, self.cam_fwd, self.cam_right, self.cam_up, self.fov,
                 self.pixels, self.depth, self.render_w, self.render_h,
                 self.key_dir, self.key_color,
@@ -988,7 +1003,7 @@ class RayTracedRenderer:
         if isinstance(points, np.ndarray):
             verts_wp = wp.array(points.astype(np.float32), dtype=wp.vec3)
         else:
-            verts_wp = vertices
+            verts_wp = points
 
         if isinstance(indices, np.ndarray):
             idx_wp = wp.array(indices.astype(np.int32))
@@ -1053,3 +1068,47 @@ class RayTracedRenderer:
         from PIL import Image
 
         Image.fromarray(self.end_frame()).save(path)
+
+    # ── Stub methods for API compatibility ───────────────────────────
+
+    def render_box(self, name="box", pos=(0, 0, 0), rot=(0, 0, 0, 1), extents=(1, 1, 1), color=None, **kwargs):
+        """Not yet implemented — use render_mesh with box vertices instead."""
+        pass
+
+    def render_capsule(self, name="capsule", pos=(0, 0, 0), rot=(0, 0, 0, 1), radius=1.0, half_height=1.0, **kwargs):
+        """Not yet implemented."""
+        pass
+
+    def render_cylinder(self, name="cylinder", pos=(0, 0, 0), rot=(0, 0, 0, 1), radius=1.0, half_height=1.0, **kwargs):
+        """Not yet implemented."""
+        pass
+
+    def render_cone(self, name="cone", pos=(0, 0, 0), rot=(0, 0, 0, 1), radius=1.0, half_height=1.0, **kwargs):
+        """Not yet implemented."""
+        pass
+
+    def render_line_list(self, name="lines", vertices=None, indices=None, color=None, radius=0.01, **kwargs):
+        """Not yet implemented."""
+        pass
+
+    def render_line_strip(self, name="lines", vertices=None, color=None, radius=0.01, **kwargs):
+        """Not yet implemented."""
+        pass
+
+    def render_arrow(self, name="arrow", pos=(0, 0, 0), rot=(0, 0, 0, 1), base_radius=0.01, **kwargs):
+        """Not yet implemented."""
+        pass
+
+    def clear(self):
+        """Release GPU resources."""
+        self.pixels = None
+        self.depth = None
+        if hasattr(self, '_cached_radii'):
+            del self._cached_radii
+        if hasattr(self, '_cached_colors'):
+            del self._cached_colors
+        if hasattr(self, '_cached_mats'):
+            del self._cached_mats
+        if hasattr(self, '_bvh_lowers'):
+            del self._bvh_lowers
+            del self._bvh_uppers
