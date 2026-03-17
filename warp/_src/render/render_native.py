@@ -565,6 +565,136 @@ def render_mesh_kernel(
     pixels[tid] = linear_to_srgb(color)
 
 
+# ── Instanced mesh render kernel ────────────────────────────────────
+
+
+@wp.kernel
+def render_instanced_mesh_kernel(
+    # Shared mesh
+    mesh_id: wp.uint64,
+    mesh_color: wp.vec3,
+    # Instance transforms (position + scale per instance)
+    inst_pos: wp.array[wp.vec3],
+    inst_scale: wp.array[wp.vec3],
+    # Top-level BVH over instance AABBs
+    inst_bvh_id: wp.uint64,
+    num_instances: int,
+    # Camera
+    cam_pos: wp.vec3,
+    cam_fwd: wp.vec3,
+    cam_right: wp.vec3,
+    cam_up: wp.vec3,
+    fov: float,
+    # Image
+    pixels: wp.array[wp.vec3],
+    depth_buf: wp.array[wp.float32],
+    width: int,
+    height: int,
+    # Key light
+    key_dir: wp.vec3,
+    key_color: wp.vec3,
+    # Fill light
+    fill_dir: wp.vec3,
+    fill_color: wp.vec3,
+    # Shading
+    specular_power: float,
+    sky_color: wp.vec3,
+    ground_color: wp.vec3,
+    # Environment
+    bg_top: wp.vec3,
+    bg_bottom: wp.vec3,
+    fog_density: float,
+    # Shadow
+    shadow_enabled: int,
+):
+    tid = wp.tid()
+    px = tid % width
+    py = tid / width
+
+    ray_dir = generate_ray(px, py, width, height, cam_fwd, cam_right, cam_up, fov)
+
+    existing_depth = depth_buf[tid]
+    best_t = float(1.0e6)
+    if existing_depth > 0.0:
+        best_t = existing_depth
+    best_normal = wp.vec3(0.0, 1.0, 0.0)
+    hit_any = int(0)
+
+    # Query top-level BVH for candidate instances
+    query = wp.bvh_query_ray(inst_bvh_id, cam_pos, ray_dir)
+    inst_idx = int(0)
+    while wp.bvh_query_next(query, inst_idx):
+        # Transform ray into instance local space
+        ipos = inst_pos[inst_idx]
+        iscale = inst_scale[inst_idx]
+
+        # Local ray: origin = (world_origin - inst_pos) / inst_scale
+        local_origin = wp.vec3(
+            (cam_pos[0] - ipos[0]) / iscale[0],
+            (cam_pos[1] - ipos[1]) / iscale[1],
+            (cam_pos[2] - ipos[2]) / iscale[2],
+        )
+        local_dir = wp.vec3(
+            ray_dir[0] / iscale[0],
+            ray_dir[1] / iscale[1],
+            ray_dir[2] / iscale[2],
+        )
+        # Don't normalize — t values scale with direction length
+        dir_len = wp.length(local_dir)
+        local_dir_norm = local_dir / dir_len
+        local_max_t = best_t * dir_len
+
+        t = float(0.0)
+        u = float(0.0)
+        v = float(0.0)
+        s = float(0.0)
+        n = wp.vec3(0.0, 0.0, 0.0)
+        f = int(0)
+
+        if wp.mesh_query_ray(mesh_id, local_origin, local_dir_norm, local_max_t, t, u, v, s, n, f):
+            # Convert t back to world space
+            world_t = t / dir_len
+            if world_t < best_t and world_t > 0.0:
+                best_t = world_t
+                # Transform normal back to world space (inverse-transpose of scale)
+                best_normal = wp.normalize(wp.vec3(
+                    n[0] / iscale[0],
+                    n[1] / iscale[1],
+                    n[2] / iscale[2],
+                ))
+                hit_any = 1
+
+    if hit_any == 0:
+        return
+
+    depth_buf[tid] = best_t
+    hit_pos = cam_pos + ray_dir * best_t
+    view_dir = -ray_dir
+    normal = best_normal
+
+    if wp.dot(normal, ray_dir) > 0.0:
+        normal = -normal
+
+    # Shading (same as regular mesh)
+    ambient = hemisphere_ambient(normal, sky_color, ground_color)
+    color = wp.cw_mul(mesh_color, ambient) * 0.5
+
+    # Key light with shadow (simplified — no per-instance shadow for now)
+    key_visible = float(1.0)
+    key_contrib = compute_lighting_directional(normal, view_dir, key_dir, key_color, specular_power, key_visible)
+    color = color + wp.cw_mul(mesh_color, key_contrib)
+
+    fill_contrib = compute_lighting_directional(normal, view_dir, fill_dir, fill_color, specular_power * 0.5, 1.0)
+    color = color + wp.cw_mul(mesh_color, fill_contrib)
+
+    nv = float(py) / float(height)
+    bg = bg_bottom * (1.0 - nv) + bg_top * nv
+    fog = wp.clamp(1.0 - wp.exp(-best_t * fog_density), 0.0, 0.8)
+    color = color * (1.0 - fog) + bg * fog
+
+    pixels[tid] = linear_to_srgb(color)
+
+
 # ── Ground plane kernel ─────────────────────────────────────────────
 
 
@@ -1195,6 +1325,91 @@ class NativeRenderer:
                 self.specular_power, self.sky_color, self.ground_color,
                 self.bg_top, self.bg_bottom, self.fog_density,
                 mesh.id, 1 if self.shadows else 0,
+            ],
+        )
+
+    def render_mesh_instanced(self, name="instances", points=None, indices=None,
+                               positions=None, scales=None, color=(0.5, 0.5, 0.5)):
+        """Render multiple instances of a single mesh with different transforms.
+
+        Uses a two-level BVH: top-level over instance bounding boxes,
+        bottom-level is the shared mesh BVH. Each ray tests candidate
+        instances via the top-level BVH, then queries the shared mesh
+        in local space.
+
+        Args:
+            name: Instance name (unused, for API compatibility).
+            points: (N, 3) mesh vertices (shared across all instances).
+            indices: (M*3,) triangle indices.
+            positions: (K, 3) per-instance world positions.
+            scales: (K, 3) per-instance scales, or single (sx, sy, sz).
+            color: Uniform (r, g, b) color for all instances.
+        """
+        if points is None or indices is None or positions is None:
+            return
+
+        if isinstance(points, np.ndarray):
+            verts_wp = wp.array(points.astype(np.float32), dtype=wp.vec3)
+        else:
+            verts_wp = points
+
+        if isinstance(indices, np.ndarray):
+            idx_wp = wp.array(indices.astype(np.int32))
+        else:
+            idx_wp = indices
+
+        if isinstance(positions, np.ndarray):
+            inst_pos = wp.array(positions.astype(np.float32), dtype=wp.vec3)
+        else:
+            inst_pos = positions
+
+        n_inst = len(inst_pos)
+
+        if scales is None:
+            scales_np = np.ones((n_inst, 3), dtype=np.float32)
+        elif isinstance(scales, (tuple, list)):
+            scales_np = np.tile(np.array(scales, dtype=np.float32), (n_inst, 1))
+        elif isinstance(scales, np.ndarray):
+            if scales.ndim == 1:
+                scales_np = np.tile(scales.astype(np.float32), (n_inst, 1))
+            else:
+                scales_np = scales.astype(np.float32)
+        else:
+            scales_np = scales.numpy()
+
+        inst_scale = wp.array(scales_np, dtype=wp.vec3)
+
+        # Build shared mesh BVH
+        mesh = wp.Mesh(points=verts_wp, indices=idx_wp, bvh_constructor="cubql")
+
+        # Compute world-space AABB for each instance
+        verts_np = verts_wp.numpy()
+        local_min = verts_np.min(axis=0)
+        local_max = verts_np.max(axis=0)
+
+        pos_np = inst_pos.numpy()
+        lowers_np = pos_np + local_min * scales_np
+        uppers_np = pos_np + local_max * scales_np
+
+        inst_lowers = wp.array(lowers_np.astype(np.float32), dtype=wp.vec3)
+        inst_uppers = wp.array(uppers_np.astype(np.float32), dtype=wp.vec3)
+        inst_bvh = wp.Bvh(inst_lowers, inst_uppers)
+
+        color_vec = wp.vec3(float(color[0]), float(color[1]), float(color[2]))
+
+        wp.launch(
+            kernel=render_instanced_mesh_kernel,
+            dim=self.render_w * self.render_h,
+            inputs=[
+                mesh.id, color_vec,
+                inst_pos, inst_scale, inst_bvh.id, n_inst,
+                self.cam_pos, self.cam_fwd, self.cam_right, self.cam_up, self.fov,
+                self.pixels, self.depth, self.render_w, self.render_h,
+                self.key_dir, self.key_color,
+                self.fill_dir, self.fill_color,
+                self.specular_power, self.sky_color, self.ground_color,
+                self.bg_top, self.bg_bottom, self.fog_density,
+                1 if self.shadows else 0,
             ],
         )
 
