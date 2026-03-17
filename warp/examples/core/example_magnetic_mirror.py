@@ -173,7 +173,7 @@ class Example:
         the Boris integrator. For a good integrator, μ should be
         conserved to within a few percent.
         """
-        pos = self.positions
+        pos = self.positions.numpy()
         vel = self.velocities.numpy()
 
         # Compute B at each particle position
@@ -202,7 +202,7 @@ class Example:
         So the escape fraction is 1 - √(1 - 1/R).
         With mirror_ratio R=5: f_escape = 1 - √(0.8) ≈ 10.6%.
         """
-        pos = self.positions
+        pos = self.positions.numpy()
         half_l = self.mirror_length * 0.5
 
         escaped = np.abs(pos[:, 2]) > half_l

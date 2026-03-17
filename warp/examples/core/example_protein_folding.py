@@ -235,7 +235,7 @@ class Example:
                 self.forces.zero_()
 
                 # Compute center of mass for collapse force
-                pos_np = self.positions
+                pos_np = self.positions.numpy()
                 com = pos_np.mean(axis=0)
 
                 wp.launch(
@@ -266,7 +266,7 @@ class Example:
             return
 
         with wp.ScopedTimer("render", active=False):
-            pos = self.positions
+            pos = self.positions.numpy()
             types = self.residue_type.numpy()
 
             self.renderer.begin_frame(self.sim_time)

@@ -744,6 +744,43 @@ class NativeRenderer:
         else:
             raise ValueError(f"Unknown quality mode: {mode!r}. Use 'fast', 'gallery', or 'realtime'.")
 
+    def set_environment(self, preset="dark"):
+        """Set environment lighting preset.
+
+        Args:
+            preset: One of ``"dark"`` (default), ``"studio"``, ``"clean"``, ``"sunset"``.
+        """
+        if preset == "dark":
+            self.bg_top = wp.vec3(0.15, 0.18, 0.25)
+            self.bg_bottom = wp.vec3(0.04, 0.04, 0.06)
+            self.sky_color = wp.vec3(0.4, 0.4, 0.45)
+            self.ground_color = wp.vec3(0.1, 0.1, 0.12)
+            self.key_color = wp.vec3(0.85, 0.83, 0.80)
+            self.fill_color = wp.vec3(0.15, 0.18, 0.25)
+        elif preset == "studio":
+            self.bg_top = wp.vec3(0.85, 0.88, 0.95)
+            self.bg_bottom = wp.vec3(0.55, 0.58, 0.65)
+            self.sky_color = wp.vec3(0.6, 0.6, 0.7)
+            self.ground_color = wp.vec3(0.25, 0.25, 0.3)
+            self.key_color = wp.vec3(1.0, 0.98, 0.95)
+            self.fill_color = wp.vec3(0.3, 0.35, 0.45)
+        elif preset == "clean":
+            self.bg_top = wp.vec3(0.95, 0.95, 0.97)
+            self.bg_bottom = wp.vec3(0.8, 0.82, 0.85)
+            self.sky_color = wp.vec3(0.7, 0.7, 0.75)
+            self.ground_color = wp.vec3(0.3, 0.3, 0.32)
+            self.key_color = wp.vec3(1.0, 1.0, 1.0)
+            self.fill_color = wp.vec3(0.35, 0.38, 0.45)
+        elif preset == "sunset":
+            self.bg_top = wp.vec3(0.4, 0.5, 0.7)
+            self.bg_bottom = wp.vec3(0.9, 0.7, 0.5)
+            self.sky_color = wp.vec3(0.5, 0.5, 0.6)
+            self.ground_color = wp.vec3(0.3, 0.2, 0.15)
+            self.key_color = wp.vec3(1.0, 0.9, 0.75)
+            self.fill_color = wp.vec3(0.2, 0.25, 0.4)
+        else:
+            raise ValueError(f"Unknown environment preset: {preset!r}.")
+
     # ── CUDA graph capture for realtime ──────────────────────────────
 
     def capture_graph(self, positions, radius=0.1, color=(0.5, 0.5, 0.5),

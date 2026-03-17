@@ -354,7 +354,7 @@ class Example:
         - During instability: bands bending into phase-space vortices
         - Saturated: trapped particle orbits (phase-space holes)
         """
-        pos = self.positions
+        pos = self.positions.numpy()
         vel = self.velocities.numpy()
 
         x = pos[:, 0]
