@@ -68,6 +68,11 @@ def flock_step(
     vel: wp.array[wp.vec3],
     pred_pos: wp.array[wp.vec3],
     new_vel: wp.array[wp.vec3],
+    # Obstacles (cylindrical pillars)
+    obs_pos: wp.array[wp.vec3],
+    obs_radius: wp.array[wp.float32],
+    num_obs: int,
+    #
     num_prey: int,
     num_pred: int,
     sep_radius: float,
@@ -149,6 +154,21 @@ def flock_step(
             # Strong repulsion from predator
             steer = steer + diff / (dist * dist) * fear_weight
 
+    # Obstacle avoidance (cylindrical pillars — avoid in xz plane)
+    for oi in range(num_obs):
+        # Distance in xz plane to cylinder axis
+        ox = p[0] - obs_pos[oi][0]
+        oz = p[2] - obs_pos[oi][2]
+        dist_xz = wp.sqrt(ox * ox + oz * oz)
+        r = obs_radius[oi]
+        avoid_dist = r + 3.0  # Start avoiding 3 units from surface
+
+        if dist_xz < avoid_dist and dist_xz > 0.01:
+            # Repel radially away from cylinder axis
+            penetration = avoid_dist - dist_xz
+            force = penetration * penetration * 2.0  # Quadratic repulsion
+            steer = steer + wp.vec3(ox / dist_xz * force, 0.0, oz / dist_xz * force)
+
     # Update velocity
     v_new = v + steer * dt
     spd = wp.length(v_new)
@@ -165,19 +185,22 @@ def predator_step(
     pred_pos: wp.array[wp.vec3],
     pred_vel: wp.array[wp.vec3],
     prey_pos: wp.array[wp.vec3],
+    obs_pos: wp.array[wp.vec3],
+    obs_radius: wp.array[wp.float32],
+    num_obs: int,
     num_prey: int,
     max_speed: float,
     chase_weight: float,
     domain: float,
     dt: float,
 ):
-    """Predator chases nearest prey."""
+    """Predator chases nearest prey, avoids obstacles."""
     pid = wp.tid()
 
     p = pred_pos[pid]
     v = pred_vel[pid]
 
-    # Find nearest prey (use dynamic variables for loop mutation)
+    # Find nearest prey
     best_dist = float(1.0e10)
     best_dir = wp.vec3(0.0, 0.0, 0.0)
 
@@ -194,6 +217,19 @@ def predator_step(
     if best_dist > 0.001:
         chase = wp.normalize(best_dir) * chase_weight
         v = v + chase * dt
+
+    # Obstacle avoidance for predators
+    for oi in range(num_obs):
+        ox = p[0] - obs_pos[oi][0]
+        oz = p[2] - obs_pos[oi][2]
+        dist_xz = wp.sqrt(ox * ox + oz * oz)
+        r = obs_radius[oi]
+        avoid_dist = r + 4.0
+
+        if dist_xz < avoid_dist and dist_xz > 0.01:
+            penetration = avoid_dist - dist_xz
+            force = penetration * penetration * 3.0
+            v = v + wp.vec3(ox / dist_xz * force, 0.0, oz / dist_xz * force) * dt
 
     spd = wp.length(v)
     if spd > max_speed:
@@ -335,6 +371,32 @@ class Example:
         self.pred_pos = wp.array(pred_pos, dtype=wp.vec3)
         self.pred_vel = wp.array(pred_vel, dtype=wp.vec3)
 
+        # Cylindrical pillar obstacles
+        # Arranged in a grid pattern with varying sizes
+        obs_positions = []
+        obs_radii = []
+        spacing = self.domain / 5.0
+        for ix in range(1, 5):
+            for iz in range(1, 5):
+                # Skip center area (leave room for initial flock)
+                cx = ix * spacing
+                cz = iz * spacing
+                dist_to_center = np.sqrt((cx - center)**2 + (cz - center)**2)
+                if dist_to_center > 8.0:  # Don't block the spawn area
+                    obs_positions.append([cx, center, cz])
+                    obs_radii.append(1.5 + 1.0 * np.sin(ix * 1.7 + iz * 2.3))
+
+        self.num_obstacles = len(obs_positions)
+        if self.num_obstacles > 0:
+            self.obs_pos = wp.array(np.array(obs_positions, dtype=np.float32), dtype=wp.vec3)
+            self.obs_radius = wp.array(np.array(obs_radii, dtype=np.float32))
+        else:
+            self.obs_pos = wp.zeros(1, dtype=wp.vec3)
+            self.obs_radius = wp.zeros(1, dtype=wp.float32)
+
+        # Pre-compute cylinder mesh for rendering (unit cylinder)
+        self._build_cylinder_mesh()
+
         # HashGrid for neighbor queries
         grid_dim = 64
         self.grid = wp.HashGrid(grid_dim, grid_dim, grid_dim)
@@ -352,6 +414,28 @@ class Example:
             )
             self.renderer.set_environment("dark")
 
+    def _build_cylinder_mesh(self):
+        """Build a cylinder mesh for rendering obstacles."""
+        segments = 16
+        angles = np.linspace(0, 2 * np.pi, segments, endpoint=False)
+        verts = []
+        indices = []
+
+        # Unit cylinder: radius=1, height from y=0 to y=1
+        for a in angles:
+            verts.append([np.cos(a), 0.0, np.sin(a)])
+            verts.append([np.cos(a), 1.0, np.sin(a)])
+
+        # Side faces
+        for s in range(segments):
+            b0 = s * 2
+            b1 = ((s + 1) % segments) * 2
+            indices.extend([b0, b1, b0 + 1])
+            indices.extend([b1, b1 + 1, b0 + 1])
+
+        self._cyl_verts = np.array(verts, dtype=np.float32)
+        self._cyl_indices = np.array(indices, dtype=np.int32)
+
     def step(self):
         with wp.ScopedTimer("step", active=False):
             dt = self.frame_dt / self.substeps
@@ -368,6 +452,7 @@ class Example:
                     inputs=[
                         self.grid.id,
                         self.pos, self.vel, self.pred_pos, self.new_vel,
+                        self.obs_pos, self.obs_radius, self.num_obstacles,
                         self.num_prey, self.num_pred,
                         self.sep_radius, self.align_radius, self.cohesion_radius,
                         self.fear_radius, self.max_speed_prey,
@@ -390,6 +475,7 @@ class Example:
                     dim=self.num_pred,
                     inputs=[
                         self.pred_pos, self.pred_vel, self.pos,
+                        self.obs_pos, self.obs_radius, self.num_obstacles,
                         self.num_prey, self.max_speed_pred,
                         self.chase_weight, self.domain, dt,
                     ],
@@ -424,6 +510,25 @@ class Example:
         with wp.ScopedTimer("render", active=False):
             self.renderer.begin_frame(self.sim_time)
             self.renderer.render_ground(y=0.0)
+
+            # Render cylindrical obstacles
+            if self.num_obstacles > 0:
+                obs_np = self.obs_pos.numpy()
+                rad_np = self.obs_radius.numpy()
+                for oi in range(self.num_obstacles):
+                    # Scale and translate cylinder mesh
+                    r = rad_np[oi]
+                    cx, cy, cz = obs_np[oi]
+                    scaled_verts = self._cyl_verts.copy()
+                    scaled_verts[:, 0] = scaled_verts[:, 0] * r + cx
+                    scaled_verts[:, 1] = scaled_verts[:, 1] * self.domain * 0.6 + 0.0  # Tall pillar
+                    scaled_verts[:, 2] = scaled_verts[:, 2] * r + cz
+                    self.renderer.render_mesh(
+                        name=f"pillar_{oi}",
+                        points=scaled_verts,
+                        indices=self._cyl_indices,
+                        colors=(0.5, 0.45, 0.4),
+                    )
 
             # Prey colored by velocity
             self.renderer.render_points(
