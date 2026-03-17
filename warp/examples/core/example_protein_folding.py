@@ -192,16 +192,19 @@ class Example:
 
         self.residue_type = wp.array(residue_types, dtype=wp.int32)
 
-        # Initialize as extended chain along x-axis
+        # Initialize as self-avoiding random walk (compact starting configuration)
         bond_length = 1.0
+        rng = np.random.default_rng(42)
         positions = np.zeros((num_beads, 3), dtype=np.float32)
-        for i in range(num_beads):
-            # Zigzag to avoid perfectly straight chain
-            positions[i] = [
-                i * bond_length * 0.9,
-                0.3 * np.sin(i * 0.5),
-                0.3 * np.cos(i * 0.5),
-            ]
+        for i in range(1, num_beads):
+            # Random walk with some bias toward center to keep compact
+            direction = rng.normal(0, 1, 3).astype(np.float32)
+            direction /= np.linalg.norm(direction) + 1e-8
+            # Mild centripetal bias to prevent wild wandering
+            to_center = -positions[i - 1] / (np.linalg.norm(positions[i - 1]) + 10.0)
+            direction = direction + to_center * 0.3
+            direction /= np.linalg.norm(direction) + 1e-8
+            positions[i] = positions[i - 1] + direction * bond_length
 
         self.positions = wp.array(positions, dtype=wp.vec3)
         self.velocities = wp.zeros(num_beads, dtype=wp.vec3)
@@ -218,7 +221,7 @@ class Example:
         self.lj_cutoff = 8.0
         self.friction = 10.0
         self.temperature = 0.5
-        self.collapse_strength = 3.0  # Mimics solvent pressure
+        self.collapse_strength = 10.0  # Mimics solvent pressure
 
         if stage_path and stage_path.endswith((".usd", ".usda", ".usdc")):
             self.renderer = wp.render.UsdRenderer(stage_path)
