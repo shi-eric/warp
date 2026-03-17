@@ -452,6 +452,10 @@ def render_particles_kernel(
 def render_mesh_kernel(
     mesh_id: wp.uint64,
     mesh_color: wp.vec3,
+    # Per-vertex colors (optional — if num_vert_colors > 0, use these)
+    vert_colors: wp.array[wp.vec3],
+    mesh_indices: wp.array[wp.int32],
+    num_vert_colors: int,
     # Camera
     cam_pos: wp.vec3,
     cam_fwd: wp.vec3,
@@ -513,9 +517,23 @@ def render_mesh_kernel(
         normal = -normal
     normal = wp.normalize(normal)
 
+    # Determine surface color — per-vertex interpolated or uniform
+    base_color = mesh_color
+    if num_vert_colors > 0:
+        # Look up vertex colors for this triangle and interpolate
+        i0 = mesh_indices[face * 3 + 0]
+        i1 = mesh_indices[face * 3 + 1]
+        i2 = mesh_indices[face * 3 + 2]
+        c0 = vert_colors[i0]
+        c1 = vert_colors[i1]
+        c2 = vert_colors[i2]
+        # Barycentric interpolation: color = (1-u-v)*c0 + u*c1 + v*c2
+        w0 = 1.0 - bary_u - bary_v
+        base_color = c0 * w0 + c1 * bary_u + c2 * bary_v
+
     # Hemisphere ambient
     ambient = hemisphere_ambient(normal, sky_color, ground_color)
-    color = wp.cw_mul(mesh_color, ambient) * 0.5
+    color = wp.cw_mul(base_color, ambient) * 0.5
 
     # Key light with self-shadow
     key_visible = float(1.0)
@@ -531,11 +549,11 @@ def render_mesh_kernel(
             key_visible = SHADOW_MIN_VIS
 
     key_contrib = compute_lighting_directional(normal, view_dir, key_dir, key_color, specular_power, key_visible)
-    color = color + wp.cw_mul(mesh_color, key_contrib)
+    color = color + wp.cw_mul(base_color, key_contrib)
 
     # Fill light
     fill_contrib = compute_lighting_directional(normal, view_dir, fill_dir, fill_color, specular_power * 0.5, 1.0)
-    color = color + wp.cw_mul(mesh_color, fill_contrib)
+    color = color + wp.cw_mul(base_color, fill_contrib)
 
     # Fog
     nv = float(py) / float(height)
@@ -1055,16 +1073,17 @@ class NativeRenderer:
             name: Instance name (for API compatibility, unused).
             points: (N, 3) vertex positions (numpy or wp.array).
             indices: (M*3,) triangle indices (numpy or wp.array).
-            colors: Single (r, g, b) color tuple for the mesh.
-            color: Alias for colors when it's a single tuple.
+            colors: Per-vertex (N, 3) colors (numpy/wp.array), or single (r, g, b) tuple.
+                When per-vertex colors are provided, the mesh is colored by
+                interpolating vertex colors across each triangle face using
+                barycentric coordinates from the ray hit.
+            color: Default uniform color if colors is a single tuple.
             vertices: Alias for points (deprecated).
         """
         if points is None and vertices is not None:
             points = vertices
         if points is None or indices is None:
             return
-
-        mesh_color = colors if colors is not None else color
 
         if isinstance(points, np.ndarray):
             verts_wp = wp.array(points.astype(np.float32), dtype=wp.vec3)
@@ -1076,13 +1095,35 @@ class NativeRenderer:
         else:
             idx_wp = indices
 
+        # Handle per-vertex vs uniform colors
+        vert_colors_wp = wp.zeros(1, dtype=wp.vec3)  # Dummy
+        num_vert_colors = 0
+
+        if colors is not None:
+            if isinstance(colors, np.ndarray) and colors.ndim == 2 and colors.shape[0] == len(verts_wp):
+                # Per-vertex colors
+                vert_colors_wp = wp.array(colors.astype(np.float32), dtype=wp.vec3)
+                num_vert_colors = len(vert_colors_wp)
+                mesh_color_vec = wp.vec3(0.5, 0.5, 0.5)  # Unused fallback
+            elif isinstance(colors, wp.array) and len(colors) == len(verts_wp):
+                vert_colors_wp = colors
+                num_vert_colors = len(colors)
+                mesh_color_vec = wp.vec3(0.5, 0.5, 0.5)
+            elif isinstance(colors, (tuple, list)) and len(colors) == 3:
+                mesh_color_vec = wp.vec3(float(colors[0]), float(colors[1]), float(colors[2]))
+            else:
+                mesh_color_vec = wp.vec3(float(color[0]), float(color[1]), float(color[2]))
+        else:
+            mesh_color_vec = wp.vec3(float(color[0]), float(color[1]), float(color[2]))
+
         mesh = wp.Mesh(points=verts_wp, indices=idx_wp, bvh_constructor="cubql")
 
         wp.launch(
             kernel=render_mesh_kernel,
             dim=self.render_w * self.render_h,
             inputs=[
-                mesh.id, wp.vec3(*[float(c) for c in mesh_color]),
+                mesh.id, mesh_color_vec,
+                vert_colors_wp, idx_wp, num_vert_colors,
                 self.cam_pos, self.cam_fwd, self.cam_right, self.cam_up, self.fov,
                 self.pixels, self.depth, self.render_w, self.render_h,
                 self.key_dir, self.key_color,
