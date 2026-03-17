@@ -315,33 +315,94 @@ def check_captures(
 
 
 @wp.kernel
-def compute_colors_from_velocity(
-    vel: wp.array[wp.vec3],
+def update_glow(
+    grid: wp.uint64,
+    pos: wp.array[wp.vec3],
+    glow: wp.array[wp.float32],
+    num_prey: int,
+    query_radius: float,
+    glow_alpha: float,
+):
+    """Update neighbor density glow with exponential moving average."""
+    tid = wp.tid()
+    i = wp.hash_grid_point_id(grid, tid)
+    if i >= num_prey:
+        return
+
+    p = pos[i]
+    count = int(0)
+
+    neighbors = wp.hash_grid_query(grid, p, query_radius)
+    for idx in neighbors:
+        if idx != i and idx < num_prey:
+            count = count + 1
+
+    # Normalize to [0, 1] — 40 neighbors = fully glowing
+    raw_glow = wp.min(1.0, float(count) / 40.0)
+
+    # Exponential moving average for smooth transitions
+    glow[i] = glow_alpha * raw_glow + (1.0 - glow_alpha) * glow[i]
+
+
+@wp.kernel
+def compute_colors_from_density(
+    glow: wp.array[wp.float32],
+    groups: wp.array[wp.int32],
     colors: wp.array[wp.vec3],
     num: int,
 ):
-    """Map velocity direction to color (HSV-like mapping)."""
+    """Color boids by neighbor density glow with per-group color ramps.
+
+    Group 0: dark red → red → orange → yellow
+    Group 1: dark blue → blue → cyan → white
+    """
     tid = wp.tid()
     if tid >= num:
         return
-    v = vel[tid]
-    spd = wp.length(v)
-    if spd < 0.001:
-        colors[tid] = wp.vec3(0.3, 0.3, 0.3)
-        return
 
-    d = v / spd
-    # Map direction to color: x→R, y→G, z→B (shifted to [0,1])
-    r = d[0] * 0.5 + 0.5
-    g = d[1] * 0.5 + 0.5
-    b = d[2] * 0.5 + 0.5
-    # Boost saturation
-    mx = wp.max(r, wp.max(g, b))
-    if mx > 0.01:
-        r = r / mx * 0.8 + 0.1
-        g = g / mx * 0.8 + 0.1
-        b = b / mx * 0.8 + 0.1
-    colors[tid] = wp.vec3(r, g, b)
+    g = glow[tid]
+    group = groups[tid]
+
+    r = float(0.0)
+    green = float(0.0)
+    b = float(0.0)
+
+    if group == 0:
+        # Red ramp
+        if g < 0.33:
+            t = g / 0.33
+            r = 0.3 + 0.5 * t
+            green = 0.0
+            b = 0.0
+        elif g < 0.66:
+            t = (g - 0.33) / 0.33
+            r = 0.8 + 0.2 * t
+            green = 0.3 * t
+            b = 0.0
+        else:
+            t = (g - 0.66) / 0.34
+            r = 1.0
+            green = 0.3 + 0.5 * t
+            b = 0.2 * t
+    else:
+        # Blue ramp
+        if g < 0.33:
+            t = g / 0.33
+            r = 0.0
+            green = 0.0
+            b = 0.3 + 0.5 * t
+        elif g < 0.66:
+            t = (g - 0.33) / 0.33
+            r = 0.0
+            green = 0.3 * t
+            b = 0.8 + 0.2 * t
+        else:
+            t = (g - 0.66) / 0.34
+            r = 0.3 * t
+            green = 0.3 + 0.5 * t
+            b = 1.0
+
+    colors[tid] = wp.vec3(r, green, b)
 
 
 class Example:
@@ -381,6 +442,11 @@ class Example:
         self.prey_alive = wp.ones(num_prey, dtype=wp.int32)
         self.capture_count = wp.zeros(1, dtype=wp.int32)
         self.prey_colors = wp.zeros(num_prey, dtype=wp.vec3)
+
+        # Groups: split boids into 2 groups for dynamic inter-group behavior
+        groups = (rng.random(num_prey) * 2).astype(np.int32)
+        self.groups = wp.array(groups, dtype=wp.int32)
+        self.glow = wp.zeros(num_prey, dtype=wp.float32)  # Neighbor density glow
 
         # Initialize predators spread around domain
         pred_pos = np.array([
@@ -521,11 +587,16 @@ class Example:
                 )
                 self.total_captures += int(self.capture_count.numpy()[0])
 
-            # Update colors
+            # Update glow (neighbor density) and colors
             wp.launch(
-                kernel=compute_colors_from_velocity,
+                kernel=update_glow,
                 dim=n,
-                inputs=[self.vel, self.prey_colors, n],
+                inputs=[self.grid.id, self.pos, self.glow, n, self.cohesion_radius, 0.3],
+            )
+            wp.launch(
+                kernel=compute_colors_from_density,
+                dim=n,
+                inputs=[self.glow, self.groups, self.prey_colors, n],
             )
 
             self.sim_time += self.frame_dt
