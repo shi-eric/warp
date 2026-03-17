@@ -77,14 +77,6 @@ def phase_field_step(
     p = phi[i, j, k]
     t = temp[i, j, k]
 
-    # Laplacian of phi (7-point 3D stencil)
-    lap_phi = (
-        phi[i + 1, j, k] + phi[i - 1, j, k]
-        + phi[i, j + 1, k] + phi[i, j - 1, k]
-        + phi[i, j, k + 1] + phi[i, j, k - 1]
-        - 6.0 * p
-    )
-
     # Laplacian of temperature
     lap_t = (
         temp[i + 1, j, k] + temp[i - 1, j, k]
@@ -97,26 +89,56 @@ def phase_field_step(
     dpx = (phi[i + 1, j, k] - phi[i - 1, j, k]) * 0.5
     dpy = (phi[i, j + 1, k] - phi[i, j - 1, k]) * 0.5
 
-    grad_mag = wp.sqrt(dpx * dpx + dpy * dpy + 1.0e-12)
-    nx_dir = dpx / grad_mag
-    ny_dir = dpy / grad_mag
+    grad_mag_sq = dpx * dpx + dpy * dpy + 1.0e-12
+    grad_mag = wp.sqrt(grad_mag_sq)
+
+    # Angle of interface normal
+    theta = wp.atan2(dpy, dpx)
 
     # 4-fold anisotropy: ε(θ) = ε0 * (1 + δ cos(4θ))
-    # cos(4θ) = 8cos⁴θ - 8cos²θ + 1  for nx_dir = cos(θ)
-    cos2 = nx_dir * nx_dir
-    cos4_theta = 8.0 * cos2 * cos2 - 8.0 * cos2 + 1.0
-    eps_val = eps0 * (1.0 + delta_aniso * cos4_theta)
+    cos4 = wp.cos(4.0 * theta)
+    sin4 = wp.sin(4.0 * theta)
+    eps_val = eps0 * (1.0 + delta_aniso * cos4)
+    eps_prime = -eps0 * delta_aniso * 4.0 * sin4  # dε/dθ
+
+    # Kobayashi model: need ∇·(ε²∇φ) + cross-derivative terms
+    # The full anisotropic term is:
+    #   ∇·(ε²∇φ) + ∂/∂x(ε·ε'·∂φ/∂y) - ∂/∂y(ε·ε'·∂φ/∂x)
+    #
+    # First term: ∇·(ε²∇φ) ≈ ε² ∇²φ + 2ε(∂ε/∂x·∂φ/∂x + ∂ε/∂y·∂φ/∂y)
+    # For simplicity, use the factored form with finite differences
+
+    # Compute ε and ε·ε' at staggered grid points for the divergence
+    # ε² at current point times Laplacian
     eps2 = eps_val * eps_val
+
+    # Cross-derivative anisotropy terms (Kobayashi formulation)
+    # These terms create the preferential growth along crystal axes
+    dpx_py = (phi[i + 1, j + 1, k] - phi[i - 1, j + 1, k]
+              - phi[i + 1, j - 1, k] + phi[i - 1, j - 1, k]) * 0.25  # ∂²φ/∂x∂y
+    dpxx = phi[i + 1, j, k] - 2.0 * p + phi[i - 1, j, k]  # ∂²φ/∂x²
+    dpyy = phi[i, j + 1, k] - 2.0 * p + phi[i, j - 1, k]  # ∂²φ/∂y²
+
+    # Full anisotropic diffusion operator
+    # = ε²∇²φ + ε·ε'·(∂²φ/∂y² - ∂²φ/∂x²)·(-sin4θ type terms)
+    # Simplified Kobayashi form:
+    aniso_term = eps_val * eps_prime * (dpyy - dpxx)
+    # Plus the mixed derivative contribution
+    cross_term = 2.0 * eps_val * eps_prime * dpx_py
+
+    # Laplacian in z (isotropic, thin slab)
+    lap_z = phi[i, j, k + 1] + phi[i, j, k - 1] - 2.0 * p
+
+    diffusion = eps2 * (dpxx + dpyy + lap_z) + aniso_term
 
     # Driving force: m = -coupling * T (negative T = undercooling favors solidification)
     m = -coupling * t
 
     # Double-well potential + driving
-    # f'(φ) = φ(1-φ)(φ - 0.5 + m)
     reaction = p * (1.0 - p) * (p - 0.5 + m)
 
-    # Phase-field update: τ dφ/dt = ε²∇²φ + f'(φ)
-    dphi_dt = (eps2 * lap_phi + reaction) / tau
+    # Phase-field update
+    dphi_dt = (diffusion + reaction) / tau
     p_new = p + dt * dphi_dt
 
     # Clamp to [0, 1]
