@@ -837,7 +837,8 @@ class NativeRenderer:
         """Set environment lighting and sky preset.
 
         Args:
-            preset: One of ``"dark"`` (default), ``"studio"``, ``"clean"``, ``"sunset"``, ``"space"``.
+            preset: One of ``"dark"`` (default), ``"golden_hour"``, ``"tropical"``,
+                ``"overcast"``, ``"space"``.
         """
         if preset == "dark":
             self.bg_top = wp.vec3(0.15, 0.18, 0.25)
@@ -849,42 +850,51 @@ class NativeRenderer:
             self.sky_top = wp.vec3(0.1, 0.12, 0.2)
             self.sky_horizon = wp.vec3(0.2, 0.22, 0.28)
             self.sky_ground = wp.vec3(0.04, 0.04, 0.06)
+            self.sun_color = wp.vec3(1.2, 1.1, 0.9)
             self.sun_intensity = 1.0
-        elif preset == "studio":
-            self.bg_top = wp.vec3(0.85, 0.88, 0.95)
-            self.bg_bottom = wp.vec3(0.55, 0.58, 0.65)
-            self.sky_color = wp.vec3(0.6, 0.6, 0.7)
-            self.ground_color = wp.vec3(0.25, 0.25, 0.3)
-            self.key_color = wp.vec3(1.0, 0.98, 0.95)
-            self.fill_color = wp.vec3(0.3, 0.35, 0.45)
-            self.sky_top = wp.vec3(0.4, 0.5, 0.7)
-            self.sky_horizon = wp.vec3(0.7, 0.72, 0.78)
-            self.sky_ground = wp.vec3(0.3, 0.3, 0.35)
-            self.sun_intensity = 1.5
-        elif preset == "clean":
-            self.bg_top = wp.vec3(0.95, 0.95, 0.97)
-            self.bg_bottom = wp.vec3(0.8, 0.82, 0.85)
-            self.sky_color = wp.vec3(0.7, 0.7, 0.75)
-            self.ground_color = wp.vec3(0.3, 0.3, 0.32)
-            self.key_color = wp.vec3(1.0, 1.0, 1.0)
-            self.fill_color = wp.vec3(0.35, 0.38, 0.45)
-            self.sky_top = wp.vec3(0.6, 0.65, 0.8)
-            self.sky_horizon = wp.vec3(0.85, 0.87, 0.9)
-            self.sky_ground = wp.vec3(0.5, 0.5, 0.52)
-            self.sun_intensity = 1.0
-        elif preset == "sunset":
-            self.bg_top = wp.vec3(0.4, 0.5, 0.7)
-            self.bg_bottom = wp.vec3(0.9, 0.7, 0.5)
-            self.sky_color = wp.vec3(0.5, 0.5, 0.6)
-            self.ground_color = wp.vec3(0.3, 0.2, 0.15)
-            self.key_color = wp.vec3(1.0, 0.85, 0.6)
-            self.fill_color = wp.vec3(0.2, 0.25, 0.4)
-            self.sky_top = wp.vec3(0.2, 0.3, 0.6)
-            self.sky_horizon = wp.vec3(0.95, 0.6, 0.3)
-            self.sky_ground = wp.vec3(0.15, 0.1, 0.08)
-            self.sun_color = wp.vec3(1.5, 0.9, 0.4)
-            self.sun_intensity = 3.0
-            self.sun_size = 0.008
+            self.sun_size = 0.005
+        elif preset == "golden_hour":
+            self.bg_top = wp.vec3(0.15, 0.2, 0.45)
+            self.bg_bottom = wp.vec3(0.12, 0.08, 0.05)
+            self.sky_color = wp.vec3(0.5, 0.45, 0.4)
+            self.ground_color = wp.vec3(0.15, 0.1, 0.08)
+            self.key_color = wp.vec3(1.2, 0.9, 0.6)
+            self.fill_color = wp.vec3(0.15, 0.2, 0.35)
+            self.key_dir = wp.normalize(wp.vec3(0.2, 0.3, 0.5))
+            self.sky_top = wp.vec3(0.15, 0.2, 0.45)
+            self.sky_horizon = wp.vec3(1.0, 0.55, 0.2)
+            self.sky_ground = wp.vec3(0.12, 0.08, 0.05)
+            self.sun_color = wp.vec3(1.5, 0.8, 0.3)
+            self.sun_intensity = 4.0
+            self.sun_size = 0.01
+        elif preset == "tropical":
+            self.bg_top = wp.vec3(0.1, 0.3, 0.7)
+            self.bg_bottom = wp.vec3(0.1, 0.15, 0.1)
+            self.sky_color = wp.vec3(0.5, 0.55, 0.6)
+            self.ground_color = wp.vec3(0.15, 0.18, 0.12)
+            self.key_color = wp.vec3(1.1, 1.05, 0.95)
+            self.fill_color = wp.vec3(0.2, 0.3, 0.4)
+            self.key_dir = wp.normalize(wp.vec3(0.3, 0.9, 0.2))
+            self.sky_top = wp.vec3(0.1, 0.3, 0.7)
+            self.sky_horizon = wp.vec3(0.5, 0.7, 0.85)
+            self.sky_ground = wp.vec3(0.1, 0.15, 0.1)
+            self.sun_color = wp.vec3(1.3, 1.2, 1.0)
+            self.sun_intensity = 2.5
+            self.sun_size = 0.004
+        elif preset == "overcast":
+            self.bg_top = wp.vec3(0.55, 0.58, 0.65)
+            self.bg_bottom = wp.vec3(0.25, 0.25, 0.28)
+            self.sky_color = wp.vec3(0.5, 0.5, 0.55)
+            self.ground_color = wp.vec3(0.2, 0.2, 0.22)
+            self.key_color = wp.vec3(0.75, 0.75, 0.78)
+            self.fill_color = wp.vec3(0.4, 0.42, 0.45)
+            self.key_dir = wp.normalize(wp.vec3(0.3, 0.8, 0.3))
+            self.sky_top = wp.vec3(0.55, 0.58, 0.65)
+            self.sky_horizon = wp.vec3(0.7, 0.72, 0.75)
+            self.sky_ground = wp.vec3(0.25, 0.25, 0.28)
+            self.sun_color = wp.vec3(0.9, 0.9, 0.9)
+            self.sun_intensity = 0.3
+            self.sun_size = 0.05
         elif preset == "space":
             self.bg_top = wp.vec3(0.02, 0.02, 0.05)
             self.bg_bottom = wp.vec3(0.01, 0.01, 0.02)
@@ -895,7 +905,9 @@ class NativeRenderer:
             self.sky_top = wp.vec3(0.02, 0.02, 0.06)
             self.sky_horizon = wp.vec3(0.05, 0.05, 0.1)
             self.sky_ground = wp.vec3(0.01, 0.01, 0.02)
+            self.sun_color = wp.vec3(1.0, 1.0, 1.05)
             self.sun_intensity = 0.5
+            self.sun_size = 0.003
         else:
             raise ValueError(f"Unknown environment preset: {preset!r}.")
 
