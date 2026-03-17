@@ -192,19 +192,36 @@ class Example:
 
         self.residue_type = wp.array(residue_types, dtype=wp.int32)
 
-        # Initialize as self-avoiding random walk (compact starting configuration)
+        # Initialize as a loose coiled coil (3D helix of helices)
         bond_length = 1.0
-        rng = np.random.default_rng(42)
         positions = np.zeros((num_beads, 3), dtype=np.float32)
-        for i in range(1, num_beads):
-            # Random walk with some bias toward center to keep compact
-            direction = rng.normal(0, 1, 3).astype(np.float32)
-            direction /= np.linalg.norm(direction) + 1e-8
-            # Mild centripetal bias to prevent wild wandering
-            to_center = -positions[i - 1] / (np.linalg.norm(positions[i - 1]) + 10.0)
-            direction = direction + to_center * 0.3
-            direction /= np.linalg.norm(direction) + 1e-8
-            positions[i] = positions[i - 1] + direction * bond_length
+        # Inner helix: tight turns
+        inner_r = 2.0
+        inner_rise = 0.5
+        inner_bpt = 6  # beads per turn
+        # Outer supercoil
+        outer_r = num_beads * inner_rise / (2.0 * np.pi * 4.0)  # ~4 supercoil turns
+        outer_bpt = num_beads / 4.0
+
+        for i in range(num_beads):
+            # Inner helix angle
+            a_inner = 2.0 * np.pi * i / inner_bpt
+            # Outer supercoil angle
+            a_outer = 2.0 * np.pi * i / outer_bpt
+
+            # Position on supercoil + inner helix offset
+            cx = outer_r * np.cos(a_outer)
+            cy = outer_r * np.sin(a_outer)
+            cz = i * inner_rise * 0.1  # Slight rise
+
+            positions[i] = [
+                cx + inner_r * np.cos(a_inner),
+                cz,
+                cy + inner_r * np.sin(a_inner),
+            ]
+
+        # Center at origin
+        positions -= positions.mean(axis=0)
 
         self.positions = wp.array(positions, dtype=wp.vec3)
         self.velocities = wp.zeros(num_beads, dtype=wp.vec3)
@@ -221,7 +238,7 @@ class Example:
         self.lj_cutoff = 8.0
         self.friction = 10.0
         self.temperature = 0.5
-        self.collapse_strength = 10.0  # Mimics solvent pressure
+        self.collapse_strength = 2.0  # Mimics solvent pressure
 
         if stage_path and stage_path.endswith((".usd", ".usda", ".usdc")):
             self.renderer = wp.render.UsdRenderer(stage_path)
