@@ -174,7 +174,7 @@ def integrate(
 
 
 class Example:
-    def __init__(self, stage_path="example_protein_folding.usd", num_beads=200):
+    def __init__(self, stage_path="example_protein_folding.usd", num_beads=2000):
         self.num_beads = num_beads
         self.sim_time = 0.0
         self.frame_dt = 1.0 / 60.0
@@ -317,7 +317,7 @@ if __name__ == "__main__":
         help="Path to the output USD file.",
     )
     parser.add_argument("--num-frames", type=int, default=500, help="Total number of frames.")
-    parser.add_argument("--num-beads", type=int, default=200, help="Number of amino acid beads.")
+    parser.add_argument("--num-beads", type=int, default=2000, help="Number of amino acid beads.")
 
     args = parser.parse_known_args()[0]
 
