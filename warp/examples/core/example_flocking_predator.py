@@ -538,24 +538,28 @@ class Example:
             self.renderer.begin_frame(self.sim_time)
             self.renderer.render_ground(y=0.0)
 
-            # Render cylindrical obstacles
+            # Render cylindrical obstacles (instanced)
             if self.num_obstacles > 0:
                 obs_np = self.obs_pos.numpy()
                 rad_np = self.obs_radius.numpy()
-                for oi in range(self.num_obstacles):
-                    # Scale and translate cylinder mesh
-                    r = rad_np[oi]
-                    cx, cy, cz = obs_np[oi]
-                    scaled_verts = self._cyl_verts.copy()
-                    scaled_verts[:, 0] = scaled_verts[:, 0] * r + cx
-                    scaled_verts[:, 1] = scaled_verts[:, 1] * self.domain * 0.6 + 0.0  # Tall pillar
-                    scaled_verts[:, 2] = scaled_verts[:, 2] * r + cz
-                    self.renderer.render_mesh(
-                        name=f"pillar_{oi}",
-                        points=scaled_verts,
-                        indices=self._cyl_indices,
-                        colors=(0.5, 0.45, 0.4),
-                    )
+                pillar_height = self.domain * 0.6
+
+                positions = obs_np.copy()
+                positions[:, 1] = 0.0  # Base at ground
+
+                scales = np.zeros((self.num_obstacles, 3), dtype=np.float32)
+                scales[:, 0] = rad_np      # Radius X
+                scales[:, 2] = rad_np      # Radius Z
+                scales[:, 1] = pillar_height  # Height
+
+                self.renderer.render_mesh_instanced(
+                    name="pillars",
+                    points=self._cyl_verts,
+                    indices=self._cyl_indices,
+                    positions=positions,
+                    scales=scales,
+                    color=(0.5, 0.45, 0.4),
+                )
 
             # Prey colored by velocity
             self.renderer.render_points(
