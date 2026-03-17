@@ -68,6 +68,8 @@ def flock_step(
     vel: wp.array[wp.vec3],
     pred_pos: wp.array[wp.vec3],
     new_vel: wp.array[wp.vec3],
+    groups: wp.array[wp.int32],
+    inter_group_bias: float,
     # Obstacles (cylindrical pillars)
     obs_pos: wp.array[wp.vec3],
     obs_radius: wp.array[wp.float32],
@@ -96,13 +98,16 @@ def flock_step(
 
     p = pos[i]
     v = vel[i]
+    my_group = groups[i]
 
-    # Accumulators for flocking rules (dynamic vars for loop mutation)
+    # Accumulators
     sep = wp.vec3(0.0, 0.0, 0.0)
     avg_vel = wp.vec3(0.0, 0.0, 0.0)
-    avg_pos = wp.vec3(0.0, 0.0, 0.0)
+    cohesion_pos = wp.vec3(0.0, 0.0, 0.0)
+    decohesion_pos = wp.vec3(0.0, 0.0, 0.0)
     n_align = int(0)
-    n_coh = int(0)
+    n_coh = float(0.0)
+    n_decoh = float(0.0)
 
     # Query neighbors
     neighbors = wp.hash_grid_query(grid, p, cohesion_radius)
@@ -119,13 +124,31 @@ def flock_step(
         if dist < sep_radius and dist > 0.001:
             sep = sep + diff / (dist * dist)
 
-        if dist < align_radius:
+        other_group = groups[idx]
+        same_group = int(0)
+        if my_group == other_group:
+            same_group = 1
+
+        if dist < align_radius and same_group == 1:
+            # Only align with same group
             avg_vel = avg_vel + vel[idx]
             n_align = n_align + 1
 
         if dist < cohesion_radius:
-            avg_pos = avg_pos + pos[idx] - wp.vec3(dx, dy, dz) + p
-            n_coh = n_coh + 1
+            other_pos = pos[idx] - wp.vec3(dx, dy, dz) + p
+            if same_group == 1:
+                # Same group: cohere
+                cohesion_pos = cohesion_pos + other_pos
+                n_coh = n_coh + 1.0
+            else:
+                # Different group: use inter_group_bias
+                # bias > 0 = attract, bias < 0 = repel
+                if inter_group_bias > 0.0:
+                    cohesion_pos = cohesion_pos + other_pos * inter_group_bias
+                    n_coh = n_coh + inter_group_bias
+                else:
+                    decohesion_pos = decohesion_pos + other_pos * (-inter_group_bias)
+                    n_decoh = n_decoh + (-inter_group_bias)
 
     steer = wp.vec3(0.0, 0.0, 0.0)
 
@@ -137,11 +160,17 @@ def flock_step(
         desired = avg_vel / float(n_align)
         steer = steer + (desired - v) * align_weight
 
-    # Cohesion
-    if n_coh > 0:
-        center = avg_pos / float(n_coh)
+    # Cohesion (same group + attracted other group)
+    if n_coh > 0.5:
+        center = cohesion_pos / n_coh
         toward = center - p
         steer = steer + toward * cohesion_weight
+
+    # Decohesion (repelled other group)
+    if n_decoh > 0.5:
+        away_center = decohesion_pos / n_decoh
+        away = p - away_center
+        steer = steer + away * cohesion_weight
 
     # Predator avoidance
     for pi in range(num_pred):
@@ -446,7 +475,12 @@ class Example:
         # Groups: split boids into 2 groups for dynamic inter-group behavior
         groups = (rng.random(num_prey) * 2).astype(np.int32)
         self.groups = wp.array(groups, dtype=wp.int32)
-        self.glow = wp.zeros(num_prey, dtype=wp.float32)  # Neighbor density glow
+        self.glow = wp.zeros(num_prey, dtype=wp.float32)
+
+        # Inter-group dynamics: bias changes periodically
+        self.inter_group_bias = -1.0  # Start repelling (negative = repel)
+        self.next_bias_change = 3.0  # Seconds until next bias flip
+        self.rng = rng
 
         # Initialize predators spread around domain
         pred_pos = np.array([
@@ -545,6 +579,7 @@ class Example:
                     inputs=[
                         self.grid.id,
                         self.pos, self.vel, self.pred_pos, self.new_vel,
+                        self.groups, self.inter_group_bias,
                         self.obs_pos, self.obs_radius, self.num_obstacles,
                         self.num_prey, self.num_pred,
                         self.sep_radius, self.align_radius, self.cohesion_radius,
@@ -600,6 +635,12 @@ class Example:
             )
 
             self.sim_time += self.frame_dt
+
+            # Periodically flip inter-group bias (attract ↔ repel)
+            if self.sim_time >= self.next_bias_change:
+                self.inter_group_bias = 1.0 - 5.0 * float(self.rng.random())  # Range [-4, 1]
+                interval = 3.0 + 7.0 * float(self.rng.random())  # 3-10 seconds
+                self.next_bias_change = self.sim_time + interval
 
     def render(self):
         if self.renderer is None:
