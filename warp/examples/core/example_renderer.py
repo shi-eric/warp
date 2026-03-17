@@ -490,6 +490,21 @@ def render_ground_kernel(
 
 
 @wp.kernel
+def _compute_sphere_bounds(
+    positions: wp.array[wp.vec3],
+    radii: wp.array[wp.float32],
+    lowers: wp.array[wp.vec3],
+    uppers: wp.array[wp.vec3],
+):
+    """Compute AABB bounds from sphere center + radius (GPU-side, no numpy)."""
+    tid = wp.tid()
+    p = positions[tid]
+    r = radii[tid]
+    lowers[tid] = wp.vec3(p[0] - r, p[1] - r, p[2] - r)
+    uppers[tid] = wp.vec3(p[0] + r, p[1] + r, p[2] + r)
+
+
+@wp.kernel
 def _fill_background(
     pixels: wp.array[wp.vec3],
     width: int,
@@ -633,7 +648,11 @@ class ExampleRenderer:
         )
 
     def render_points(self, positions, radius=0.1, color=(0.5, 0.5, 0.5), colors=None):
-        """Render particles as BVH-accelerated ray-traced spheres."""
+        """Render particles as BVH-accelerated ray-traced spheres.
+
+        For realtime use, pass warp arrays directly and use a uniform
+        radius (float) to avoid per-frame allocations.
+        """
         if isinstance(positions, np.ndarray):
             pos_wp = wp.array(positions.astype(np.float32), dtype=wp.vec3)
         else:
@@ -642,7 +661,11 @@ class ExampleRenderer:
         n = len(pos_wp)
 
         if isinstance(radius, (int, float)):
-            radii_wp = wp.full(n, float(radius), dtype=wp.float32)
+            # Cache uniform radius array
+            if not hasattr(self, '_cached_radii') or len(self._cached_radii) != n or self._cached_radius_val != float(radius):
+                self._cached_radii = wp.full(n, float(radius), dtype=wp.float32)
+                self._cached_radius_val = float(radius)
+            radii_wp = self._cached_radii
         else:
             radii_wp = wp.array(np.asarray(radius, dtype=np.float32))
 
@@ -652,15 +675,27 @@ class ExampleRenderer:
             else:
                 colors_wp = colors
         else:
-            c = np.full((n, 3), color, dtype=np.float32)
-            colors_wp = wp.array(c, dtype=wp.vec3)
+            # Cache uniform color array
+            color_key = (float(color[0]), float(color[1]), float(color[2]), n)
+            if not hasattr(self, '_cached_colors_key') or self._cached_colors_key != color_key:
+                c = np.full((n, 3), color, dtype=np.float32)
+                self._cached_colors = wp.array(c, dtype=wp.vec3)
+                self._cached_colors_key = color_key
+            colors_wp = self._cached_colors
 
-        # Build LBVH from sphere AABBs
-        pos_np = pos_wp.numpy()
-        r_np = radii_wp.numpy().reshape(-1, 1)
-        lowers = wp.array((pos_np - r_np).astype(np.float32), dtype=wp.vec3)
-        uppers = wp.array((pos_np + r_np).astype(np.float32), dtype=wp.vec3)
-        bvh = wp.Bvh(lowers, uppers)
+        # Build BVH bounds — cache arrays to avoid re-allocation
+        if not hasattr(self, '_bvh_lowers') or len(self._bvh_lowers) != n:
+            self._bvh_lowers = wp.zeros(n, dtype=wp.vec3)
+            self._bvh_uppers = wp.zeros(n, dtype=wp.vec3)
+
+        # Compute bounds on GPU
+        wp.launch(
+            kernel=_compute_sphere_bounds,
+            dim=n,
+            inputs=[pos_wp, radii_wp, self._bvh_lowers, self._bvh_uppers],
+        )
+
+        bvh = wp.Bvh(self._bvh_lowers, self._bvh_uppers)
 
         wp.launch(
             kernel=render_particles_kernel,
@@ -725,6 +760,15 @@ class ExampleRenderer:
 
         pixels_np = (pixels_np * 255).astype(np.uint8)
         return pixels_np[::-1]
+
+    def get_pixels(self):
+        """Return the raw pixel warp array (render resolution, float32 vec3).
+
+        Useful for realtime display or further GPU processing without
+        a GPU→CPU copy. The array has shape (render_h * render_w,) with
+        dtype vec3, values in [0, 1] after gamma correction.
+        """
+        return self.pixels
 
     def save_image(self, path):
         """Render and save to PNG."""
