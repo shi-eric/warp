@@ -837,7 +837,7 @@ class NativeRenderer:
         """Set environment lighting and sky preset.
 
         Args:
-            preset: One of ``"dark"`` (default), ``"golden_hour"``, ``"tropical"``,
+            preset: One of ``"dark"`` (default), ``"tropical"``,
                 ``"overcast"``, ``"space"``.
         """
         if preset == "dark":
@@ -853,20 +853,6 @@ class NativeRenderer:
             self.sun_color = wp.vec3(1.2, 1.1, 0.9)
             self.sun_intensity = 1.0
             self.sun_size = 0.005
-        elif preset == "golden_hour":
-            self.bg_top = wp.vec3(0.15, 0.2, 0.45)
-            self.bg_bottom = wp.vec3(0.12, 0.08, 0.05)
-            self.sky_color = wp.vec3(0.5, 0.45, 0.4)
-            self.ground_color = wp.vec3(0.15, 0.1, 0.08)
-            self.key_color = wp.vec3(1.2, 0.9, 0.6)
-            self.fill_color = wp.vec3(0.15, 0.2, 0.35)
-            self.key_dir = wp.normalize(wp.vec3(0.2, 0.3, 0.5))
-            self.sky_top = wp.vec3(0.15, 0.2, 0.45)
-            self.sky_horizon = wp.vec3(1.0, 0.55, 0.2)
-            self.sky_ground = wp.vec3(0.12, 0.08, 0.05)
-            self.sun_color = wp.vec3(1.5, 0.8, 0.3)
-            self.sun_intensity = 4.0
-            self.sun_size = 0.01
         elif preset == "tropical":
             self.bg_top = wp.vec3(0.1, 0.3, 0.7)
             self.bg_bottom = wp.vec3(0.1, 0.15, 0.1)
