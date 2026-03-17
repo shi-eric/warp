@@ -113,6 +113,7 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
     from warp.tests.matrix.test_mat_linalg import TestMatLinalg
     from warp.tests.matrix.test_mat_lite import TestMatLite
     from warp.tests.test_adam import TestAdam
+    from warp.tests.test_allocator import TestAllocator, TestCustomAllocator, TestRmmAllocator
     from warp.tests.test_arithmetic import TestArithmetic
     from warp.tests.test_array import TestArray
     from warp.tests.test_array_reduce import TestArrayReduce
@@ -208,6 +209,8 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
 
     test_classes = [
         TestAdam,
+        TestAllocator,
+        TestCustomAllocator,
         TestArithmetic,
         TestArray,
         TestArrayReduce,
@@ -287,6 +290,7 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
         TestQuat,
         TestRand,
         TestReload,
+        TestRmmAllocator,
         TestRounding,
         TestRunlengthEncode,
         TestScalarOps,

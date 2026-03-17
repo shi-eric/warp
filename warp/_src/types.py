@@ -3342,7 +3342,11 @@ class array(Array[DType, NDim]):
 
         allocator = device.get_allocator(pinned=pinned)
         if capacity > 0:
-            ptr = allocator.alloc(capacity)
+            if device.is_cuda:
+                with device.context_guard:
+                    ptr = allocator.allocate(capacity)
+            else:
+                ptr = allocator.allocate(capacity)
         else:
             ptr = None
 
@@ -3356,7 +3360,7 @@ class array(Array[DType, NDim]):
         self.device = device
         self.pinned = pinned if device.is_cpu else False
         self.is_contiguous = is_contiguous
-        self.deleter = allocator.deleter
+        self.deleter = allocator.deallocate
         self._allocator = allocator
 
     def _init_annotation(self, dtype, ndim):
@@ -3372,12 +3376,20 @@ class array(Array[DType, NDim]):
         self.is_contiguous = False
 
     def __del__(self):
+        # Skip deallocation for partially-initialized arrays (e.g. when allocation failed)
+        # and for zero-size arrays which were never allocated.
+        if not hasattr(self, "device") or self.device is None or self.ptr is None:
+            return
         try:
             with self.device.context_guard:
                 self.deleter(self.ptr, self.capacity)
         except (TypeError, AttributeError):
             # Suppress TypeError and AttributeError when callables become None during shutdown
             pass
+        except Exception as e:
+            from warp._src.utils import warn  # noqa: PLC0415
+
+            warn(f"Exception during array deallocation: {e}")
 
     @property
     def __array_interface__(self):

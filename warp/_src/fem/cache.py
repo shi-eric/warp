@@ -464,10 +464,9 @@ class TemporaryStore:
 
             self._pool: list[int] = []  # Currently available buffers for borrowing, ordered by size
             self._pool_capacities: list[int] = []  # Sizes of available arrays for borrowing, ascending
-            self._allocs: dict[int, int] = {}  # All allocated capacities, including borrowed ones
+            self._allocs: dict[int, tuple[int, object]] = {}  # ptr -> (capacity, deallocate)
 
             self._dtype_size = type_size_in_bytes(dtype)
-            self._allocator = device.get_allocator(pinned=self.pinned)
             self._deleter = TemporaryStore.Pool.Deleter(self)
 
             # self._held_temporaries = set()  # Temporaries that are prevented from going out of scope
@@ -505,8 +504,9 @@ class TemporaryStore:
                         grow_factor = 1.5
                         capacity = max(int(self._pool_capacities[-1] * grow_factor), capacity)
 
-                    ptr = self._allocator.alloc(capacity)
-                    self._allocs[ptr] = capacity
+                    allocator = self.device.get_allocator(pinned=self.pinned)
+                    ptr = allocator.allocate(capacity)
+                    self._allocs[ptr] = (capacity, allocator.deallocate)
                 deleter = self._deleter
 
             temporary = Temporary(
@@ -522,7 +522,7 @@ class TemporaryStore:
             return temporary
 
         def redeem(self, ptr: int):
-            capacity = self._allocs[ptr]
+            capacity, _ = self._allocs[ptr]
             # Insert back array into available pool
             index = bisect.bisect_left(
                 a=self._pool_capacities,
@@ -532,12 +532,17 @@ class TemporaryStore:
             self._pool_capacities.insert(index, capacity)
 
         def detach(self, array: Temporary):
-            del self._allocs[array.ptr]
-            array.deleter = self._allocator.deleter
+            _, deallocate = self._allocs.pop(array.ptr)
+            array.deleter = deallocate
 
         def __del__(self):
-            for ptr, capacity in self._allocs.items():
-                self._allocator.free(ptr, capacity)
+            for ptr, (capacity, deallocate) in self._allocs.items():
+                try:
+                    deallocate(ptr, capacity)
+                except Exception:
+                    import traceback  # noqa: PLC0415
+
+                    traceback.print_exc()
 
     def __init__(self):
         self.clear()
