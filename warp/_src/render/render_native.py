@@ -750,6 +750,9 @@ class NativeRenderer:
                       colors=None, ground_y=None):
         """Capture the render pipeline as a CUDA graph for fast replay.
 
+        Requires a CUDA device. On CPU, this is a no-op and ``replay_graph()``
+        falls back to regular rendering.
+
         After calling this, use ``replay_graph()`` for minimal-overhead
         rendering. The particle positions warp array must be the SAME
         object on each replay (data can change, but the array must not
@@ -764,6 +767,17 @@ class NativeRenderer:
         """
         if not isinstance(positions, wp.array):
             raise TypeError("positions must be a wp.array for graph capture")
+
+        # Check if we're on a CUDA device
+        device = wp.get_device()
+        if device.is_cpu:
+            # Store params for CPU fallback in replay_graph
+            self._cpu_graph_params = dict(
+                positions=positions, radius=radius, color=color,
+                colors=colors, ground_y=ground_y,
+            )
+            self._graph = None
+            return
 
         n = len(positions)
         self._graph_positions = positions
@@ -847,10 +861,20 @@ class NativeRenderer:
     def replay_graph(self):
         """Replay the captured CUDA graph.
 
-        The positions array passed to ``capture_graph()`` should have
-        been updated with new particle positions before calling this.
-        The graph will recompute BVH bounds, refit, and re-render.
+        On CPU, falls back to regular begin_frame/render_points.
         """
+        if self._graph is None:
+            # CPU fallback
+            p = self._cpu_graph_params
+            self.begin_frame(0.0)
+            if p.get("ground_y") is not None:
+                self.render_ground(y=p["ground_y"])
+            self.render_points(
+                points=p["positions"], radius=p["radius"],
+                color=p["color"], colors=p["colors"],
+            )
+            return
+
         wp.capture_launch(self._graph)
 
     def begin_frame(self, time=0.0):
