@@ -606,11 +606,15 @@ class ExampleRenderer:
 
         Args:
             mode: One of:
-                - ``"fast"``: No AO, no SSAA. ~8ms for 500 spheres. Good for animations.
-                - ``"medium"``: AO at 0.3 strength. ~50ms. Good for previews.
-                - ``"gallery"``: Full AO + SSAA=2. ~2s. For documentation stills.
+                - ``"fast"``: No AO, no SSAA. ~0.2ms GPU for 1K spheres.
+                - ``"medium"``: AO at 0.3 strength.
+                - ``"gallery"``: Full AO + SSAA=2. For documentation stills.
+                - ``"realtime"``: Like fast but captures a CUDA graph for
+                  minimal launch overhead. Call ``capture_graph()`` after
+                  the first frame to capture, then ``replay_graph()`` on
+                  subsequent frames.
         """
-        if mode == "fast":
+        if mode == "fast" or mode == "realtime":
             self.ao_strength = 0.0
             self.shadows = True
         elif mode == "medium":
@@ -620,7 +624,112 @@ class ExampleRenderer:
             self.ao_strength = 0.5
             self.shadows = True
         else:
-            raise ValueError(f"Unknown quality mode: {mode!r}. Use 'fast', 'medium', or 'gallery'.")
+            raise ValueError(f"Unknown quality mode: {mode!r}.")
+
+    # ── CUDA graph capture for realtime ──────────────────────────────
+
+    def capture_graph(self, positions, radius=0.1, color=(0.5, 0.5, 0.5),
+                      colors=None, ground_y=None):
+        """Capture the render pipeline as a CUDA graph for fast replay.
+
+        After calling this, use ``replay_graph()`` for minimal-overhead
+        rendering. The particle positions warp array must be the SAME
+        object on each replay (data can change, but the array must not
+        be reallocated).
+
+        Args:
+            positions: wp.array of vec3 — must remain allocated between replays.
+            radius: Uniform sphere radius (float).
+            color: Default color if colors is None.
+            colors: Optional wp.array of vec3 per-particle colors.
+            ground_y: If not None, render a ground plane at this y coordinate.
+        """
+        if not isinstance(positions, wp.array):
+            raise TypeError("positions must be a wp.array for graph capture")
+
+        n = len(positions)
+        self._graph_positions = positions
+        self._graph_n = n
+
+        # Prepare cached arrays
+        if isinstance(radius, (int, float)):
+            self._graph_radii = wp.full(n, float(radius), dtype=wp.float32)
+        else:
+            self._graph_radii = radius
+
+        if colors is not None:
+            self._graph_colors = colors if isinstance(colors, wp.array) else wp.array(colors, dtype=wp.vec3)
+        else:
+            c = np.full((n, 3), color, dtype=np.float32)
+            self._graph_colors = wp.array(c, dtype=wp.vec3)
+
+        # Pre-allocate BVH bounds
+        self._graph_bvh_lowers = wp.zeros(n, dtype=wp.vec3)
+        self._graph_bvh_uppers = wp.zeros(n, dtype=wp.vec3)
+
+        # Initial BVH build (must happen outside capture)
+        wp.launch(kernel=_compute_sphere_bounds, dim=n,
+                  inputs=[positions, self._graph_radii, self._graph_bvh_lowers, self._graph_bvh_uppers])
+        self._graph_bvh = wp.Bvh(self._graph_bvh_lowers, self._graph_bvh_uppers)
+
+        # Capture the full render pipeline
+        wp.capture_begin()
+
+        # 1. Recompute bounds from (potentially moved) positions
+        wp.launch(kernel=_compute_sphere_bounds, dim=n,
+                  inputs=[positions, self._graph_radii, self._graph_bvh_lowers, self._graph_bvh_uppers])
+
+        # 2. Refit BVH (update internal nodes, no reallocation)
+        self._graph_bvh.refit()
+
+        # 3. Clear framebuffer
+        self.pixels.zero_()
+        self.depth.fill_(-1.0)
+        wp.launch(kernel=_fill_background, dim=self.render_w * self.render_h,
+                  inputs=[self.pixels, self.render_w, self.render_h, self.bg_top, self.bg_bottom])
+
+        # 4. Ground plane (optional)
+        if ground_y is not None:
+            wp.launch(
+                kernel=render_ground_kernel,
+                dim=self.render_w * self.render_h,
+                inputs=[
+                    self.pixels, self.depth, self.render_w, self.render_h,
+                    self.cam_pos, self.cam_fwd, self.cam_right, self.cam_up, self.fov,
+                    float(ground_y), 0.5,
+                    wp.vec3(0.35, 0.35, 0.38), wp.vec3(0.25, 0.25, 0.28),
+                    self.key_dir, self.bg_top, self.bg_bottom, self.fog_density,
+                ],
+            )
+
+        # 5. Render particles
+        wp.launch(
+            kernel=render_particles_kernel,
+            dim=self.render_w * self.render_h,
+            inputs=[
+                self._graph_bvh.id,
+                positions, self._graph_radii, self._graph_colors, n,
+                self.cam_pos, self.cam_fwd, self.cam_right, self.cam_up, self.fov,
+                self.pixels, self.depth, self.render_w, self.render_h,
+                self.key_dir, self.key_color,
+                self.fill_dir, self.fill_color,
+                self.specular_power, self.sky_color, self.ground_color,
+                self.bg_top, self.bg_bottom, self.fog_density,
+                1 if self.shadows else 0,
+                self.ao_strength,
+            ],
+        )
+
+        self._graph = wp.capture_end()
+
+    def replay_graph(self):
+        """Replay the captured CUDA graph.
+
+        The positions array passed to ``capture_graph()`` should have
+        been updated with new particle positions before calling this.
+        The graph will recompute BVH bounds, refit, and re-render.
+        """
+        wp.capture_launch(self._graph)
 
     def begin_frame(self):
         """Clear framebuffer and draw background gradient."""
