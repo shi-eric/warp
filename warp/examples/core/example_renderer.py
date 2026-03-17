@@ -46,6 +46,9 @@ import warp as wp
 
 SHADOW_EPS = 1.0e-4  # Normal bias for shadow rays
 SHADOW_MIN_VIS = 0.3  # Minimum visibility in shadow (0=full black, 1=no shadow)
+AO_SAMPLES = 6  # Number of AO probe rays (kept low for speed)
+AO_RADIUS = 2.0  # Max distance for AO probes
+AO_STRENGTH = 0.5  # How much AO darkens (0=none, 1=full)
 
 
 # ── Hit result struct ────────────────────────────────────────────────
@@ -85,7 +88,7 @@ def ray_sphere_intersect(
     return t
 
 
-# ── Lighting computation ────────────────────────────────────────────
+# ── Lighting helpers ─────────────────────────────────────────────────
 
 
 @wp.func
@@ -94,6 +97,67 @@ def hemisphere_ambient(normal: wp.vec3, sky: wp.vec3, ground: wp.vec3) -> wp.vec
     up = wp.vec3(0.0, 1.0, 0.0)
     blend = 0.5 * (wp.dot(normal, up) + 1.0)
     return sky * blend + ground * (1.0 - blend)
+
+
+@wp.func
+def fresnel_rim(normal: wp.vec3, view_dir: wp.vec3, rim_power: float, rim_strength: float) -> float:
+    """Fresnel rim lighting — bright edge when viewing at grazing angle."""
+    n_dot_v = wp.max(wp.dot(normal, view_dir), 0.0)
+    rim = wp.pow(1.0 - n_dot_v, rim_power)
+    return rim * rim_strength
+
+
+@wp.func
+def compute_ao_spheres(
+    hit_pos: wp.vec3,
+    normal: wp.vec3,
+    bvh_id: wp.uint64,
+    positions: wp.array[wp.vec3],
+    radii: wp.array[wp.float32],
+    ao_radius: float,
+    num_samples: int,
+    seed: int,
+) -> float:
+    """Approximate ambient occlusion by probing nearby sphere occlusion.
+
+    Casts short rays in a hemisphere around the normal and checks for
+    nearby sphere intersections. Returns occlusion factor [0=fully
+    occluded, 1=fully open].
+    """
+    ao = float(0.0)
+    origin = hit_pos + normal * SHADOW_EPS
+
+    state = wp.rand_init(seed)
+
+    for s in range(num_samples):
+        # Generate random direction in hemisphere around normal
+        # Using cosine-weighted hemisphere sampling
+        r1 = wp.randf(state)
+        r2 = wp.randf(state)
+
+        # Uniform hemisphere, then reject if below surface
+        rx = r1 * 2.0 - 1.0
+        ry = r2 * 2.0 - 1.0
+        rz = wp.randf(state)
+        probe_dir = wp.normalize(wp.vec3(rx, ry, rz))
+
+        # Flip to same hemisphere as normal
+        if wp.dot(probe_dir, normal) < 0.0:
+            probe_dir = -probe_dir
+
+        # Check for nearby occlusion via BVH
+        query = wp.bvh_query_ray(bvh_id, origin, probe_dir)
+        candidate = int(0)
+        occluded = int(0)
+        while wp.bvh_query_next(query, candidate):
+            t = ray_sphere_intersect(origin, probe_dir, positions[candidate], radii[candidate])
+            if t > 0.0 and t < ao_radius:
+                occluded = 1
+                break
+
+        ao = ao + float(occluded)
+
+    return 1.0 - ao / float(num_samples)
 
 
 @wp.func
@@ -193,6 +257,14 @@ def render_particles_kernel(
     ambient = hemisphere_ambient(normal, sky_color, ground_color)
     color = wp.cw_mul(base_color, ambient) * 0.5
 
+    # Ambient occlusion (BVH-accelerated)
+    ao = compute_ao_spheres(
+        hit_pos, normal, bvh_id, positions, radii,
+        AO_RADIUS, AO_SAMPLES, tid,
+    )
+    ao_factor = 1.0 - AO_STRENGTH * (1.0 - ao)
+    color = color * ao_factor
+
     # Key light with shadow
     key_visible = float(1.0)
     if shadow_enabled == 1:
@@ -209,9 +281,13 @@ def render_particles_kernel(
     key_contrib = compute_lighting_directional(normal, view_dir, key_dir, key_color, specular_power, key_visible)
     color = color + wp.cw_mul(base_color, key_contrib)
 
-    # Fill light (no shadow for fill — it's supposed to soften shadows)
+    # Fill light (no shadow)
     fill_contrib = compute_lighting_directional(normal, view_dir, fill_dir, fill_color, specular_power * 0.5, 1.0)
     color = color + wp.cw_mul(base_color, fill_contrib)
+
+    # Rim lighting (Fresnel)
+    rim = fresnel_rim(normal, view_dir, 3.0, 0.25)
+    color = color + key_color * rim
 
     # Exponential fog
     fog = wp.clamp(1.0 - wp.exp(-closest_t * fog_density), 0.0, 0.8)
@@ -445,11 +521,23 @@ class ExampleRenderer:
         pixels = renderer.end_frame()  # numpy (H, W, 3) uint8
     """
 
-    def __init__(self, width=1024, height=1024):
+    def __init__(self, width=1024, height=1024, ssaa=1):
+        """Create renderer.
+
+        Args:
+            width: Output image width.
+            height: Output image height.
+            ssaa: Supersampling anti-aliasing factor (1=off, 2=4x SSAA).
+        """
         self.width = width
         self.height = height
-        self.pixels = wp.zeros(width * height, dtype=wp.vec3)
-        self.depth = wp.zeros(width * height, dtype=wp.float32)
+        self.ssaa = ssaa
+
+        # Internal render resolution
+        self.render_w = width * ssaa
+        self.render_h = height * ssaa
+        self.pixels = wp.zeros(self.render_w * self.render_h, dtype=wp.vec3)
+        self.depth = wp.zeros(self.render_w * self.render_h, dtype=wp.float32)
 
         # Camera
         self.cam_pos = wp.vec3(5.0, 3.0, 5.0)
@@ -500,17 +588,17 @@ class ExampleRenderer:
         self.depth.fill_(-1.0)
         wp.launch(
             kernel=_fill_background,
-            dim=self.width * self.height,
-            inputs=[self.pixels, self.width, self.height, self.bg_top, self.bg_bottom],
+            dim=self.render_w * self.render_h,
+            inputs=[self.pixels, self.render_w, self.render_h, self.bg_top, self.bg_bottom],
         )
 
     def render_ground(self, y=0.0, checker_scale=0.5, color_a=(0.35, 0.35, 0.38), color_b=(0.25, 0.25, 0.28)):
         """Render an infinite checkerboard ground plane."""
         wp.launch(
             kernel=render_ground_kernel,
-            dim=self.width * self.height,
+            dim=self.render_w * self.render_h,
             inputs=[
-                self.pixels, self.depth, self.width, self.height,
+                self.pixels, self.depth, self.render_w, self.render_h,
                 self.cam_pos, self.cam_fwd, self.cam_right, self.cam_up, self.fov,
                 float(y), float(checker_scale),
                 wp.vec3(*[float(c) for c in color_a]),
@@ -551,12 +639,12 @@ class ExampleRenderer:
 
         wp.launch(
             kernel=render_particles_kernel,
-            dim=self.width * self.height,
+            dim=self.render_w * self.render_h,
             inputs=[
                 bvh.id,
                 pos_wp, radii_wp, colors_wp, n,
                 self.cam_pos, self.cam_fwd, self.cam_right, self.cam_up, self.fov,
-                self.pixels, self.depth, self.width, self.height,
+                self.pixels, self.depth, self.render_w, self.render_h,
                 self.key_dir, self.key_color,
                 self.fill_dir, self.fill_color,
                 self.specular_power, self.sky_color, self.ground_color,
@@ -581,11 +669,11 @@ class ExampleRenderer:
 
         wp.launch(
             kernel=render_mesh_kernel,
-            dim=self.width * self.height,
+            dim=self.render_w * self.render_h,
             inputs=[
                 mesh.id, wp.vec3(*[float(c) for c in color]),
                 self.cam_pos, self.cam_fwd, self.cam_right, self.cam_up, self.fov,
-                self.pixels, self.depth, self.width, self.height,
+                self.pixels, self.depth, self.render_w, self.render_h,
                 self.key_dir, self.key_color,
                 self.fill_dir, self.fill_color,
                 self.specular_power, self.sky_color, self.ground_color,
@@ -595,9 +683,21 @@ class ExampleRenderer:
         )
 
     def end_frame(self):
-        """Return rendered image as numpy (H, W, 3) uint8."""
-        pixels_np = self.pixels.numpy().reshape((self.height, self.width, 3))
-        pixels_np = (np.clip(pixels_np, 0.0, 1.0) * 255).astype(np.uint8)
+        """Return rendered image as numpy (H, W, 3) uint8.
+
+        If SSAA > 1, downsamples from render resolution to output resolution
+        using box filtering.
+        """
+        pixels_np = self.pixels.numpy().reshape((self.render_h, self.render_w, 3))
+        pixels_np = np.clip(pixels_np, 0.0, 1.0)
+
+        if self.ssaa > 1:
+            # Box-filter downsample
+            s = self.ssaa
+            h, w = self.height, self.width
+            pixels_np = pixels_np.reshape(h, s, w, s, 3).mean(axis=(1, 3))
+
+        pixels_np = (pixels_np * 255).astype(np.uint8)
         return pixels_np[::-1]
 
     def save_image(self, path):
