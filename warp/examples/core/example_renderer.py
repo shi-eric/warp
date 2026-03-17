@@ -46,9 +46,6 @@ import warp as wp
 
 SHADOW_EPS = 1.0e-4  # Normal bias for shadow rays
 SHADOW_MIN_VIS = 0.3  # Minimum visibility in shadow (0=full black, 1=no shadow)
-AO_SAMPLES = 6  # Number of AO probe rays (kept low for speed)
-AO_RADIUS = 2.0  # Max distance for AO probes
-AO_STRENGTH = 0.5  # How much AO darkens (0=none, 1=full)
 
 
 # ── Hit result struct ────────────────────────────────────────────────
@@ -108,59 +105,6 @@ def fresnel_rim(normal: wp.vec3, view_dir: wp.vec3, rim_power: float, rim_streng
 
 
 @wp.func
-def compute_ao_spheres(
-    hit_pos: wp.vec3,
-    normal: wp.vec3,
-    bvh_id: wp.uint64,
-    positions: wp.array[wp.vec3],
-    radii: wp.array[wp.float32],
-    ao_radius: float,
-    num_samples: int,
-    seed: int,
-) -> float:
-    """Approximate ambient occlusion by probing nearby sphere occlusion.
-
-    Casts short rays in a hemisphere around the normal and checks for
-    nearby sphere intersections. Returns occlusion factor [0=fully
-    occluded, 1=fully open].
-    """
-    ao = float(0.0)
-    origin = hit_pos + normal * SHADOW_EPS
-
-    state = wp.rand_init(seed)
-
-    for s in range(num_samples):
-        # Generate random direction in hemisphere around normal
-        # Using cosine-weighted hemisphere sampling
-        r1 = wp.randf(state)
-        r2 = wp.randf(state)
-
-        # Uniform hemisphere, then reject if below surface
-        rx = r1 * 2.0 - 1.0
-        ry = r2 * 2.0 - 1.0
-        rz = wp.randf(state)
-        probe_dir = wp.normalize(wp.vec3(rx, ry, rz))
-
-        # Flip to same hemisphere as normal
-        if wp.dot(probe_dir, normal) < 0.0:
-            probe_dir = -probe_dir
-
-        # Check for nearby occlusion via BVH
-        query = wp.bvh_query_ray(bvh_id, origin, probe_dir)
-        candidate = int(0)
-        occluded = int(0)
-        while wp.bvh_query_next(query, candidate):
-            t = ray_sphere_intersect(origin, probe_dir, positions[candidate], radii[candidate])
-            if t > 0.0 and t < ao_radius:
-                occluded = 1
-                break
-
-        ao = ao + float(occluded)
-
-    return 1.0 - ao / float(num_samples)
-
-
-@wp.func
 def compute_lighting_directional(
     normal: wp.vec3,
     view_dir: wp.vec3,
@@ -215,7 +159,6 @@ def render_particles_kernel(
     fog_density: float,
     # Options
     shadow_enabled: int,
-    ao_strength: float,
 ):
     tid = wp.tid()
     px = tid % width
@@ -257,16 +200,6 @@ def render_particles_kernel(
     # Hemisphere ambient
     ambient = hemisphere_ambient(normal, sky_color, ground_color)
     color = wp.cw_mul(base_color, ambient) * 0.5
-
-    # Ambient occlusion (BVH-accelerated)
-    ao_factor = float(1.0)
-    if ao_strength > 0.0:
-        ao = compute_ao_spheres(
-            hit_pos, normal, bvh_id, positions, radii,
-            AO_RADIUS, AO_SAMPLES, tid,
-        )
-        ao_factor = 1.0 - ao_strength * (1.0 - ao)
-    color = color * ao_factor
 
     # Key light with shadow
     key_visible = float(1.0)
@@ -576,7 +509,6 @@ class ExampleRenderer:
 
         self.specular_power = 48.0
         self.shadows = True
-        self.ao_strength = 0.0  # 0=off (fast), 0.5=medium, 1.0=full AO
 
         # Environment
         self.bg_top = wp.vec3(0.15, 0.18, 0.25)
@@ -606,22 +538,14 @@ class ExampleRenderer:
 
         Args:
             mode: One of:
-                - ``"fast"``: No AO, no SSAA. ~0.2ms GPU for 1K spheres.
-                - ``"medium"``: AO at 0.3 strength.
-                - ``"gallery"``: Full AO + SSAA=2. For documentation stills.
-                - ``"realtime"``: Like fast but captures a CUDA graph for
-                  minimal launch overhead. Call ``capture_graph()`` after
-                  the first frame to capture, then ``replay_graph()`` on
-                  subsequent frames.
+                - ``"fast"``: No SSAA. ~0.5ms for 1K spheres.
+                - ``"gallery"``: SSAA=2 for smooth edges. For documentation stills.
+                - ``"realtime"``: Like fast. Call ``capture_graph()`` for
+                  CUDA graph capture if needed.
         """
-        if mode == "fast" or mode == "realtime":
-            self.ao_strength = 0.0
-            self.shadows = True
-        elif mode == "medium":
-            self.ao_strength = 0.3
+        if mode in ("fast", "realtime"):
             self.shadows = True
         elif mode == "gallery":
-            self.ao_strength = 0.5
             self.shadows = True
         else:
             raise ValueError(f"Unknown quality mode: {mode!r}.")
@@ -716,7 +640,6 @@ class ExampleRenderer:
                 self.specular_power, self.sky_color, self.ground_color,
                 self.bg_top, self.bg_bottom, self.fog_density,
                 1 if self.shadows else 0,
-                self.ao_strength,
             ],
         )
 
@@ -819,7 +742,6 @@ class ExampleRenderer:
                 self.specular_power, self.sky_color, self.ground_color,
                 self.bg_top, self.bg_bottom, self.fog_density,
                 1 if self.shadows else 0,
-                self.ao_strength,
             ],
         )
 
