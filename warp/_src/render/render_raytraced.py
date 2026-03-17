@@ -182,11 +182,17 @@ def shade_glass_sphere(
     hit_pos = ray_origin + ray_dir * hit_t
     normal = wp.normalize(hit_pos - center)
 
+    # Handle back-face hit (camera inside sphere)
+    entering = wp.dot(ray_dir, normal) < 0.0
+    if not entering:
+        normal = -normal  # Flip normal for inside hit
+
     cos_i = wp.max(-wp.dot(ray_dir, normal), 0.0)
+    eta = 1.0 / ior if entering else ior  # Swap IOR for exit
     fresnel = schlick_fresnel(cos_i, ior)
 
     # ── Refracted ray (enters sphere) ──
-    refr_dir = refract_ray(ray_dir, normal, 1.0 / ior)
+    refr_dir = refract_ray(ray_dir, normal, eta)
     refr_color = bg
 
     refr_len = wp.length(refr_dir)
@@ -194,7 +200,8 @@ def shade_glass_sphere(
         refr_dir = wp.normalize(refr_dir)
 
         # Find exit point (ray travels through sphere interior)
-        inner_origin = hit_pos + refr_dir * 0.01
+        eps = radius * 0.001
+        inner_origin = hit_pos + refr_dir * eps
         oc = inner_origin - center
         b = wp.dot(oc, refr_dir)
         c = wp.dot(oc, oc) - radius * radius
@@ -203,7 +210,7 @@ def shade_glass_sphere(
         if disc >= 0.0:
             exit_t = -b + wp.sqrt(disc)
 
-        if exit_t > 0.01:
+        if exit_t > eps:
             exit_pos = inner_origin + refr_dir * exit_t
             exit_normal = wp.normalize(exit_pos - center)
 
@@ -224,7 +231,7 @@ def shade_glass_sphere(
 
             if exit_refr_len > 0.5:
                 exit_refr = wp.normalize(exit_refr)
-                exit_origin = exit_pos + exit_refr * 0.01
+                exit_origin = exit_pos + exit_refr * eps
 
                 # Trace into scene
                 closest_t2 = float(1.0e10)
@@ -259,7 +266,7 @@ def shade_glass_sphere(
 
     # ── Reflected ray ──
     refl_dir = ray_dir - normal * 2.0 * wp.dot(ray_dir, normal)
-    refl_origin = hit_pos + normal * 0.01
+    refl_origin = hit_pos + normal * wp.max(radius * 0.001, 1.0e-4)
     refl_color = bg
 
     closest_tr = float(1.0e10)
@@ -379,9 +386,7 @@ def render_particles_kernel(
     bg = bg_bottom * (1.0 - nv) + bg_top * nv
 
     if closest_idx < 0:
-        pixels[tid] = bg
-        depth_buf[tid] = -1.0
-        return
+        return  # No hit — preserve existing pixel (ground, mesh, or background)
 
     depth_buf[tid] = closest_t
     view_dir = -ray_dir
@@ -785,6 +790,10 @@ class RayTracedRenderer:
                   inputs=[positions, self._graph_radii, self._graph_bvh_lowers, self._graph_bvh_uppers])
         self._graph_bvh = wp.Bvh(self._graph_bvh_lowers, self._graph_bvh_uppers)
 
+        # Materials for graph — allocate BEFORE capture (allocation not capturable)
+        self._graph_materials = wp.zeros(n, dtype=wp.int32)
+        glass_tint_wp = wp.vec3(0.9, 0.95, 1.0)
+
         # Capture the full render pipeline
         wp.capture_begin()
 
@@ -814,10 +823,6 @@ class RayTracedRenderer:
                     self.key_dir, self.bg_top, self.bg_bottom, self.fog_density,
                 ],
             )
-
-        # Materials for graph (default all opaque)
-        self._graph_materials = wp.zeros(n, dtype=wp.int32)
-        glass_tint_wp = wp.vec3(0.9, 0.95, 1.0)
 
         # 5. Render particles
         wp.launch(
@@ -1103,12 +1108,10 @@ class RayTracedRenderer:
         """Release GPU resources."""
         self.pixels = None
         self.depth = None
-        if hasattr(self, '_cached_radii'):
-            del self._cached_radii
-        if hasattr(self, '_cached_colors'):
-            del self._cached_colors
-        if hasattr(self, '_cached_mats'):
-            del self._cached_mats
-        if hasattr(self, '_bvh_lowers'):
-            del self._bvh_lowers
-            del self._bvh_uppers
+        for attr in ('_cached_radii', '_cached_colors', '_cached_mats',
+                     '_bvh_lowers', '_bvh_uppers',
+                     '_graph', '_graph_bvh', '_graph_positions',
+                     '_graph_radii', '_graph_colors', '_graph_materials',
+                     '_graph_bvh_lowers', '_graph_bvh_uppers'):
+            if hasattr(self, attr):
+                delattr(self, attr)
