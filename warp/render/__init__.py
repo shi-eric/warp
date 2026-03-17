@@ -24,6 +24,10 @@ can be achieved with the help of the :class:`UsdRenderer`, which allows exportin
 scene to a USD file that can then be rendered in an external 3D application or renderer
 of your choice.
 
+The :class:`RayTracedRenderer` provides a GPU-accelerated ray-traced renderer built
+entirely in Warp kernels. It uses BVH acceleration for scalable performance and supports
+Phong shading, shadows, glass materials with refraction, and a ground plane.
+
 Usage:
     This module must be explicitly imported::
 
@@ -35,6 +39,8 @@ Usage:
 from warp._src.render.render_opengl import OpenGLRenderer as OpenGLRenderer
 
 from warp._src.render.render_usd import UsdRenderer as UsdRenderer
+
+from warp._src.render.render_raytraced import RayTracedRenderer as RayTracedRenderer
 
 
 # TODO: Remove after cleaning up the public API.
