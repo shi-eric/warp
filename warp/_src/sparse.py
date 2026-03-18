@@ -315,11 +315,11 @@ def bsr_matrix_t(dtype: BlockType):
         """Number of columns of blocks."""
         nnz: int
         """Upper bound for the number of non-zeros."""
-        offsets: wp.array(dtype=int)
+        offsets: wp.array[int]
         """Array of size at least ``1 + nrow``."""
-        columns: wp.array(dtype=int)
+        columns: wp.array[int]
         """Array of size at least equal to ``nnz``."""
-        values: wp.array(dtype=dtype)
+        values: wp.array[dtype]
 
     module = wp.get_module(BsrMatrix.__module__)
 
@@ -442,11 +442,11 @@ _zero_value_masks = {
 @wp.kernel
 def _bsr_accumulate_triplet_values(
     row_count: int,
-    tpl_summed_offsets: wp.array(dtype=int),
-    tpl_summed_indices: wp.array(dtype=int),
-    tpl_values: wp.array3d(dtype=Any),
-    bsr_offsets: wp.array(dtype=int),
-    bsr_values: wp.array3d(dtype=Any),
+    tpl_summed_offsets: wp.array[int],
+    tpl_summed_indices: wp.array[int],
+    tpl_values: wp.array3d[Any],
+    bsr_offsets: wp.array[int],
+    bsr_values: wp.array3d[Any],
 ):
     block, i, j = wp.tid()
 
@@ -759,7 +759,7 @@ def _extract_matrix_and_scale(bsr: BsrMatrixOrExpression):
 
 @wp.func
 def bsr_row_index(
-    offsets: wp.array(dtype=int),
+    offsets: wp.array[int],
     row_count: int,
     block_index: int,
 ) -> int:
@@ -777,8 +777,8 @@ def bsr_row_index(
 def bsr_block_index(
     row: int,
     col: int,
-    bsr_offsets: wp.array(dtype=int),
-    bsr_columns: wp.array(dtype=int),
+    bsr_offsets: wp.array[int],
+    bsr_columns: wp.array[int],
 ) -> int:
     """Return the index of the block at block-coordinates (row, col), or -1 if no such block exists.
 
@@ -811,10 +811,10 @@ def _bsr_assign_list_blocks(
     dest_subrows: int,
     dest_subcols: int,
     src_row_count: int,
-    src_offsets: wp.array(dtype=int),
-    src_columns: wp.array(dtype=int),
-    dest_rows: wp.array(dtype=int),
-    dest_cols: wp.array(dtype=int),
+    src_offsets: wp.array[int],
+    src_columns: wp.array[int],
+    dest_rows: wp.array[int],
+    dest_cols: wp.array[int],
 ):
     block, subrow, subcol = wp.tid()
     dest_block = (block * src_subcols + subcol) * src_subrows + subrow
@@ -838,12 +838,12 @@ def _bsr_assign_copy_blocks(
     dest_subrows: int,
     dest_subcols: int,
     src_row_count: int,
-    src_offsets: wp.array(dtype=int),
-    src_columns: wp.array(dtype=int),
-    src_values: wp.array3d(dtype=Any),
-    dest_offsets: wp.array(dtype=int),
-    dest_columns: wp.array(dtype=int),
-    dest_values: wp.array3d(dtype=Any),
+    src_offsets: wp.array[int],
+    src_columns: wp.array[int],
+    src_values: wp.array3d[Any],
+    dest_offsets: wp.array[int],
+    dest_columns: wp.array[int],
+    dest_values: wp.array3d[Any],
 ):
     src_block = wp.tid()
     src_block, subrow, subcol = wp.tid()
@@ -1079,13 +1079,13 @@ def bsr_copy(
 def _bsr_transpose_values(
     col_count: int,
     scale: Any,
-    bsr_offsets: wp.array(dtype=int),
-    bsr_columns: wp.array(dtype=int),
-    bsr_values: wp.array3d(dtype=Any),
-    block_index_map: wp.array(dtype=int),
-    transposed_bsr_offsets: wp.array(dtype=int),
-    transposed_bsr_columns: wp.array(dtype=int),
-    transposed_bsr_values: wp.array3d(dtype=Any),
+    bsr_offsets: wp.array[int],
+    bsr_columns: wp.array[int],
+    bsr_values: wp.array3d[Any],
+    block_index_map: wp.array[int],
+    transposed_bsr_offsets: wp.array[int],
+    transposed_bsr_columns: wp.array[int],
+    transposed_bsr_values: wp.array3d[Any],
 ):
     block, i, j = wp.tid()
 
@@ -1213,10 +1213,10 @@ def bsr_transposed(A: BsrMatrixOrExpression) -> BsrMatrix:
 @wp.kernel
 def _bsr_get_diag_kernel(
     scale: Any,
-    A_offsets: wp.array(dtype=int),
-    A_columns: wp.array(dtype=int),
-    A_values: wp.array3d(dtype=Any),
-    out: wp.array3d(dtype=Any),
+    A_offsets: wp.array[int],
+    A_columns: wp.array[int],
+    A_values: wp.array3d[Any],
+    out: wp.array3d[Any],
 ):
     row, br, bc = wp.tid()
 
@@ -1261,8 +1261,8 @@ def bsr_get_diag(A: BsrMatrixOrExpression[BlockType], out: Array[BlockType] | No
 @wp.kernel(enable_backward=False)
 def _bsr_set_diag_kernel(
     nnz: int,
-    A_offsets: wp.array(dtype=int),
-    A_columns: wp.array(dtype=int),
+    A_offsets: wp.array[int],
+    A_columns: wp.array[int],
 ):
     row = wp.tid()
     A_offsets[row] = wp.min(row, nnz)
@@ -1429,7 +1429,7 @@ def bsr_identity(
 @wp.kernel
 def _bsr_scale_kernel(
     alpha: Any,
-    values: wp.array(dtype=Any),
+    values: wp.array[Any],
 ):
     row = wp.tid()
     values[row] = alpha * values[row]
@@ -1438,7 +1438,7 @@ def _bsr_scale_kernel(
 @wp.kernel
 def _bsr_scale_kernel(
     alpha: Any,
-    values: wp.array3d(dtype=Any),
+    values: wp.array3d[Any],
 ):
     row, br, bc = wp.tid()
     values[row, br, bc] = alpha * values[row, br, bc]
@@ -1467,7 +1467,7 @@ def bsr_scale(x: BsrMatrixOrExpression, alpha: Scalar) -> BsrMatrix:
 
 
 @wp.kernel(enable_backward=False)
-def _bsr_get_block_row(row_count: int, bsr_offsets: wp.array(dtype=int), rows: wp.array(dtype=int)):
+def _bsr_get_block_row(row_count: int, bsr_offsets: wp.array[int], rows: wp.array[int]):
     block = wp.tid()
     rows[block] = bsr_row_index(bsr_offsets, row_count, block)
 
@@ -1476,12 +1476,12 @@ def _bsr_get_block_row(row_count: int, bsr_offsets: wp.array(dtype=int), rows: w
 def _bsr_axpy_add_block(
     src_offset: int,
     scale: Any,
-    rows: wp.array(dtype=int),
-    cols: wp.array(dtype=int),
-    dst_offsets: wp.array(dtype=int),
-    dst_columns: wp.array(dtype=int),
-    src_values: wp.array3d(dtype=Any),
-    dst_values: wp.array3d(dtype=Any),
+    rows: wp.array[int],
+    cols: wp.array[int],
+    dst_offsets: wp.array[int],
+    dst_columns: wp.array[int],
+    src_values: wp.array3d[Any],
+    dst_values: wp.array3d[Any],
 ):
     i, br, bc = wp.tid()
     row = rows[i + src_offset]
@@ -1496,12 +1496,12 @@ def _bsr_axpy_add_block(
 def _bsr_axpy_masked(
     alpha: Any,
     row_count: int,
-    src_offsets: wp.array(dtype=int),
-    src_columns: wp.array(dtype=int),
-    src_values: wp.array3d(dtype=Any),
-    dst_offsets: wp.array(dtype=int),
-    dst_columns: wp.array(dtype=int),
-    dst_values: wp.array3d(dtype=Any),
+    src_offsets: wp.array[int],
+    src_columns: wp.array[int],
+    src_values: wp.array3d[Any],
+    dst_offsets: wp.array[int],
+    dst_columns: wp.array[int],
+    dst_values: wp.array3d[Any],
 ):
     block, br, bc = wp.tid()
 
@@ -1724,12 +1724,12 @@ def make_bsr_mm_count_coeffs(tile_size):
     def bsr_mm_count_coeffs(
         y_ncol: int,
         z_nnz: int,
-        x_offsets: wp.array(dtype=int),
-        x_columns: wp.array(dtype=int),
-        y_offsets: wp.array(dtype=int),
-        y_columns: wp.array(dtype=int),
-        row_min: wp.array(dtype=int),
-        block_counts: wp.array(dtype=int),
+        x_offsets: wp.array[int],
+        x_columns: wp.array[int],
+        y_offsets: wp.array[int],
+        y_columns: wp.array[int],
+        row_min: wp.array[int],
+        block_counts: wp.array[int],
     ):
         row, lane = wp.tid()
         row_count = int(0)
@@ -1783,15 +1783,15 @@ def _bsr_mm_list_coeffs(
     copied_z_nnz: int,
     mm_nnz: int,
     x_nrow: int,
-    x_offsets: wp.array(dtype=int),
-    x_columns: wp.array(dtype=int),
-    y_offsets: wp.array(dtype=int),
-    y_columns: wp.array(dtype=int),
-    mm_row_min: wp.array(dtype=int),
-    mm_offsets: wp.array(dtype=int),
-    mm_rows: wp.array(dtype=int),
-    mm_cols: wp.array(dtype=int),
-    mm_src_blocks: wp.array(dtype=int),
+    x_offsets: wp.array[int],
+    x_columns: wp.array[int],
+    y_offsets: wp.array[int],
+    y_columns: wp.array[int],
+    mm_row_min: wp.array[int],
+    mm_offsets: wp.array[int],
+    mm_rows: wp.array[int],
+    mm_cols: wp.array[int],
+    mm_src_blocks: wp.array[int],
 ):
     mm_block = wp.tid() + copied_z_nnz
 
@@ -1835,9 +1835,9 @@ def _bsr_mm_list_coeffs(
 def _bsr_mm_use_triplets(
     row: int,
     mm_block: int,
-    mm_row_min: wp.array(dtype=int),
-    row_offsets: wp.array(dtype=int),
-    summed_triplet_offsets: wp.array(dtype=int),
+    mm_row_min: wp.array[int],
+    row_offsets: wp.array[int],
+    summed_triplet_offsets: wp.array[int],
 ):
     x_beg = row_offsets[row]
     x_end = row_offsets[row + 1]
@@ -1859,19 +1859,19 @@ def _bsr_mm_use_triplets(
 @wp.kernel(enable_backward=False)
 def _bsr_mm_compute_values(
     alpha: Any,
-    x_offsets: wp.array(dtype=int),
-    x_columns: wp.array(dtype=int),
-    x_values: wp.array(dtype=Any),
-    y_offsets: wp.array(dtype=int),
-    y_columns: wp.array(dtype=int),
-    y_values: wp.array(dtype=Any),
-    mm_row_min: wp.array(dtype=int),
-    summed_triplet_offsets: wp.array(dtype=int),
+    x_offsets: wp.array[int],
+    x_columns: wp.array[int],
+    x_values: wp.array[Any],
+    y_offsets: wp.array[int],
+    y_columns: wp.array[int],
+    y_values: wp.array[Any],
+    mm_row_min: wp.array[int],
+    summed_triplet_offsets: wp.array[int],
     summed_triplet_src_blocks: wp.indexedarray(dtype=int),
     mm_row_count: int,
-    mm_offsets: wp.array(dtype=int),
-    mm_cols: wp.array(dtype=int),
-    mm_values: wp.array(dtype=Any),
+    mm_offsets: wp.array[int],
+    mm_cols: wp.array[int],
+    mm_values: wp.array[Any],
 ):
     mm_block = wp.tid()
 
@@ -1914,8 +1914,8 @@ def make_bsr_mm_compute_values_tiled_outer(subblock_rows, subblock_cols, block_d
 
     @dynamic_func(suffix=suffix)
     def _outer_product(
-        x_values: wp.array2d(dtype=Any),
-        y_values: wp.array2d(dtype=Any),
+        x_values: wp.array2d[Any],
+        y_values: wp.array2d[Any],
         brow_off: int,
         bcol_off: int,
         block_col: int,
@@ -1935,19 +1935,19 @@ def make_bsr_mm_compute_values_tiled_outer(subblock_rows, subblock_cols, block_d
     @dynamic_kernel(suffix=suffix, kernel_options={"enable_backward": False})
     def bsr_mm_compute_values(
         alpha: Any,
-        x_offsets: wp.array(dtype=int),
-        x_columns: wp.array(dtype=int),
-        x_values: wp.array3d(dtype=Any),
-        y_offsets: wp.array(dtype=int),
-        y_columns: wp.array(dtype=int),
-        y_values: wp.array3d(dtype=Any),
-        mm_row_min: wp.array(dtype=int),
-        summed_triplet_offsets: wp.array(dtype=int),
+        x_offsets: wp.array[int],
+        x_columns: wp.array[int],
+        x_values: wp.array3d[Any],
+        y_offsets: wp.array[int],
+        y_columns: wp.array[int],
+        y_values: wp.array3d[Any],
+        mm_row_min: wp.array[int],
+        summed_triplet_offsets: wp.array[int],
         summed_triplet_src_blocks: wp.indexedarray(dtype=int),
         mm_row_count: int,
-        mm_offsets: wp.array(dtype=int),
-        mm_cols: wp.array(dtype=int),
-        mm_values: wp.array3d(dtype=Any),
+        mm_offsets: wp.array[int],
+        mm_cols: wp.array[int],
+        mm_values: wp.array3d[Any],
     ):
         mm_block, subrow, subcol, lane = wp.tid()
 
@@ -2420,12 +2420,12 @@ def make_bsr_mv_kernel(block_cols: int):
     @dynamic_kernel(suffix=block_cols, kernel_options={"enable_backward": False})
     def bsr_mv_kernel(
         alpha: Any,
-        A_offsets: wp.array(dtype=int),
-        A_columns: wp.array(dtype=int),
-        A_values: wp.array3d(dtype=Any),
-        x: wp.array(dtype=Any),
+        A_offsets: wp.array[int],
+        A_columns: wp.array[int],
+        A_values: wp.array3d[Any],
+        x: wp.array[Any],
         beta: Any,
-        y: wp.array(dtype=Any),
+        y: wp.array[Any],
     ):
         row, subrow = wp.tid()
 
@@ -2460,12 +2460,12 @@ def make_bsr_mv_tiled_kernel(tile_size: int):
     @dynamic_kernel(suffix=tile_size, kernel_options={"enable_backward": False})
     def bsr_mv_tiled_kernel(
         alpha: Any,
-        A_offsets: wp.array(dtype=int),
-        A_columns: wp.array(dtype=int),
-        A_values: wp.array3d(dtype=Any),
-        x: wp.array(dtype=Any),
+        A_offsets: wp.array[int],
+        A_columns: wp.array[int],
+        A_values: wp.array3d[Any],
+        x: wp.array[Any],
         beta: Any,
-        y: wp.array(dtype=Any),
+        y: wp.array[Any],
     ):
         row, subrow, lane = wp.tid()
 
@@ -2510,11 +2510,11 @@ def make_bsr_mv_transpose_kernel(block_rows: int):
     def bsr_mv_transpose_kernel(
         alpha: Any,
         A_row_count: int,
-        A_offsets: wp.array(dtype=int),
-        A_columns: wp.array(dtype=int),
-        A_values: wp.array3d(dtype=Any),
-        x: wp.array(dtype=Any),
-        y: wp.array(dtype=Any),
+        A_offsets: wp.array[int],
+        A_columns: wp.array[int],
+        A_values: wp.array3d[Any],
+        x: wp.array[Any],
+        y: wp.array[Any],
     ):
         block, subcol = wp.tid()
 

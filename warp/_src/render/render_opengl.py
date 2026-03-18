@@ -264,13 +264,13 @@ void main() {
 
 @warp.kernel
 def update_vbo_transforms(
-    instance_id: warp.array(dtype=int),
-    instance_body: warp.array(dtype=int),
-    instance_transforms: warp.array(dtype=warp.transform),
-    instance_scalings: warp.array(dtype=warp.vec3),
-    body_q: warp.array(dtype=warp.transform),
+    instance_id: warp.array[warp.int32],
+    instance_body: warp.array[warp.int32],
+    instance_transforms: warp.array[warp.transform],
+    instance_scalings: warp.array[warp.vec3],
+    body_q: warp.array[warp.transform],
     # outputs
-    vbo_transforms: warp.array(dtype=warp.mat44),
+    vbo_transforms: warp.array[warp.mat44],
 ):
     tid = warp.tid()
     i = instance_id[tid]
@@ -309,9 +309,9 @@ def update_vbo_transforms(
 
 @warp.kernel
 def update_vbo_vertices(
-    points: warp.array(dtype=warp.vec3),
+    points: warp.array[warp.vec3],
     # outputs
-    vbo_vertices: warp.array(dtype=float, ndim=2),
+    vbo_vertices: warp.array2d[warp.float32],
 ):
     tid = warp.tid()
     p = points[tid]
@@ -322,10 +322,10 @@ def update_vbo_vertices(
 
 @warp.kernel
 def update_points_positions(
-    instance_positions: warp.array(dtype=warp.vec3),
-    instance_scalings: warp.array(dtype=warp.vec3),
+    instance_positions: warp.array[warp.vec3],
+    instance_scalings: warp.array[warp.vec3],
     # outputs
-    vbo_transforms: warp.array(dtype=warp.mat44),
+    vbo_transforms: warp.array[warp.mat44],
 ):
     tid = warp.tid()
     p = instance_positions[tid]
@@ -344,9 +344,9 @@ def update_points_positions(
 
 @warp.kernel
 def update_line_transforms(
-    lines: warp.array(dtype=warp.vec3, ndim=2),
+    lines: warp.array2d[warp.vec3],
     # outputs
-    vbo_transforms: warp.array(dtype=warp.mat44),
+    vbo_transforms: warp.array[warp.mat44],
 ):
     tid = warp.tid()
     p0 = lines[tid, 0]
@@ -373,11 +373,11 @@ def update_line_transforms(
 
 @warp.kernel
 def compute_gfx_vertices(
-    indices: warp.array(dtype=int, ndim=2),
-    vertices: warp.array(dtype=warp.vec3, ndim=1),
+    indices: warp.array2d[warp.int32],
+    vertices: warp.array[warp.vec3],
     scale: warp.vec3,
     # outputs
-    gfx_vertices: warp.array(dtype=float, ndim=2),
+    gfx_vertices: warp.array2d[warp.float32],
 ):
     tid = warp.tid()
     v0 = warp.cw_mul(vertices[indices[tid, 0]], scale)
@@ -409,12 +409,12 @@ def compute_gfx_vertices(
 
 @warp.kernel
 def compute_average_normals(
-    indices: warp.array(dtype=int, ndim=2),
-    vertices: warp.array(dtype=warp.vec3),
+    indices: warp.array2d[warp.int32],
+    vertices: warp.array[warp.vec3],
     scale: warp.vec3,
     # outputs
-    normals: warp.array(dtype=warp.vec3),
-    faces_per_vertex: warp.array(dtype=int),
+    normals: warp.array[warp.vec3],
+    faces_per_vertex: warp.array[warp.int32],
 ):
     tid = warp.tid()
     i = indices[tid, 0]
@@ -434,12 +434,12 @@ def compute_average_normals(
 
 @warp.kernel
 def assemble_gfx_vertices(
-    vertices: warp.array(dtype=warp.vec3, ndim=1),
-    normals: warp.array(dtype=warp.vec3),
-    faces_per_vertex: warp.array(dtype=int),
+    vertices: warp.array[warp.vec3],
+    normals: warp.array[warp.vec3],
+    faces_per_vertex: warp.array[warp.int32],
     scale: warp.vec3,
     # outputs
-    gfx_vertices: warp.array(dtype=float, ndim=2),
+    gfx_vertices: warp.array2d[warp.float32],
 ):
     tid = warp.tid()
     v = vertices[tid]
@@ -454,11 +454,11 @@ def assemble_gfx_vertices(
 
 @warp.kernel
 def copy_rgb_frame(
-    input_img: warp.array(dtype=warp.uint8),
+    input_img: warp.array[warp.uint8],
     width: int,
     height: int,
     # outputs
-    output_img: warp.array(dtype=float, ndim=3),
+    output_img: warp.array3d[warp.float32],
 ):
     w, v = warp.tid()
     pixel = v * width + w
@@ -475,11 +475,11 @@ def copy_rgb_frame(
 
 @warp.kernel
 def copy_rgb_frame_uint8(
-    input_img: warp.array(dtype=warp.uint8),
+    input_img: warp.array[warp.uint8],
     width: int,
     height: int,
     # outputs
-    output_img: warp.array(dtype=warp.uint8, ndim=3),
+    output_img: warp.array3d[warp.uint8],
 ):
     w, v = warp.tid()
     pixel = v * width + w
@@ -493,13 +493,13 @@ def copy_rgb_frame_uint8(
 
 @warp.kernel
 def copy_depth_frame(
-    input_img: warp.array(dtype=warp.float32),
+    input_img: warp.array[warp.float32],
     width: int,
     height: int,
     near: float,
     far: float,
     # outputs
-    output_img: warp.array(dtype=warp.float32, ndim=3),
+    output_img: warp.array3d[warp.float32],
 ):
     w, v = warp.tid()
     pixel = v * width + w
@@ -512,13 +512,13 @@ def copy_depth_frame(
 
 @warp.kernel
 def copy_rgb_frame_tiles(
-    input_img: warp.array(dtype=warp.uint8),
-    positions: warp.array(dtype=int, ndim=2),
+    input_img: warp.array[warp.uint8],
+    positions: warp.array2d[warp.int32],
     screen_width: int,
     screen_height: int,
     tile_height: int,
     # outputs
-    output_img: warp.array(dtype=float, ndim=4),
+    output_img: warp.array4d[warp.float32],
 ):
     tile, x, y = warp.tid()
     p = positions[tile]
@@ -543,13 +543,13 @@ def copy_rgb_frame_tiles(
 
 @warp.kernel
 def copy_rgb_frame_tiles_uint8(
-    input_img: warp.array(dtype=warp.uint8),
-    positions: warp.array(dtype=int, ndim=2),
+    input_img: warp.array[warp.uint8],
+    positions: warp.array2d[warp.int32],
     screen_width: int,
     screen_height: int,
     tile_height: int,
     # outputs
-    output_img: warp.array(dtype=warp.uint8, ndim=4),
+    output_img: warp.array4d[warp.uint8],
 ):
     tile, x, y = warp.tid()
     p = positions[tile]
@@ -571,15 +571,15 @@ def copy_rgb_frame_tiles_uint8(
 
 @warp.kernel
 def copy_depth_frame_tiles(
-    input_img: warp.array(dtype=warp.float32),
-    positions: warp.array(dtype=int, ndim=2),
+    input_img: warp.array[warp.float32],
+    positions: warp.array2d[warp.int32],
     screen_width: int,
     screen_height: int,
     tile_height: int,
     near: float,
     far: float,
     # outputs
-    output_img: warp.array(dtype=warp.float32, ndim=4),
+    output_img: warp.array4d[warp.float32],
 ):
     tile, x, y = warp.tid()
     p = positions[tile]
@@ -598,14 +598,14 @@ def copy_depth_frame_tiles(
 
 @warp.kernel
 def copy_rgb_frame_tile(
-    input_img: warp.array(dtype=warp.uint8),
+    input_img: warp.array[warp.uint8],
     offset_x: int,
     offset_y: int,
     screen_width: int,
     screen_height: int,
     tile_height: int,
     # outputs
-    output_img: warp.array(dtype=float, ndim=4),
+    output_img: warp.array4d[warp.float32],
 ):
     tile, x, y = warp.tid()
     qx = x + offset_x
@@ -629,14 +629,14 @@ def copy_rgb_frame_tile(
 
 @warp.kernel
 def copy_rgb_frame_tile_uint8(
-    input_img: warp.array(dtype=warp.uint8),
+    input_img: warp.array[warp.uint8],
     offset_x: int,
     offset_y: int,
     screen_width: int,
     screen_height: int,
     tile_height: int,
     # outputs
-    output_img: warp.array(dtype=warp.uint8, ndim=4),
+    output_img: warp.array4d[warp.uint8],
 ):
     tile, x, y = warp.tid()
     qx = x + offset_x

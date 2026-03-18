@@ -5106,7 +5106,7 @@ add_builtin(
     doc="""Cooperatively sort the elements of two tiles in ascending order based on the keys, using all threads in the block.
 
     Args:
-        keys: Keys to sort by. Supported key types: :class:`float32`, :class:`int32`, :class:`uint32`, :class:`int64`, :class:`uint64`. Must be in shared memory.
+        keys: Keys to sort by. Supported key types: :class:`warp.float32`, :class:`warp.int32`, :class:`warp.uint32`, :class:`warp.int64`, :class:`warp.uint64`. Must be in shared memory.
         values: Values to sort along with keys. No type restrictions. Must be in shared memory.
 
     Returns:
@@ -7616,7 +7616,7 @@ add_builtin(
     input_types={"id": uint64, "uvw": vec3},
     value_type=int,
     group="Volumes",
-    doc="""Sample the :class:`int32` volume given by ``id`` at the volume local-space point ``uvw``.""",
+    doc="""Sample the :class:`warp.int32` volume given by ``id`` at the volume local-space point ``uvw``.""",
 )
 
 add_builtin(
@@ -7624,7 +7624,7 @@ add_builtin(
     input_types={"id": uint64, "i": int, "j": int, "k": int},
     value_type=int,
     group="Volumes",
-    doc="""Query the :class:`int32` value of voxel with coordinates ``i``, ``j``, ``k``.
+    doc="""Query the :class:`warp.int32` value of voxel with coordinates ``i``, ``j``, ``k``.
 
     If the voxel at this index does not exist, this function returns the background value.""",
     is_differentiable=False,

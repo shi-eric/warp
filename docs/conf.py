@@ -87,8 +87,6 @@ nitpick_ignore_regex = [
         r"py:class",
         r"(Scalar|Int|Float|Vector|Quaternion|Matrix|Array|Transformation|Tile|IndexedArray|IndexedFabricArray|FabricArray|Shape|DType|Any)",
     ),
-    # Concrete numeric types
-    (r"py:class", r"(int|uint|float)\d+"),
     # Array type parameters from warp.array() annotations (e.g., "dtype=warp.float32", "ndim=3")
     # Sphinx splits "warp.array(dtype=float, ndim=3)" and tries to resolve each part as a class.
     (r"py:class", r"(ndim|dtype)=.*"),
@@ -116,8 +114,6 @@ nitpick_ignore_regex = [
     (r"py:class", r"(optional|array-like|-|\d+)"),
     # Stringified property/cached_property objects leaking into type annotations
     (r"py:class", r"<(property|functools\.cached_property) object at .*>"),
-    # warp.DType / warp.dtype (not a real class in the Sphinx object inventory)
-    (r"py:class", r"warp\.[Dd][Tt]ype"),
     # Autosummary-generated member stubs for Warp classes (Texture*, fem.*, etc.)
     (r"py:obj", r"warp\.(Texture\w+|fixedarray|indexedarray|indexedfabricarray|fabricarray|fem\.).*"),
     # Internal C++/Python interop methods on geometric types
@@ -132,14 +128,8 @@ nitpick_ignore_regex = [
         r"py:obj",
         r".*\.(conjugate|bit_length|bit_count|to_bytes|from_bytes|as_integer_ratio|is_integer|real|imag|numerator|denominator)",
     ),
-    # FEM OUTSIDE constant (module-level, not exported to public API)
-    (r"py:data", r"OUTSIDE"),
     # jax_callable lives in warp.jax_experimental (jax itself is mocked)
     (r"py:func", r"warp\.jax_experimental\.jax_callable"),
-    # Internal/unexported FEM functions referenced in docstrings
-    (r"py:func", r"warp\.fem\.enforce_nanogrid_grading"),
-    # External OmniGraph function referenced in docstrings but defined outside this repo
-    (r"py:func", r"warp\.from_omni_graph_ptr"),
 ]
 
 

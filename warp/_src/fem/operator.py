@@ -267,7 +267,7 @@ def to_outer_cell(domain: Domain, s: Sample):
 def to_cell_side(domain: Domain, cell_s: Sample, side_index: ElementIndex):
     """Convert a :class:`Sample` defined on a cell to a sample defined on one of its side.
 
-    If the result does not lie on the side ``side_index``, the resulting coordinates will be set to :data:`OUTSIDE`.
+    If the result does not lie on the side ``side_index``, the resulting coordinates will be set to :data:`warp.fem.OUTSIDE`.
     """
     return make_free_sample(
         side_index,
