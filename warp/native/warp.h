@@ -36,6 +36,9 @@ WP_API int wp_is_debug_enabled();
 WP_API uint16_t wp_float_to_half_bits(float x);
 WP_API float wp_half_bits_to_float(uint16_t u);
 
+WP_API uint16_t wp_float_to_bfloat16_bits(float x);
+WP_API float wp_bfloat16_bits_to_float(uint16_t u);
+
 WP_API void* wp_alloc_host(size_t s);
 WP_API void* wp_alloc_pinned(size_t s);
 WP_API void* wp_alloc_device(void* context, size_t s);  // uses cudaMallocAsync() if supported, cudaMalloc() otherwise

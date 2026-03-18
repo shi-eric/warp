@@ -1224,6 +1224,53 @@ __device_forceinline__ __half atomicAdd(__half* const address, const __half val)
     return __short_as_half(old);
 }
 
+struct __nv_bfloat16 {
+    unsigned short u;
+};
+
+__device_forceinline__ unsigned short __bfloat16_as_short(const __nv_bfloat16 h) { return h.u; }
+
+__device_forceinline__ __nv_bfloat16 __short_as_bfloat16(const unsigned short s)
+{
+    __nv_bfloat16 h;
+    h.u = s;
+    return h;
+}
+
+__device_forceinline__ __nv_bfloat16 __hbf16add(const __nv_bfloat16 a, const __nv_bfloat16 b)
+{
+    unsigned int a_bits = static_cast<unsigned int>(a.u) << 16;
+    unsigned int b_bits = static_cast<unsigned int>(b.u) << 16;
+    float fa, fb;
+    memcpy(&fa, &a_bits, sizeof(fa));
+    memcpy(&fb, &b_bits, sizeof(fb));
+    float result = fa + fb;
+    unsigned int r_bits;
+    memcpy(&r_bits, &result, sizeof(r_bits));
+    // NaN or Inf (exponent all 1s) — just truncate, no rounding needed
+    if ((r_bits & 0x7F800000) != 0x7F800000) {
+        unsigned int rounding_bias = (r_bits >> 16) & 1;
+        r_bits += 0x7FFF + rounding_bias;
+    }
+    __nv_bfloat16 h;
+    h.u = static_cast<unsigned short>(r_bits >> 16);
+    return h;
+}
+
+__device_forceinline__ __nv_bfloat16 atomicAdd(__nv_bfloat16* const address, const __nv_bfloat16 val)
+{
+    unsigned short* address_as_us = (unsigned short*)address;
+    unsigned short old = *address_as_us;
+    unsigned short assumed;
+
+    do {
+        assumed = old;
+        old = atomicCAS(address_as_us, assumed, __bfloat16_as_short(__hbf16add(val, __short_as_bfloat16(assumed))));
+    } while (assumed != old);
+
+    return __short_as_bfloat16(old);
+}
+
 __device_forceinline__ double atomicAdd(double* const address, const double val) { return __dAtomicAdd(address, val); }
 
 __device_forceinline__ float atomicAdd(float* const address, const float val) { return __fAtomicAdd(address, val); }
