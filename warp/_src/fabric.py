@@ -75,6 +75,7 @@ def fabric_to_warp_dtype(type_info, attrib_name):
         "u4": warp.uint32,
         "u8": warp.uint64,
         "f2": warp.float16,
+        "bf2": warp.bfloat16,
         "f4": warp.float32,
         "f8": warp.float64,
     }
