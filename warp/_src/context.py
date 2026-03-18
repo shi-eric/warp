@@ -567,11 +567,16 @@ def extract_return_value(value_type: type, value_ctype: type, ret: Any) -> Any:
         # Legacy path before addressing GH-905.
         if value_type is warp._src.types.float16:
             return warp._src.types.half_bits_to_float(ret.value)
+        if value_type is warp._src.types.bfloat16:
+            return warp._src.types.bfloat16_bits_to_float(ret.value)
 
         return ret.value
 
     if value_type is warp._src.types.float16:
         return value_type(warp._src.types.half_bits_to_float(ret.value))
+
+    if value_type is warp._src.types.bfloat16:
+        return value_type(warp._src.types.bfloat16_bits_to_float(ret.value))
 
     if value_type in warp._src.types.native_scalar_types:
         # Return Python native values for backward compatibility.
@@ -591,6 +596,7 @@ class BuiltinParamKind(enum.Enum):
     BUILTIN_PREDEFINED = 2  # Predefined type like `vec3`, `mat22`, ...
     SCALAR = 3  # Float or integer value.
     SCALAR_FLOAT_16 = 4  # 16-bit float value.
+    SCALAR_BFLOAT_16 = 5  # 16-bit brain float value.
 
 
 class BuiltinCallDesc(NamedTuple):
@@ -667,6 +673,8 @@ def get_builtin_call_desc(
 
             if arg_type == warp._src.types.float16:
                 param_kind = BuiltinParamKind.SCALAR_FLOAT_16
+            elif arg_type == warp._src.types.bfloat16:
+                param_kind = BuiltinParamKind.SCALAR_BFLOAT_16
             else:
                 param_kind = BuiltinParamKind.SCALAR
 
@@ -711,6 +719,8 @@ def call_builtin_from_desc(
             c_params.append(arg_type._type_(param))
         elif param_kind == BuiltinParamKind.SCALAR_FLOAT_16:
             c_params.append(arg_type._type_(warp._src.types.float_to_half_bits(param)))
+        elif param_kind == BuiltinParamKind.SCALAR_BFLOAT_16:
+            c_params.append(arg_type._type_(warp._src.types.float_to_bfloat16_bits(param)))
         else:
             raise AssertionError(f"Unexpected parameter kind value `{param_kind}`")
 
@@ -2060,6 +2070,9 @@ class ModuleHasher:
             return bytes(ctypes.c_float(value))
         elif isinstance(value, warp._src.types.float16):
             # float16 is a special case
+            return bytes(ctypes.c_float(value.value))
+        elif isinstance(value, warp._src.types.bfloat16):
+            # bfloat16 is a special case
             return bytes(ctypes.c_float(value.value))
         elif isinstance(value, tuple(warp._src.types.scalar_and_bool_types)):
             return bytes(value._type_(value.value))
@@ -4059,6 +4072,11 @@ class Runtime:
             self.core.wp_float_to_half_bits.restype = ctypes.c_uint16
             self.core.wp_half_bits_to_float.argtypes = [ctypes.c_uint16]
             self.core.wp_half_bits_to_float.restype = ctypes.c_float
+
+            self.core.wp_float_to_bfloat16_bits.argtypes = [ctypes.c_float]
+            self.core.wp_float_to_bfloat16_bits.restype = ctypes.c_uint16
+            self.core.wp_bfloat16_bits_to_float.argtypes = [ctypes.c_uint16]
+            self.core.wp_bfloat16_bits_to_float.restype = ctypes.c_float
 
             self.core.wp_free_host.argtypes = [ctypes.c_void_p]
             self.core.wp_free_host.restype = None
@@ -6896,6 +6914,8 @@ def pack_arg(kernel, arg_type, arg_name, value, device, adjoint=False):
             # try to pack as a scalar type
             if arg_type is warp._src.types.float16:
                 return arg_type._type_(warp._src.types.float_to_half_bits(value.value))
+            elif arg_type is warp._src.types.bfloat16:
+                return arg_type._type_(warp._src.types.float_to_bfloat16_bits(value.value))
             else:
                 return arg_type._type_(value.value)
         except Exception as e:
@@ -6912,6 +6932,8 @@ def pack_arg(kernel, arg_type, arg_name, value, device, adjoint=False):
             # try to pack as a scalar type
             if arg_type is warp._src.types.float16:
                 return arg_type._type_(warp._src.types.float_to_half_bits(value))
+            elif arg_type is warp._src.types.bfloat16:
+                return arg_type._type_(warp._src.types.float_to_bfloat16_bits(value))
             else:
                 return arg_type._type_(value)
         except Exception as e:

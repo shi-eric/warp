@@ -8949,10 +8949,10 @@ def create_atomic_op_value_func(op: str):
 
         scalar_type = getattr(arr_type.dtype, "_wp_scalar_type_", arr_type.dtype)
         if op in ("add", "sub"):
-            supported_atomic_types = (*SUPPORTED_ATOMIC_TYPES, warp.float16)
+            supported_atomic_types = (*SUPPORTED_ATOMIC_TYPES, warp.float16, warp.bfloat16)
             if not any(types_equal_generic(scalar_type, x) for x in supported_atomic_types):
                 raise RuntimeError(
-                    f"atomic_{op}() operations only work on arrays with [u]int32, [u]int64, float16, float32, or float64 "
+                    f"atomic_{op}() operations only work on arrays with [u]int32, [u]int64, float16, bfloat16, float32, or float64 "
                     f"as the underlying scalar types, but got {type_repr(arr_type.dtype)} (with scalar type {type_repr(scalar_type)})"
                 )
         elif op in ("min", "max"):
@@ -11918,9 +11918,9 @@ def tile_matmul_lto_dispatch_func(
     if not is_tile(out.type):
         raise TypeError(f"tile_matmul() 'out' argument must be a tile, got {out!r}")
 
-    if any(arg.type.dtype not in [float16, float32, float64, vec2h, vec2f, vec2d] for arg in [a, b, out]):
+    if any(arg.type.dtype not in [float16, bfloat16, float32, float64, vec2h, vec2f, vec2d] for arg in [a, b, out]):
         raise TypeError(
-            "tile_matmul() arguments must be tiles of float16, float32 or float64, vec2h, vec2f, vec2d entries"
+            "tile_matmul() arguments must be tiles of float16, bfloat16, float32 or float64, vec2h, vec2f, vec2d entries"
         )
 
     if (
