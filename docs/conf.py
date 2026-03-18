@@ -73,29 +73,25 @@ extensions = [
 # Enable nitpicky mode to warn about unresolved references.
 nitpicky = True
 
-# Ignore warnings for Warp types in function signatures that Sphinx can't
-# resolve without fully qualified names (e.g., "int32" vs "warp.int32").
-# This includes:
-# - Type aliases (Scalar, Int, Float, Vector, Quaternion, Matrix, Array, Transformation, Tile)
-# - Array types (IndexedArray, IndexedFabricArray, FabricArray)
-# - Concrete types (int8, int16, int32, int64, uint8, uint16, uint32, uint64, float16, float32, float64)
-# - Array type parameters (ndim=3, dtype=float32) from wp.array() annotations
-# - Internal _src paths that leak into type annotations
+# Suppress warnings for types that Sphinx cannot resolve due to structural
+# limitations (dynamic ctypes types, py:data/py:class role mismatches,
+# mocked dependencies, runtime repr leaking into signatures, etc.).
 nitpick_ignore_regex = [
-    # Warp type aliases and meta-types
+    # Public type aliases indexed as py:data but referenced as py:class (Sphinx limitation)
+    (r"py:class", r"(warp\.)?(Scalar|Int|Float|DeviceLike)"),
+    # Internal meta-types used in builtin function signatures (not exported)
     (
         r"py:class",
-        r"(Scalar|Int|Float|Vector|Quaternion|Matrix|Array|Transformation|Tile|IndexedArray|IndexedFabricArray|FabricArray|Shape|DType|Any)",
+        r"(Vector|Quaternion|Matrix|Array|Transformation|Tile|IndexedArray|IndexedFabricArray|FabricArray|Shape|DType|Any)",
     ),
     # Array type parameters from warp.array() annotations (e.g., "dtype=warp.float32", "ndim=3")
     # Sphinx splits "warp.array(dtype=float, ndim=3)" and tries to resolve each part as a class.
     (r"py:class", r"(ndim|dtype)=.*"),
-    # Internal _src paths
+    # Internal _src paths that leak into annotations via from __future__ import annotations
+    # (411 warnings across ~65 files; fixing requires project-wide annotation refactor)
     (r"py:class", r"warp\._src\..*"),
     # Ctypes-based geometric types that can't be documented as classes (vec*, mat*, quat, etc.)
     (r"py:class", r"(warp\.)?(vec\d*[ihfd]?|mat\d+[ihfd]?|quat[hfd]?|spatial_(vector|matrix)[hfd]?|transform[hfd]?)"),
-    # Type aliases (DeviceLike is Union[Device, str, None])
-    (r"py:class", r"(warp\.)?DeviceLike"),
     # Type names used in FEM and internal annotations (e.g., Graph, Sample, Coords)
     (
         r"py:class",
@@ -104,14 +100,12 @@ nitpick_ignore_regex = [
         r"BsrMatrixOrExpression|_Var|_FuncParams|FunctionMetadata|KernelHooks|"
         r"launch_bounds_t|FieldRestriction|scalar)",
     ),
-    # FEM nested type annotations (e.g., Geometry.CellArg, FieldLike.EvalArg)
-    (r"py:class", r"\w+\.\w+Arg"),
-    # External types from mocked or optional dependencies
-    (r"py:class", r"(np\.ndarray|paddle\.Tensor|Usd\.Stage|_ctypes\.Structure|builtins\.bool)"),
+    # FEM nested type annotations (e.g., Geometry.CellArg, FunctionSpace.dof_dtype)
+    (r"py:class", r"\w+\.(\w*Arg|\w*dtype|LocalValueMap)"),
+    # External/mocked types and builtins.bool (Warp shadows bool, forcing builtins.bool in annotations)
+    (r"py:class", r"(paddle\.Tensor|Usd\.Stage|_ctypes\.Structure|builtins\.bool)"),
     # numpy internal type annotations
     (r"py:class", r"numpy\..*"),
-    # Annotation artifacts from type signatures (e.g., "optional", "array-like", "-", "3", "4")
-    (r"py:class", r"(optional|array-like|-|\d+)"),
     # Stringified property/cached_property objects leaking into type annotations
     (r"py:class", r"<(property|functools\.cached_property) object at .*>"),
     # Autosummary-generated member stubs for Warp classes (Texture*, fem.*, etc.)

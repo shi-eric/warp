@@ -498,7 +498,7 @@ def create_transform_from_matrix_func(dtype):
         * :math:`p` is the 3D position vector :math:`[p_x, p_y, p_z]` extracted from the input matrix.
 
         Args:
-            mat (Matrix[Float, 4, 4]): Matrix to convert.
+            mat (Matrix[Float, Literal[4], Literal[4]]): Matrix to convert.
 
         Returns:
             Transformation[Float]: The transformation.
@@ -548,7 +548,7 @@ def create_transform_to_matrix_func(dtype):
             xform (Transformation[Float]): Transformation to convert.
 
         Returns:
-            Matrix[Float, 4, 4]: The matrix.
+            Matrix[Float, Literal[4], Literal[4]]: The matrix.
         """
         p = warp.transform_get_translation(xform)
         q = warp.transform_get_rotation(xform)
@@ -602,12 +602,12 @@ def create_transform_compose_func(dtype):
         * :math:`s` is the input 3D scale vector :math:`[s_x, s_y, s_z]`.
 
         Args:
-            position (Vector[Float, 3]): The 3D position vector.
+            position (Vector[Float, Literal[3]]): The 3D position vector.
             rotation (Quaternion[Float]): The quaternion orientation.
-            scale (Vector[Float, 3]): The 3D scale vector.
+            scale (Vector[Float, Literal[3]]): The 3D scale vector.
 
         Returns:
-            Matrix[Float, 4, 4]: The transformation matrix.
+            Matrix[Float, Literal[4], Literal[4]]: The transformation matrix.
         """
         R = warp.quat_to_matrix(rotation)
         # fmt: off
@@ -660,10 +660,10 @@ def create_transform_decompose_func(dtype):
         * :math:`s` is the 3D scale vector :math:`[s_x, s_y, s_z]` extracted from the input matrix.
 
         Args:
-            m (Matrix[Float, 4, 4]): The matrix to decompose.
+            m (Matrix[Float, Literal[4], Literal[4]]): The matrix to decompose.
 
         Returns:
-            Tuple[Vector[Float, 3], Quaternion[Float], Vector[Float, 3]]: A tuple containing the position vector, quaternion orientation, and scale vector.
+            Tuple[Vector[Float, Literal[3]], Quaternion[Float], Vector[Float, Literal[3]]]: A tuple containing the position vector, quaternion orientation, and scale vector.
         """
         # extract position
         position = vec3(m[0, 3], m[1, 3], m[2, 3])

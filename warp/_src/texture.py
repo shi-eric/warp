@@ -194,7 +194,7 @@ class Texture:
     def __init__(
         self,
         ndim: int,
-        data: np.ndarray | array | None = None,
+        data: numpy.ndarray | array | None = None,
         width: int = 0,
         height: int = 0,
         depth: int = 0,
@@ -511,7 +511,7 @@ class Texture:
         else:
             return (*shape, self._num_channels)
 
-    def copy_from(self, src: array | np.ndarray | Texture):
+    def copy_from(self, src: array | numpy.ndarray | Texture):
         """Copy texture data from a source.
 
         Args:
@@ -601,7 +601,7 @@ class Texture:
             self_array = array(ptr=self._host_ptr, shape=self._get_shape(), dtype=self.dtype, device=self.device)
             warp._src.context.copy(self_array, src)
 
-    def copy_to(self, dst: array | np.ndarray | Texture):
+    def copy_to(self, dst: array | numpy.ndarray | Texture):
         """Copy texture data to a destination.
 
         Args:
@@ -921,7 +921,7 @@ class Texture1D(Texture):
 
     def __init__(
         self,
-        data: np.ndarray | array | None = None,
+        data: numpy.ndarray | array | None = None,
         width: int = 0,
         num_channels: int = 0,
         dtype=None,
@@ -997,7 +997,7 @@ class Texture2D(Texture):
 
     def __init__(
         self,
-        data: np.ndarray | array | None = None,
+        data: numpy.ndarray | array | None = None,
         width: int = 0,
         height: int = 0,
         num_channels: int = 0,
@@ -1075,7 +1075,7 @@ class Texture3D(Texture):
 
     def __init__(
         self,
-        data: np.ndarray | array | None = None,
+        data: numpy.ndarray | array | None = None,
         width: int = 0,
         height: int = 0,
         depth: int = 0,
