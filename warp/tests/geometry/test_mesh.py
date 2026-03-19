@@ -130,9 +130,9 @@ def query_point_kernel(
 
 def test_mesh_query_point(test, device):
     if device.is_cpu:
-        constructors = ["sah", "median"]
+        constructors = ["sah", "median", "cubql"]
     else:
-        constructors = ["sah", "median", "lbvh"]
+        constructors = ["sah", "median", "lbvh", "cubql"]
 
     for constructor in constructors:
         points = wp.array(POINT_POSITIONS, dtype=wp.vec3, device=device)

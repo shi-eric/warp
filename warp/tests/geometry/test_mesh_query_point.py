@@ -333,19 +333,20 @@ def test_mesh_query_point(test, device):
     mesh_indices = wp.array(np.array(tri_indices), dtype=int, device=device)
 
     if device.is_cpu:
-        constructors = ["sah", "median"]
+        constructors = ["sah", "median", "cubql"]
     else:
-        constructors = ["sah", "median", "lbvh"]
+        constructors = ["sah", "median", "lbvh", "cubql"]
 
     leaf_sizes = [1, 2, 4]
 
     for leaf_size, constructor in itertools.product(leaf_sizes, constructors):
+        is_cubql = constructor == "cubql"
         # create mesh
         mesh = wp.Mesh(
             points=mesh_points,
             velocities=None,
             indices=mesh_indices,
-            support_winding_number=True,
+            support_winding_number=not is_cubql,
             bvh_constructor=constructor,
             bvh_leaf_size=leaf_size,
         )
@@ -392,25 +393,27 @@ def test_mesh_query_point(test, device):
             device=device,
         )
 
-        wp.launch(
-            kernel=sample_mesh_query_sign_normal,
-            dim=query_count,
-            inputs=[mesh.id, query_points, faces_query_normal, signs_query_normal, dist_query_normal],
-            device=device,
-        )
+        if not is_cubql:
+            wp.launch(
+                kernel=sample_mesh_query_sign_normal,
+                dim=query_count,
+                inputs=[mesh.id, query_points, faces_query_normal, signs_query_normal, dist_query_normal],
+                device=device,
+            )
 
-        wp.launch(
-            kernel=sample_mesh_query_sign_winding_number,
-            dim=query_count,
-            inputs=[
-                mesh.id,
-                query_points,
-                faces_query_winding_number,
-                signs_query_winding_number,
-                dist_query_winding_number,
-            ],
-            device=device,
-        )
+        if not is_cubql:
+            wp.launch(
+                kernel=sample_mesh_query_sign_winding_number,
+                dim=query_count,
+                inputs=[
+                    mesh.id,
+                    query_points,
+                    faces_query_winding_number,
+                    signs_query_winding_number,
+                    dist_query_winding_number,
+                ],
+                device=device,
+            )
 
         wp.launch(
             kernel=sample_mesh_query_sign_parity,
@@ -508,8 +511,9 @@ def test_mesh_query_point(test, device):
         # stage.save()
 
         test.assertTrue(len(inside_query) == len(inside_brute))
-        test.assertTrue(len(inside_query_normal) == len(inside_brute))
-        test.assertTrue(len(inside_query_winding_number) == len(inside_brute))
+        if not is_cubql:
+            test.assertTrue(len(inside_query_normal) == len(inside_brute))
+            test.assertTrue(len(inside_query_winding_number) == len(inside_brute))
         test.assertTrue(len(inside_query_parity) == len(inside_brute))
 
         tolerance = 1.5e-4
@@ -528,24 +532,28 @@ def test_mesh_query_point(test, device):
         dist_error = np.max(np.abs(dist_query_normal - dist_brute))
         sign_error = np.max(np.abs(inside_query_normal - inside_brute))
 
-        test.assertTrue(
-            dist_error < tolerance, f"mesh_query_point_sign_normal dist_error is {dist_error} which is >= {tolerance}"
-        )
-        test.assertTrue(
-            sign_error < tolerance, f"mesh_query_point_sign_normal sign_error is {sign_error} which is >= {tolerance}"
-        )
+        if not is_cubql:
+            test.assertTrue(
+                dist_error < tolerance,
+                f"mesh_query_point_sign_normal dist_error is {dist_error} which is >= {tolerance}",
+            )
+            test.assertTrue(
+                sign_error < tolerance,
+                f"mesh_query_point_sign_normal sign_error is {sign_error} which is >= {tolerance}",
+            )
 
         dist_error = np.max(np.abs(dist_query_winding_number - dist_brute))
         sign_error = np.max(np.abs(inside_query_winding_number - inside_brute))
 
-        test.assertTrue(
-            dist_error < tolerance,
-            f"mesh_query_point_sign_winding_number dist_error is {dist_error} which is >= {tolerance}",
-        )
-        test.assertTrue(
-            sign_error < tolerance,
-            f"mesh_query_point_sign_winding_number sign_error is {sign_error} which is >= {tolerance}",
-        )
+        if not is_cubql:
+            test.assertTrue(
+                dist_error < tolerance,
+                f"mesh_query_point_sign_winding_number dist_error is {dist_error} which is >= {tolerance}",
+            )
+            test.assertTrue(
+                sign_error < tolerance,
+                f"mesh_query_point_sign_winding_number sign_error is {sign_error} which is >= {tolerance}",
+            )
 
         dist_error = np.max(np.abs(dist_query_parity - dist_brute))
         sign_error = np.max(np.abs(inside_query_parity - inside_brute))
@@ -603,9 +611,9 @@ def test_adj_mesh_query_point(test, device):
     mesh_indices = wp.array(np.array(tri_indices), dtype=int, device=device)
 
     if device.is_cpu:
-        constructors = ["sah", "median"]
+        constructors = ["sah", "median", "cubql"]
     else:
-        constructors = ["sah", "median", "lbvh"]
+        constructors = ["sah", "median", "lbvh", "cubql"]
 
     for constructor in constructors:
         # test tri
@@ -613,12 +621,13 @@ def test_adj_mesh_query_point(test, device):
         # mesh_points = wp.array(np.array([[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 2.0, 0.0]]), dtype=wp.vec3, device=device)
         # mesh_indices = wp.array(np.array([0,1,2]), dtype=int, device=device)
 
+        is_cubql = constructor == "cubql"
         # create mesh
         mesh = wp.Mesh(
             points=mesh_points,
             velocities=None,
             indices=mesh_indices,
-            support_winding_number=True,
+            support_winding_number=not is_cubql,
             bvh_constructor=constructor,
         )
 
@@ -878,9 +887,9 @@ def point_query_aabb_and_closest(
 @unittest.skipUnless(USD_AVAILABLE, "Requires usd-core")
 def test_set_mesh_points(test, device):
     if device.is_cpu:
-        constructors = ["sah", "median"]
+        constructors = ["sah", "median", "cubql"]
     else:
-        constructors = ["sah", "median", "lbvh"]
+        constructors = ["sah", "median", "lbvh", "cubql"]
 
     rng = np.random.default_rng(123)
 

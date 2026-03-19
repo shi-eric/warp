@@ -71,13 +71,47 @@ def sample_mesh_query_signed(
         query_closest_points[tid] = cp
 
 
+@wp.kernel
+def sample_mesh_query_sign_parity(
+    mesh: wp.uint64,
+    query_points: wp.array(dtype=wp.vec3),
+    query_d_max: float,
+    query_closest_points: wp.array(dtype=wp.vec3),
+):
+    tid = wp.tid()
+    p = query_points[tid]
+    query = wp.mesh_query_point_sign_parity(mesh, p, query_d_max)
+
+    if query.result:
+        face = query.face
+        cp = wp.vec3(float(face), query.u, query.v)
+        query_closest_points[tid] = cp
+
+
+@wp.kernel
+def sample_mesh_query_ray(
+    mesh: wp.uint64,
+    ray_origins: wp.array(dtype=wp.vec3),
+    ray_dirs: wp.array(dtype=wp.vec3),
+    max_t: float,
+    hit_results: wp.array(dtype=wp.vec3),
+):
+    tid = wp.tid()
+    o = ray_origins[tid]
+    d = ray_dirs[tid]
+    query = wp.mesh_query_ray(mesh, o, d, max_t)
+
+    if query.result:
+        hit_results[tid] = wp.vec3(query.t, query.u, query.v)
+
+
 class MeshQuery:
-    params = [[0, 8], ["bunny", "bear", "rocks"]]
-    param_names = ["leaf_size", "asset"]
+    params = [[0, 8], ["bunny", "bear", "rocks"], ["default", "cubql"]]
+    param_names = ["leaf_size", "asset", "bvh_constructor"]
     number = 20
     timeout = 60
 
-    def setup(self, leaf_size, asset):
+    def setup(self, leaf_size, asset, bvh_constructor):
         from pxr import Usd, UsdGeom
 
         wp.init()
@@ -100,21 +134,19 @@ class MeshQuery:
         )
         self.query_points = wp.array(query_points_np, dtype=wp.vec3, device=self.device)
 
-        # create wp mesh
-        if leaf_size == 0:
-            self.mesh = wp.Mesh(
-                points=wp.array(points, dtype=wp.vec3, device=self.device),
-                velocities=None,
-                indices=wp.array(indices, dtype=int, device=self.device),
-            )
+        mesh_kwargs = {
+            "points": wp.array(points, dtype=wp.vec3, device=self.device),
+            "velocities": None,
+            "indices": wp.array(indices, dtype=int, device=self.device),
+        }
+        if bvh_constructor == "cubql":
+            mesh_kwargs["bvh_constructor"] = "cubql"
+            if leaf_size != 0:
+                mesh_kwargs["bvh_leaf_size"] = leaf_size
+        elif leaf_size != 0:
+            mesh_kwargs["bvh_leaf_size"] = leaf_size
 
-        else:
-            self.mesh = wp.Mesh(
-                points=wp.array(points, dtype=wp.vec3, device=self.device),
-                velocities=None,
-                indices=wp.array(indices, dtype=int, device=self.device),
-                bvh_leaf_size=leaf_size,
-            )
+        self.mesh = wp.Mesh(**mesh_kwargs)
 
         self.query_closest_points = wp.empty_like(self.query_points, device=self.device)
 
@@ -133,19 +165,105 @@ class MeshQuery:
             device=self.device,
             record_cmd=True,
         )
+
+        self.cmd_sign_parity = wp.launch(
+            sample_mesh_query_sign_parity,
+            dim=(NUM_QUERY_POINTS,),
+            inputs=[self.mesh.id, self.query_points, 1.0e7, self.query_closest_points],
+            device=self.device,
+            record_cmd=True,
+        )
+
         # Warmup
         self.cmd_no_sign.launch()
         self.cmd_signed.launch()
+        self.cmd_sign_parity.launch()
         wp.synchronize_device(self.device)
 
     @skip_benchmark_if(USD_AVAILABLE is False)
-    def time_mesh_query_closest_point(self, leaf_size, asset):
+    def time_mesh_query_closest_point(self, leaf_size, asset, bvh_constructor):
         self.cmd_no_sign.launch()
         wp.synchronize_device(self.device)
 
     @skip_benchmark_if(USD_AVAILABLE is False)
-    def time_mesh_query_closest_point_signed(self, leaf_size, asset):
+    def time_mesh_query_closest_point_signed(self, leaf_size, asset, bvh_constructor):
         self.cmd_signed.launch()
+        wp.synchronize_device(self.device)
+
+    @skip_benchmark_if(USD_AVAILABLE is False)
+    def time_mesh_query_closest_point_sign_parity(self, leaf_size, asset, bvh_constructor):
+        self.cmd_sign_parity.launch()
+        wp.synchronize_device(self.device)
+
+
+class MeshRayQuery:
+    """Dedicated mesh ray query benchmark with random rays."""
+
+    params = [[0, 8], ["bunny", "bear", "rocks"], ["default", "cubql"]]
+    param_names = ["leaf_size", "asset", "bvh_constructor"]
+    number = 20
+    timeout = 60
+
+    def setup(self, leaf_size, asset, bvh_constructor):
+        from pxr import Usd, UsdGeom
+
+        wp.init()
+        self.device = wp.get_device("cuda:0")
+        wp.load_module(device=self.device)
+
+        asset_stage = Usd.Stage.Open(os.path.join(warp.examples.get_asset_directory(), f"{asset}.usd"))
+        mesh_geom = UsdGeom.Mesh(asset_stage.GetPrimAtPath(f"/root/{asset}"))
+
+        points = np.array(mesh_geom.GetPointsAttr().Get())
+        indices = np.array(mesh_geom.GetFaceVertexIndicesAttr().Get())
+        bounding_box = np.array([points.min(axis=0), points.max(axis=0)])
+
+        global seed
+        rng = np.random.default_rng(seed)
+        seed = seed + 1
+
+        # Generate random ray origins inside the bounding box
+        ray_origins_np = rng.uniform(bounding_box[0, :], bounding_box[1, :], size=(NUM_QUERY_POINTS, 3)).astype(
+            np.float32
+        )
+        self.ray_origins = wp.array(ray_origins_np, dtype=wp.vec3, device=self.device)
+
+        # Generate random ray directions (normalized)
+        ray_dirs_np = rng.standard_normal(size=(NUM_QUERY_POINTS, 3)).astype(np.float32)
+        ray_dirs_np /= np.linalg.norm(ray_dirs_np, axis=1, keepdims=True)
+        self.ray_dirs = wp.array(ray_dirs_np, dtype=wp.vec3, device=self.device)
+
+        mesh_kwargs = {
+            "points": wp.array(points, dtype=wp.vec3, device=self.device),
+            "velocities": None,
+            "indices": wp.array(indices, dtype=int, device=self.device),
+        }
+        if bvh_constructor == "cubql":
+            mesh_kwargs["bvh_constructor"] = "cubql"
+            if leaf_size != 0:
+                mesh_kwargs["bvh_leaf_size"] = leaf_size
+        elif leaf_size != 0:
+            mesh_kwargs["bvh_leaf_size"] = leaf_size
+
+        self.mesh = wp.Mesh(**mesh_kwargs)
+
+        self.hit_results = wp.zeros(NUM_QUERY_POINTS, dtype=wp.vec3, device=self.device)
+
+        self.cmd_ray = wp.launch(
+            sample_mesh_query_ray,
+            dim=(NUM_QUERY_POINTS,),
+            inputs=[self.mesh.id, self.ray_origins, self.ray_dirs, 1.0e7, self.hit_results],
+            device=self.device,
+            record_cmd=True,
+        )
+
+        # Warmup
+        self.cmd_ray.launch()
+        wp.synchronize_device(self.device)
+
+    @skip_benchmark_if(USD_AVAILABLE is False)
+    def time_mesh_query_ray(self, leaf_size, asset, bvh_constructor):
+        self.cmd_ray.launch()
         wp.synchronize_device(self.device)
 
 
@@ -360,13 +478,13 @@ def replicate_mesh_with_random_perturbation(
 
 
 class BvhAABBQuery:
-    params = [[0.002, 0.004, 0.008], [0, 8], ["cpu", "cuda"]]
-    param_names = ["query_radius", "leaf_size", "device"]
+    params = [[0.002, 0.004, 0.008], [0, 8], ["cpu", "cuda"], ["default", "cubql"]]
+    param_names = ["query_radius", "leaf_size", "device", "bvh_constructor"]
 
     number = 5
     timeout = 120
 
-    def setup(self, query_radius, leaf_size, device):
+    def setup(self, query_radius, leaf_size, device, bvh_constructor):
         with wp.ScopedDevice(device):
             from pxr import Usd, UsdGeom
 
@@ -421,12 +539,14 @@ class BvhAABBQuery:
                 outputs=[self.lowers, self.uppers],
             )
 
-            if leaf_size == 0:
-                self.bvh = wp.Bvh(self.lowers, self.uppers)
-                self.mesh = wp.Mesh(self.points, wp.array(indices, dtype=int))
-            else:
-                self.bvh = wp.Bvh(self.lowers, self.uppers, leaf_size=leaf_size)
-                self.mesh = wp.Mesh(self.points, wp.array(indices, dtype=int), bvh_leaf_size=leaf_size)
+            bvh_kwargs = {"constructor": bvh_constructor} if bvh_constructor != "default" else {}
+            mesh_kwargs = {"bvh_constructor": bvh_constructor} if bvh_constructor != "default" else {}
+            if leaf_size != 0:
+                bvh_kwargs["leaf_size"] = leaf_size
+                mesh_kwargs["bvh_leaf_size"] = leaf_size
+
+            self.bvh = wp.Bvh(self.lowers, self.uppers, **bvh_kwargs)
+            self.mesh = wp.Mesh(self.points, wp.array(indices, dtype=int), **mesh_kwargs)
 
             buffer_size_per_vertex = 32
             self.vertex_colliding_triangles_offsets = wp.array(
@@ -505,10 +625,14 @@ class BvhAABBQuery:
                 wp.synchronize_device(self.device)
 
     @skip_for_params(
-        [t for t in list(itertools.product([0.002, 0.004, 0.008], [0, 8], ["cpu"])) if t != (0.002, 0, "cpu")]
+        [
+            t
+            for t in list(itertools.product([0.002, 0.004, 0.008], [0, 8], ["cpu"], ["default", "cubql"]))
+            if t != (0.002, 0, "cpu", "default") and t != (0.002, 0, "cpu", "cubql")
+        ]
     )
     @skip_benchmark_if(USD_AVAILABLE is False)
-    def time_bvh_aabb_vs_aabb_query(self, query_radius, leaf_size, device):
+    def time_bvh_aabb_vs_aabb_query(self, query_radius, leaf_size, device, bvh_constructor):
         if self.bvh.device.is_cpu:
             self.cmd_bvh.launch()
         else:
@@ -516,10 +640,14 @@ class BvhAABBQuery:
         wp.synchronize_device(self.device)
 
     @skip_for_params(
-        [t for t in list(itertools.product([0.002, 0.004, 0.008], [0, 8], ["cpu"])) if t != (0.002, 0, "cpu")]
+        [
+            t
+            for t in list(itertools.product([0.002, 0.004, 0.008], [0, 8], ["cpu"], ["default", "cubql"]))
+            if t != (0.002, 0, "cpu", "default") and t != (0.002, 0, "cpu", "cubql")
+        ]
     )
     @skip_benchmark_if(USD_AVAILABLE is False)
-    def time_mesh_aabb_vs_aabb_query(self, query_radius, leaf_size, device):
+    def time_mesh_aabb_vs_aabb_query(self, query_radius, leaf_size, device, bvh_constructor):
         if self.bvh.device.is_cpu:
             self.cmd_mesh.launch()
         else:
@@ -528,13 +656,13 @@ class BvhAABBQuery:
 
 
 class BvhRayQuery:
-    params = [[480, 1080], [0, 8], ["cpu", "cuda"]]
-    param_names = ["resolution", "leaf_size", "device"]
+    params = [[480, 1080], [0, 8], ["cpu", "cuda"], ["default", "cubql"]]
+    param_names = ["resolution", "leaf_size", "device", "bvh_constructor"]
 
     number = 5
     timeout = 120
 
-    def setup(self, resolution, leaf_size, device):
+    def setup(self, resolution, leaf_size, device, bvh_constructor):
         cam_pos = wp.vec3(0.0, 0.75, 7.0)
         cam_rot = wp.quat(0.0, 0.0, 0.0, 1.0)
         horizontal_aperture = 36.0
@@ -586,12 +714,14 @@ class BvhRayQuery:
                 inputs=[self.points, self.indices],
                 outputs=[self.lowers, self.uppers],
             )
-            if leaf_size == 0:
-                self.bvh = wp.Bvh(self.lowers, self.uppers)
-                self.mesh = wp.Mesh(self.points, wp.array(indices, dtype=int))
-            else:
-                self.bvh = wp.Bvh(self.lowers, self.uppers, leaf_size=leaf_size)
-                self.mesh = wp.Mesh(self.points, wp.array(indices, dtype=int), bvh_leaf_size=leaf_size)
+            bvh_kwargs = {"constructor": bvh_constructor} if bvh_constructor != "default" else {}
+            mesh_kwargs = {"bvh_constructor": bvh_constructor} if bvh_constructor != "default" else {}
+            if leaf_size != 0:
+                bvh_kwargs["leaf_size"] = leaf_size
+                mesh_kwargs["bvh_leaf_size"] = leaf_size
+
+            self.bvh = wp.Bvh(self.lowers, self.uppers, **bvh_kwargs)
+            self.mesh = wp.Mesh(self.points, wp.array(indices, dtype=int), **mesh_kwargs)
 
             bb_min = bounding_box[0]
             bb_max = bounding_box[1]
@@ -704,18 +834,30 @@ class BvhRayQuery:
                 wp.capture_launch(self.cuda_graph_mesh_ray_vs_aabb)
                 wp.synchronize_device()
 
-    @skip_for_params([t for t in itertools.product([480, 1080], [0, 8], ["cpu"]) if t != (480, 0, "cpu")])
+    @skip_for_params(
+        [
+            t
+            for t in itertools.product([480, 1080], [0, 8], ["cpu"], ["default", "cubql"])
+            if t != (480, 0, "cpu", "default") and t != (480, 0, "cpu", "cubql")
+        ]
+    )
     @skip_benchmark_if(USD_AVAILABLE is False)
-    def time_bvh_ray_vs_aabb_query(self, resolution, leaf_size, device):
+    def time_bvh_ray_vs_aabb_query(self, resolution, leaf_size, device, bvh_constructor):
         if self.bvh.device.is_cpu:
             self.cmd_bvh_query.launch()
         else:
             wp.capture_launch(self.cuda_graph_bvh_ray_vs_aabb)
         wp.synchronize_device()
 
-    @skip_for_params([t for t in itertools.product([480, 1080], [0, 8], ["cpu"]) if t != (480, 0, "cpu")])
+    @skip_for_params(
+        [
+            t
+            for t in itertools.product([480, 1080], [0, 8], ["cpu"], ["default", "cubql"])
+            if t != (480, 0, "cpu", "default") and t != (480, 0, "cpu", "cubql")
+        ]
+    )
     @skip_benchmark_if(USD_AVAILABLE is False)
-    def time_mesh_ray_vs_aabb_query(self, resolution, leaf_size, device):
+    def time_mesh_ray_vs_aabb_query(self, resolution, leaf_size, device, bvh_constructor):
         if self.bvh.device.is_cpu:
             self.cmd_mesh_query.launch()
         else:

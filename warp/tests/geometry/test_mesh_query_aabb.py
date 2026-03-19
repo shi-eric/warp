@@ -279,9 +279,9 @@ def load_mesh():
 @unittest.skipUnless(USD_AVAILABLE, "Requires usd-core")
 def test_mesh_query_aabb_count_overlap_with_checksum(test, device):
     if device.is_cpu:
-        constructors = ["sah", "median"]
+        constructors = ["sah", "median", "cubql"]
     else:
-        constructors = ["sah", "median", "lbvh"]
+        constructors = ["sah", "median", "lbvh", "cubql"]
 
     leaf_sizes = [1, 2, 4]
 

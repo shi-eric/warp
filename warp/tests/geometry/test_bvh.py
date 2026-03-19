@@ -63,7 +63,7 @@ def intersect_ray_aabb(start, rcp_dir, lower, upper):
         return 0
 
 
-def test_bvh(test, type, device, leaf_size):
+def test_bvh(test, type, device, leaf_size, constructor=None):
     rng = np.random.default_rng(123)
 
     num_bounds = 100
@@ -73,7 +73,7 @@ def test_bvh(test, type, device, leaf_size):
     device_lowers = wp.array(lowers, dtype=wp.vec3, device=device)
     device_uppers = wp.array(uppers, dtype=wp.vec3, device=device)
 
-    bvh = wp.Bvh(device_lowers, device_uppers, leaf_size=leaf_size)
+    bvh = wp.Bvh(device_lowers, device_uppers, leaf_size=leaf_size, constructor=constructor)
 
     bounds_intersected = wp.zeros(shape=(num_bounds), dtype=int, device=device)
 
@@ -127,6 +127,16 @@ def test_bvh_query_aabb(test, device):
 def test_bvh_query_ray(test, device):
     for leaf_size in [1, 2, 4]:
         test_bvh(test, "ray", device, leaf_size)
+
+
+def test_bvh_query_aabb_cubql(test, device):
+    for leaf_size in [1, 2, 4]:
+        test_bvh(test, "AABB", device, leaf_size, constructor="cubql")
+
+
+def test_bvh_query_ray_cubql(test, device):
+    for leaf_size in [1, 2, 4]:
+        test_bvh(test, "ray", device, leaf_size, constructor="cubql")
 
 
 def test_bvh_ray_query_inside_and_outside_bounds(test, device):
@@ -684,6 +694,8 @@ class TestBvh(unittest.TestCase):
 
 add_function_test(TestBvh, "test_bvh_aabb", test_bvh_query_aabb, devices=devices)
 add_function_test(TestBvh, "test_bvh_ray", test_bvh_query_ray, devices=devices)
+add_function_test(TestBvh, "test_bvh_aabb_cubql", test_bvh_query_aabb_cubql, devices=devices)
+add_function_test(TestBvh, "test_bvh_ray_cubql", test_bvh_query_ray_cubql, devices=devices)
 add_function_test(
     TestBvh,
     "test_bvh_ray_query_inside_and_outside_bounds",

@@ -11,6 +11,10 @@
 - **Experimental**: Add cuBQL BVH backend for `wp.Mesh`, selectable via `bvh_constructor="cubql"`.
   Currently only supports `wp.mesh_query_ray()`. Point queries, AABB queries, grouped queries,
   and winding number queries are not yet supported ([GH-1286](https://github.com/NVIDIA/warp/issues/1286)).
+- Extend cuBQL BVH backend to support `wp.mesh_query_point()`, `wp.mesh_query_point_no_sign()`,
+  `wp.mesh_query_point_sign_parity()`, and `wp.mesh_query_aabb()` for `wp.Mesh`.
+- Add cuBQL constructor support for standalone `wp.Bvh` via `constructor="cubql"`,
+  enabling cuBQL-accelerated AABB and ray queries.
 
 ### Removed
 

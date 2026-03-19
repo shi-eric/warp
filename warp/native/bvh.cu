@@ -947,21 +947,31 @@ void cubql_bvh_rebuild_device(CuBQLBVH&) { }
 
 void wp_bvh_refit_device(uint64_t id)
 {
-    wp::BVH bvh;
-    if (bvh_get_descriptor(id, bvh)) {
-        ContextGuard guard(bvh.context);
-
-        wp::bvh_refit_device(bvh);
+    wp::BVHCombined combined;
+    if (wp::bvh_combined_get_descriptor(id, combined)) {
+        if (combined.bvh_backend == wp::BVH_BACKEND_CUBQL) {
+            ContextGuard guard(combined.cubql_bvh.context);
+            wp::cubql_bvh_refit_device(combined.cubql_bvh);
+        } else {
+            ContextGuard guard(combined.bvh.context);
+            wp::bvh_refit_device(combined.bvh);
+        }
     }
 }
 
 void wp_bvh_rebuild_device(uint64_t id)
 {
-    wp::BVH bvh;
-    if (bvh_get_descriptor(id, bvh)) {
-        ContextGuard guard(bvh.context);
-
-        wp::bvh_rebuild_device(bvh);
+    wp::BVHCombined combined;
+    if (wp::bvh_combined_get_descriptor(id, combined)) {
+        if (combined.bvh_backend == wp::BVH_BACKEND_CUBQL) {
+            ContextGuard guard(combined.cubql_bvh.context);
+            wp::cubql_bvh_rebuild_device(combined.cubql_bvh);
+            wp::bvh_combined_add_descriptor(id, combined);
+            wp_memcpy_h2d(WP_CURRENT_CONTEXT, (void*)id, &combined, sizeof(wp::BVHCombined));
+        } else {
+            ContextGuard guard(combined.bvh.context);
+            wp::bvh_rebuild_device(combined.bvh);
+        }
     }
 }
 
@@ -977,83 +987,44 @@ uint64_t wp_bvh_create_device(
 )
 {
     ContextGuard guard(context);
-    wp::BVH bvh_device_on_host;
-    wp::BVH* bvh_device_ptr = nullptr;
 
-    wp::bvh_create_device(
-        WP_CURRENT_CONTEXT, lowers, uppers, num_items, constructor_type, groups, leaf_size, bvh_device_on_host
-    );
+    wp::BVHCombined combined_host;
+    memset(&combined_host, 0, sizeof(wp::BVHCombined));
 
-    // create device-side BVH descriptor
-    bvh_device_ptr = (wp::BVH*)wp_alloc_device(WP_CURRENT_CONTEXT, sizeof(wp::BVH));
-    wp_memcpy_h2d(WP_CURRENT_CONTEXT, bvh_device_ptr, &bvh_device_on_host, sizeof(wp::BVH));
-
-    uint64_t bvh_id = (uint64_t)bvh_device_ptr;
-    wp::bvh_add_descriptor(bvh_id, bvh_device_on_host);
-    return bvh_id;
-}
-
-uint64_t wp_cubql_bvh_create_device(void* context, wp::vec3* lowers, wp::vec3* uppers, int num_items, int leaf_size)
-{
-    ContextGuard guard(context);
-    wp::CuBQLBVH bvh_device_on_host;
-    memset(&bvh_device_on_host, 0, sizeof(wp::CuBQLBVH));
-
-    wp::cubql_bvh_create_device(WP_CURRENT_CONTEXT, lowers, uppers, num_items, leaf_size, bvh_device_on_host);
-
-    if (!bvh_device_on_host.nodes && num_items > 0) {
-        return 0;
+    if (constructor_type == CUBQL_MESH_CONSTRUCTOR_TYPE) {
+        combined_host.bvh_backend = wp::BVH_BACKEND_CUBQL;
+        wp::cubql_bvh_create_device(WP_CURRENT_CONTEXT, lowers, uppers, num_items, leaf_size, combined_host.cubql_bvh);
+        if (!combined_host.cubql_bvh.nodes && num_items > 0) {
+            return 0;
+        }
+    } else {
+        combined_host.bvh_backend = wp::BVH_BACKEND_WARP;
+        wp::bvh_create_device(
+            WP_CURRENT_CONTEXT, lowers, uppers, num_items, constructor_type, groups, leaf_size, combined_host.bvh
+        );
     }
 
-    wp::CuBQLBVH* bvh_device_ptr = (wp::CuBQLBVH*)wp_alloc_device(WP_CURRENT_CONTEXT, sizeof(wp::CuBQLBVH));
-    wp_memcpy_h2d(WP_CURRENT_CONTEXT, bvh_device_ptr, &bvh_device_on_host, sizeof(wp::CuBQLBVH));
+    wp::BVHCombined* combined_device_ptr
+        = (wp::BVHCombined*)wp_alloc_device(WP_CURRENT_CONTEXT, sizeof(wp::BVHCombined));
+    wp_memcpy_h2d(WP_CURRENT_CONTEXT, combined_device_ptr, &combined_host, sizeof(wp::BVHCombined));
 
-    uint64_t bvh_id = (uint64_t)bvh_device_ptr;
-    wp::cubql_bvh_add_descriptor(bvh_id, bvh_device_on_host);
+    uint64_t bvh_id = (uint64_t)combined_device_ptr;
+    wp::bvh_combined_add_descriptor(bvh_id, combined_host);
     return bvh_id;
 }
 
 
 void wp_bvh_destroy_device(uint64_t id)
 {
-    wp::BVH bvh;
-    if (wp::bvh_get_descriptor(id, bvh)) {
-        wp::bvh_destroy_device(bvh);
-        wp::bvh_rem_descriptor(id);
+    wp::BVHCombined combined;
+    if (wp::bvh_combined_get_descriptor(id, combined)) {
+        if (combined.bvh_backend == wp::BVH_BACKEND_CUBQL)
+            wp::cubql_bvh_destroy_device(combined.cubql_bvh);
+        else
+            wp::bvh_destroy_device(combined.bvh);
+        wp::bvh_combined_rem_descriptor(id);
 
         // free descriptor
-        wp_free_device(WP_CURRENT_CONTEXT, (void*)id);
-    }
-}
-
-void wp_cubql_bvh_refit_device(uint64_t id)
-{
-    wp::CuBQLBVH bvh;
-    if (wp::cubql_bvh_get_descriptor(id, bvh)) {
-        ContextGuard guard(bvh.context);
-        wp::cubql_bvh_refit_device(bvh);
-        wp::cubql_bvh_add_descriptor(id, bvh);
-        wp_memcpy_h2d(WP_CURRENT_CONTEXT, (void*)id, &bvh, sizeof(wp::CuBQLBVH));
-    }
-}
-
-void wp_cubql_bvh_rebuild_device(uint64_t id)
-{
-    wp::CuBQLBVH bvh;
-    if (wp::cubql_bvh_get_descriptor(id, bvh)) {
-        ContextGuard guard(bvh.context);
-        wp::cubql_bvh_rebuild_device(bvh);
-        wp::cubql_bvh_add_descriptor(id, bvh);
-        wp_memcpy_h2d(WP_CURRENT_CONTEXT, (void*)id, &bvh, sizeof(wp::CuBQLBVH));
-    }
-}
-
-void wp_cubql_bvh_destroy_device(uint64_t id)
-{
-    wp::CuBQLBVH bvh;
-    if (wp::cubql_bvh_get_descriptor(id, bvh)) {
-        wp::cubql_bvh_destroy_device(bvh);
-        wp::cubql_bvh_rem_descriptor(id);
         wp_free_device(WP_CURRENT_CONTEXT, (void*)id);
     }
 }

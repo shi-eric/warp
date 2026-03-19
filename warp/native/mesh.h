@@ -136,16 +136,127 @@ CUDA_CALLABLE inline float mesh_query_inside_ray_tracing(uint64_t id, const vec3
 CUDA_CALLABLE inline float
 mesh_query_inside_parity(uint64_t id, const vec3& p, const vec3 base_dir, int n_sample, float perturbation_scale);
 
+// cuBQL BVH traversal for closest-point queries. Finds the closest point on any triangle
+// within max_dist of the query point. Returns true if a point was found, with face index
+// and barycentric coordinates (u, v) where point = u*p + v*q + (1-u-v)*r.
+CUDA_CALLABLE inline bool cubql_closest_point_traversal(
+    const Mesh& mesh, const vec3& point, float max_dist, int& out_face, float& out_u, float& out_v
+)
+{
+    if (!mesh.cubql_bvh.nodes || !mesh.cubql_bvh.primitive_indices)
+        return false;
+
+    const int root_index = mesh.cubql_bvh.root ? *mesh.cubql_bvh.root : -1;
+    if (root_index < 0)
+        return false;
+
+    float min_dist_sq = max_dist * max_dist;
+    int min_face = -1;
+    float min_v = 0.0f;
+    float min_w = 0.0f;
+
+    uint64_t stack[CUBQL_BVH_QUERY_STACK_SIZE];
+    int stack_size = 0;
+    uint64_t node_admin = mesh.cubql_bvh.nodes[root_index].admin;
+
+    while (true) {
+        // Descend through internal nodes
+        while (true) {
+            const uint16_t node_count = uint16_t(node_admin >> 48);
+            if (node_count != 0)
+                break;
+
+            const uint32_t child_offset = uint32_t(node_admin & 0x0000FFFFFFFFFFFFull);
+            const CuBQLNode& n0 = mesh.cubql_bvh.nodes[child_offset + 0];
+            const CuBQLNode& n1 = mesh.cubql_bvh.nodes[child_offset + 1];
+
+            float d0 = distance_to_aabb_sq(point, n0.lower, n0.upper);
+            float d1 = distance_to_aabb_sq(point, n1.lower, n1.upper);
+            const bool o0 = d0 < min_dist_sq;
+            const bool o1 = d1 < min_dist_sq;
+
+            if (o0) {
+                if (o1) {
+                    // Traverse nearer child first
+                    const bool n0_near = (d0 < d1);
+                    if (stack_size >= CUBQL_BVH_QUERY_STACK_SIZE)
+                        break;  // stack overflow
+                    stack[stack_size++] = n0_near ? n1.admin : n0.admin;
+                    node_admin = n0_near ? n0.admin : n1.admin;
+                } else {
+                    node_admin = n0.admin;
+                }
+            } else if (o1) {
+                node_admin = n1.admin;
+            } else {
+                node_admin = 0;
+                break;
+            }
+        }
+
+        // Process leaf node
+        const uint16_t node_count = uint16_t(node_admin >> 48);
+        if (node_count != 0) {
+            const uint32_t prim_offset = uint32_t(node_admin & 0x0000FFFFFFFFFFFFull);
+            for (int i = 0; i < int(node_count); ++i) {
+                const int primitive_index = int(mesh.cubql_bvh.primitive_indices[prim_offset + i]);
+                const int i0 = mesh.indices[primitive_index * 3 + 0];
+                const int i1 = mesh.indices[primitive_index * 3 + 1];
+                const int i2 = mesh.indices[primitive_index * 3 + 2];
+
+                const vec3 p = mesh.points[i0];
+                const vec3 q = mesh.points[i1];
+                const vec3 r = mesh.points[i2];
+
+                const vec3 e0 = q - p;
+                const vec3 e1 = r - p;
+                const vec3 e2 = r - q;
+                const vec3 normal = cross(e0, e1);
+
+                // Sliver detection
+                if (length(normal) / (dot(e0, e0) + dot(e1, e1) + dot(e2, e2)) < 1.e-6f)
+                    continue;
+
+                const vec2 barycentric = closest_point_to_triangle(p, q, r, point);
+                const float bu = barycentric[0];
+                const float bv = barycentric[1];
+                const float bw = 1.f - bu - bv;
+                const vec3 c = bu * p + bv * q + bw * r;
+
+                const float dist_sq = length_sq(c - point);
+                if (dist_sq < min_dist_sq) {
+                    min_dist_sq = dist_sq;
+                    min_v = bv;
+                    min_w = bw;
+                    min_face = primitive_index;
+                }
+            }
+        }
+
+        if (stack_size == 0)
+            break;
+        node_admin = stack[--stack_size];
+    }
+
+    if (min_face >= 0 && min_dist_sq < max_dist * max_dist) {
+        out_u = 1.0f - min_v - min_w;
+        out_v = min_v;
+        out_face = min_face;
+        return true;
+    }
+    return false;
+}
+
 // returns true if there is a point (strictly) < distance max_dist
 CUDA_CALLABLE inline bool
 mesh_query_point(uint64_t id, const vec3& point, float max_dist, float& inside, int& face, float& u, float& v)
 {
     Mesh mesh = mesh_get(id);
     if (mesh_uses_cubql(mesh)) {
-#if BVH_DEBUG
-        printf("ERROR: mesh_query_point not supported for cubql\n");
-#endif
-        return false;
+        if (!cubql_closest_point_traversal(mesh, point, max_dist, face, u, v))
+            return false;
+        inside = mesh_query_inside_ray_tracing(id, point);
+        return true;
     }
 
     int stack[BVH_QUERY_STACK_SIZE];
@@ -339,10 +450,10 @@ CUDA_CALLABLE inline bool mesh_query_point_sign_parity(
 {
     Mesh mesh = mesh_get(id);
     if (mesh_uses_cubql(mesh)) {
-#if BVH_DEBUG
-        printf("ERROR: mesh_query_point_sign_parity not supported for cubql\n");
-#endif
-        return false;
+        if (!cubql_closest_point_traversal(mesh, point, max_dist, face, u, v))
+            return false;
+        inside = mesh_query_inside_parity(id, point, vec3(1.f, 1.f, 1.f), n_sample, perturbation_scale);
+        return true;
     }
 
     int stack[BVH_QUERY_STACK_SIZE];
@@ -526,12 +637,8 @@ CUDA_CALLABLE inline bool
 mesh_query_point_no_sign(uint64_t id, const vec3& point, float max_dist, int& face, float& u, float& v)
 {
     Mesh mesh = mesh_get(id);
-    if (mesh_uses_cubql(mesh)) {
-#if BVH_DEBUG
-        printf("ERROR: mesh_query_point_no_sign not supported for cubql\n");
-#endif
-        return false;
-    }
+    if (mesh_uses_cubql(mesh))
+        return cubql_closest_point_traversal(mesh, point, max_dist, face, u, v);
 
     int stack[BVH_QUERY_STACK_SIZE];
     stack[0] = *mesh.bvh.root;
@@ -2535,6 +2642,9 @@ struct mesh_query_aabb_t {
         , input_upper()
         , face(0)
         , primitive_counter(-1)
+        , cubql_stack()
+        , cubql_count(0)
+        , uses_cubql(false)
     {
     }
 
@@ -2561,6 +2671,11 @@ struct mesh_query_aabb_t {
 
     // Face
     int face;
+
+    // cuBQL traversal state
+    uint64_t cubql_stack[CUBQL_BVH_QUERY_STACK_SIZE];
+    int cubql_count;
+    bool uses_cubql;
 };
 
 
@@ -2576,9 +2691,16 @@ CUDA_CALLABLE inline mesh_query_aabb_t mesh_query_aabb(uint64_t id, const vec3& 
     Mesh mesh = mesh_get(id);
     query.mesh = mesh;
     if (mesh_uses_cubql(mesh)) {
-#if BVH_DEBUG
-        printf("ERROR: mesh_query_aabb not supported for cubql\n");
-#endif
+        query.uses_cubql = true;
+        query.input_lower = lower;
+        query.input_upper = upper;
+        if (mesh.cubql_bvh.nodes && mesh.cubql_bvh.primitive_indices && mesh.cubql_bvh.root) {
+            const int root_index = *mesh.cubql_bvh.root;
+            if (root_index >= 0) {
+                query.cubql_stack[0] = mesh.cubql_bvh.nodes[root_index].admin;
+                query.cubql_count = 1;
+            }
+        }
         return query;
     }
 
@@ -2636,6 +2758,51 @@ adj_mesh_query_aabb(uint64_t id, const vec3& lower, const vec3& upper, uint64_t,
 CUDA_CALLABLE inline bool mesh_query_aabb_next(mesh_query_aabb_t& query, int& index)
 {
     Mesh mesh = query.mesh;
+
+    if (query.uses_cubql) {
+        while (query.cubql_count > 0) {
+            const uint64_t node_admin = query.cubql_stack[--query.cubql_count];
+            const uint16_t node_count = uint16_t(node_admin >> 48);
+            const uint32_t offset = uint32_t(node_admin & 0x0000FFFFFFFFFFFFull);
+
+            if (node_count == 0) {
+                // Internal node: test both children for AABB overlap
+                const CuBQLNode& n0 = mesh.cubql_bvh.nodes[offset + 0];
+                const CuBQLNode& n1 = mesh.cubql_bvh.nodes[offset + 1];
+
+                if (intersect_aabb_aabb(query.input_lower, query.input_upper, n0.lower, n0.upper)) {
+                    if (query.cubql_count < CUBQL_BVH_QUERY_STACK_SIZE)
+                        query.cubql_stack[query.cubql_count++] = n0.admin;
+                }
+                if (intersect_aabb_aabb(query.input_lower, query.input_upper, n1.lower, n1.upper)) {
+                    if (query.cubql_count < CUBQL_BVH_QUERY_STACK_SIZE)
+                        query.cubql_stack[query.cubql_count++] = n1.admin;
+                }
+            } else {
+                // Leaf node: iterate through primitives
+                for (int i = 0; i < int(node_count); ++i) {
+                    const int primitive_index = int(mesh.cubql_bvh.primitive_indices[offset + i]);
+                    if (intersect_aabb_aabb(
+                            query.input_lower, query.input_upper, mesh.lowers[primitive_index],
+                            mesh.uppers[primitive_index]
+                        )) {
+                        // Push remaining primitives as a new leaf entry
+                        const int remaining = int(node_count) - (i + 1);
+                        if (remaining > 0) {
+                            const uint64_t remaining_admin
+                                = (uint64_t(uint16_t(remaining)) << 48) | uint64_t(offset + i + 1);
+                            if (query.cubql_count < CUBQL_BVH_QUERY_STACK_SIZE)
+                                query.cubql_stack[query.cubql_count++] = remaining_admin;
+                        }
+                        index = primitive_index;
+                        query.face = primitive_index;
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
 
     // Navigate through the bvh, find the first overlapping leaf node.
     while (query.count) {

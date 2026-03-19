@@ -280,20 +280,28 @@ template <int dim> CUDA_CALLABLE inline uint32_t morton3(float x, float y, float
     return (part1by2(uz) << 2) | (part1by2(uy) << 1) | part1by2(ux);
 }
 
+constexpr int BVH_BACKEND_WARP = 0;
+constexpr int BVH_BACKEND_CUBQL = 1;
+
+struct BVHCombined {
+    BVH bvh;  // Must be first member for backward compat with bvh_get()
+    CuBQLBVH cubql_bvh;
+    int bvh_backend;
+};
+
 // making the class accessible from python
 
 CUDA_CALLABLE inline BVH bvh_get(uint64_t id) { return *(BVH*)(id); }
-CUDA_CALLABLE inline CuBQLBVH cubql_bvh_get(uint64_t id) { return *(CuBQLBVH*)(id); }
+CUDA_CALLABLE inline BVHCombined bvh_combined_get(uint64_t id) { return *(BVHCombined*)(id); }
+CUDA_CALLABLE inline bool bvh_uses_cubql(uint64_t id) { return ((BVHCombined*)(id))->bvh_backend == BVH_BACKEND_CUBQL; }
 
 CUDA_CALLABLE inline int bvh_get_num_bounds(uint64_t id)
 {
+    if (bvh_uses_cubql(id)) {
+        BVHCombined combined = bvh_combined_get(id);
+        return combined.cubql_bvh.num_items;
+    }
     BVH bvh = bvh_get(id);
-    return bvh.num_items;
-}
-
-CUDA_CALLABLE inline int cubql_bvh_get_num_bounds(uint64_t id)
-{
-    CuBQLBVH bvh = cubql_bvh_get(id);
     return bvh.num_items;
 }
 
@@ -391,6 +399,10 @@ struct bvh_query_t {
         , input_upper()
         , bounds_nr(0)
         , primitive_counter(-1)
+        , cubql_bvh()
+        , cubql_stack()
+        , cubql_count(0)
+        , uses_cubql(false)
     {
     }
 
@@ -412,11 +424,17 @@ struct bvh_query_t {
     int primitive_counter;
 
     // inputs
-    wp::vec3 input_lower;  // start for ray
-    wp::vec3 input_upper;  // dir for ray
+    wp::vec3 input_lower;  // start for ray, lower bound for AABB
+    wp::vec3 input_upper;  // 1/dir for ray, upper bound for AABB
 
     int bounds_nr;
     bool is_ray;
+
+    // cuBQL traversal state
+    CuBQLBVH cubql_bvh;
+    uint64_t cubql_stack[CUBQL_BVH_QUERY_STACK_SIZE];
+    int cubql_count;
+    bool uses_cubql;
 };
 
 CUDA_CALLABLE inline bool
@@ -444,19 +462,31 @@ CUDA_CALLABLE inline bvh_query_t bvh_query(uint64_t id, bool is_ray, const vec3&
 #endif
 
     query.bounds_nr = -1;
-
-    BVH bvh = bvh_get(id);
-
-    query.bvh = bvh;
     query.is_ray = is_ray;
-
-    // optimization: make the latest
-    query.stack[0] = root == -1 ? *bvh.root : root;
-    query.count = 1;
-    // ensure node-level AABB tests run on first iteration
-    query.primitive_counter = 0;
     query.input_lower = lower;
     query.input_upper = upper;
+
+    if (bvh_uses_cubql(id)) {
+        BVHCombined combined = bvh_combined_get(id);
+        query.uses_cubql = true;
+        query.cubql_bvh = combined.cubql_bvh;
+        query.cubql_count = 0;
+        if (combined.cubql_bvh.nodes && combined.cubql_bvh.root) {
+            int root_index = *combined.cubql_bvh.root;
+            if (root_index >= 0) {
+                query.cubql_stack[0] = combined.cubql_bvh.nodes[root_index].admin;
+                query.cubql_count = 1;
+            }
+        }
+    } else {
+        query.uses_cubql = false;
+        BVH bvh = bvh_get(id);
+        query.bvh = bvh;
+        query.stack[0] = root == -1 ? *bvh.root : root;
+        query.count = 1;
+        // ensure node-level AABB tests run on first iteration
+        query.primitive_counter = 0;
+    }
 
     return query;
 }
@@ -489,6 +519,56 @@ CUDA_CALLABLE inline void adj_bvh_get_group_root(uint64_t id, int group_id, uint
 
 CUDA_CALLABLE inline bool bvh_query_next(bvh_query_t& query, int& index, const float& max_dist)
 {
+    // cuBQL traversal path
+    if (query.uses_cubql) {
+        CuBQLBVH cubql_bvh = query.cubql_bvh;
+        while (query.cubql_count > 0) {
+            const uint64_t node_admin = query.cubql_stack[--query.cubql_count];
+            const uint16_t node_count = uint16_t(node_admin >> 48);
+            const uint32_t offset = uint32_t(node_admin & 0x0000FFFFFFFFFFFFull);
+
+            if (node_count == 0) {
+                // Internal node: test both children for overlap
+                const CuBQLNode& n0 = cubql_bvh.nodes[offset + 0];
+                const CuBQLNode& n1 = cubql_bvh.nodes[offset + 1];
+
+                float t = FLT_MAX;
+                if (bvh_query_intersection_test(query, n0.lower, n0.upper, t) && !(query.is_ray && t >= max_dist)) {
+                    if (query.cubql_count < CUBQL_BVH_QUERY_STACK_SIZE)
+                        query.cubql_stack[query.cubql_count++] = n0.admin;
+                }
+                t = FLT_MAX;
+                if (bvh_query_intersection_test(query, n1.lower, n1.upper, t) && !(query.is_ray && t >= max_dist)) {
+                    if (query.cubql_count < CUBQL_BVH_QUERY_STACK_SIZE)
+                        query.cubql_stack[query.cubql_count++] = n1.admin;
+                }
+            } else {
+                // Leaf node: iterate through primitives
+                for (int i = 0; i < int(node_count); ++i) {
+                    const int primitive_index = int(cubql_bvh.primitive_indices[offset + i]);
+                    float t = FLT_MAX;
+                    if (bvh_query_intersection_test(
+                            query, cubql_bvh.item_lowers[primitive_index], cubql_bvh.item_uppers[primitive_index], t
+                        )
+                        && !(query.is_ray && t >= max_dist)) {
+                        // Push remaining primitives as a new leaf entry
+                        const int remaining = int(node_count) - (i + 1);
+                        if (remaining > 0) {
+                            const uint64_t remaining_admin
+                                = (uint64_t(uint16_t(remaining)) << 48) | uint64_t(offset + i + 1);
+                            if (query.cubql_count < CUBQL_BVH_QUERY_STACK_SIZE)
+                                query.cubql_stack[query.cubql_count++] = remaining_admin;
+                        }
+                        index = primitive_index;
+                        query.bounds_nr = primitive_index;
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
     BVH bvh = query.bvh;
 
     // Navigate through the bvh, find the first overlapping leaf node.
@@ -584,6 +664,9 @@ CUDA_CALLABLE void bvh_rem_descriptor(uint64_t id);
 CUDA_CALLABLE bool cubql_bvh_get_descriptor(uint64_t id, CuBQLBVH& bvh);
 CUDA_CALLABLE void cubql_bvh_add_descriptor(uint64_t id, const CuBQLBVH& bvh);
 CUDA_CALLABLE void cubql_bvh_rem_descriptor(uint64_t id);
+CUDA_CALLABLE bool bvh_combined_get_descriptor(uint64_t id, BVHCombined& combined);
+CUDA_CALLABLE void bvh_combined_add_descriptor(uint64_t id, const BVHCombined& combined);
+CUDA_CALLABLE void bvh_combined_rem_descriptor(uint64_t id);
 
 
 void bvh_create_host(

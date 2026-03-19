@@ -4926,7 +4926,7 @@ class BvhConstructor(enum.IntEnum):
     LBVH = 2
     """GPU-based bottom-up constructor maximizing parallelism."""
     CUBQL = -1
-    """cuBQL library constructor (Mesh only)."""
+    """cuBQL library constructor (**experimental**)."""
 
     @classmethod
     def from_str(cls, value: str) -> BvhConstructor:
@@ -4944,6 +4944,7 @@ class Bvh:
     def __new__(cls, *args, **kwargs):
         instance = super().__new__(cls)
         instance.id = None
+        instance._is_cubql = False
         return instance
 
     def __init__(
@@ -4967,7 +4968,7 @@ class Bvh:
             uppers: Array of upper bounds of data type :class:`warp.vec3`.
               ``lowers`` and ``uppers`` must live on the same device.
             constructor: The construction algorithm used to build the tree.
-              Valid choices are ``"sah"``, ``"median"``, ``"lbvh"``, or ``None``.
+              Valid choices are ``"sah"``, ``"median"``, ``"lbvh"``, ``"cubql"`` (**experimental**), or ``None``.
               When ``None``, the default constructor will be used (see the note).
             groups: Optional array of group indices of data type :class:`warp.int32`.
             leaf_size: The number of primitives (AABBs) stored in each leaf node. The optimal value depends on the primary
@@ -4986,6 +4987,8 @@ class Bvh:
               inferior query performance.
             - ``"lbvh"``: A GPU-based bottom-up constructor which maximizes parallelism. Construction is very
               fast, especially for large models. Query performance is slightly slower than ``"sah"``.
+            - ``"cubql"`` (**experimental**): Uses the cuBQL library for BVH construction. Supports both
+              CPU and GPU trees.
             - ``None``: The constructor will be automatically chosen based on the device where the tree
               lives. For a GPU tree, the ``"lbvh"`` constructor will be selected; for a CPU tree, the ``"sah"``
               constructor will be selected.
@@ -4994,8 +4997,9 @@ class Bvh:
             for a GPU tree, bounds will be copied back to the CPU to run the CPU-based constructor. After
             construction, the CPU tree will be copied to the GPU.
 
-            Only ``"sah"`` and ``"median"`` are supported for CPU trees. If ``"lbvh"`` is selected for a CPU tree, a
-            warning message will be issued, and the constructor will automatically fall back to ``"sah"``.
+            Only ``"sah"``, ``"median"``, and ``"cubql"`` (**experimental**) are supported for CPU trees. If ``"lbvh"`` is selected
+            for a CPU tree, a warning message will be issued, and the constructor will automatically fall back
+            to ``"sah"``.
 
             The ``leaf_size`` parameter controls the number of primitives (AABBs) stored in each leaf node of the BVH.
             This parameter can have a considerable impact on query performance, and the optimal value depends on the
@@ -5072,10 +5076,14 @@ class Bvh:
             constructor = BvhConstructor.from_str(constructor)
 
         if constructor == BvhConstructor.CUBQL:
-            raise ValueError("CUBQL constructor is not available for wp.Bvh")
-
-        if leaf_size < 1:
-            raise ValueError(f"leaf_size must be greater than or equal to 1, current value: {leaf_size}")
+            if groups is not None:
+                raise RuntimeError("Grouped BVH queries are not supported with constructor='cubql'")
+            self._is_cubql = True
+            leaf_size = leaf_size if leaf_size >= 0 else 0
+        else:
+            self._is_cubql = False
+            if leaf_size < 1:
+                raise ValueError(f"leaf_size must be greater than or equal to 1, current value: {leaf_size}")
 
         if self.device.is_cpu:
             if constructor == BvhConstructor.LBVH:
@@ -5102,6 +5110,9 @@ class Bvh:
                 get_data(groups),
                 leaf_size,
             )
+
+        if self._is_cubql and not self.id:
+            raise RuntimeError("Failed to create cuBQL BVH")
 
     def __del__(self):
         if not self.id:
@@ -5143,11 +5154,12 @@ class Bvh:
 
         Args:
             constructor (str | None): Construction algorithm to use. One of ``"sah"``,
-                ``"median"``, ``"lbvh"``, or ``None``. If ``None``, the default is chosen
-                based on the device (CPU → ``"sah"``, CUDA → ``"lbvh"``). On CPU,
-                ``"sah"`` and ``"median"`` are supported; requesting ``"lbvh"`` falls back
-                to ``"sah"`` with a warning. On CUDA, in-place rebuild supports ``"lbvh"``
-                only; other values fall back to ``"lbvh"`` with a warning.
+                ``"median"``, ``"lbvh"``, ``"cubql"`` (**experimental**), or ``None``. If ``None``, the default
+                is chosen based on the device (CPU → ``"sah"``, CUDA → ``"lbvh"``, or
+                ``"cubql"`` if originally constructed with cuBQL). On CPU, ``"sah"`` and
+                ``"median"`` are supported; requesting ``"lbvh"`` falls back to ``"sah"``
+                with a warning. On CUDA, in-place rebuild supports ``"lbvh"`` only; other
+                values fall back to ``"lbvh"`` with a warning.
 
         Notes:
             - This method is CUDA graph-capture safe: previously captured graphs that include
@@ -5159,6 +5171,22 @@ class Bvh:
             ValueError: If an unknown constructor is provided.
         """
 
+        if self._is_cubql:
+            if constructor is not None:
+                if not isinstance(constructor, BvhConstructor):
+                    constructor = BvhConstructor.from_str(constructor)
+                if constructor != BvhConstructor.CUBQL:
+                    raise ValueError(
+                        "Cannot switch constructor for a cuBQL BVH. Create a new BVH to change constructors."
+                    )
+
+            if self.device.is_cpu:
+                self.runtime.core.wp_bvh_rebuild_host(self.id, BvhConstructor.CUBQL)
+            else:
+                self.runtime.core.wp_bvh_rebuild_device(self.id)
+                self.runtime.verify_cuda_device(self.device)
+            return
+
         if constructor is None:
             if self.device.is_cpu:
                 constructor = BvhConstructor.SAH
@@ -5169,7 +5197,9 @@ class Bvh:
             constructor = BvhConstructor.from_str(constructor)
 
         if constructor == BvhConstructor.CUBQL:
-            raise ValueError("CUBQL constructor is not available for wp.Bvh")
+            raise ValueError(
+                "Cannot switch to cuBQL constructor via rebuild. Create a new BVH with constructor='cubql'."
+            )
 
         if self.device.is_cpu:
             if constructor == BvhConstructor.LBVH:
@@ -5323,6 +5353,9 @@ class Mesh:
                 ctypes.c_void_p(groups.ptr) if groups else ctypes.c_void_p(0),
                 bvh_leaf_size,
             )
+
+        if not self.id:
+            raise RuntimeError("Failed to create Mesh (BVH construction may have failed)")
 
     def __del__(self):
         if not self.id:
