@@ -8956,9 +8956,10 @@ def create_atomic_op_value_func(op: str):
                     f"as the underlying scalar types, but got {type_repr(arr_type.dtype)} (with scalar type {type_repr(scalar_type)})"
                 )
         elif op in ("min", "max"):
-            if not any(types_equal_generic(scalar_type, x) for x in SUPPORTED_ATOMIC_TYPES):
+            supported_atomic_types = (*SUPPORTED_ATOMIC_TYPES, warp.bfloat16)
+            if not any(types_equal_generic(scalar_type, x) for x in supported_atomic_types):
                 raise RuntimeError(
-                    f"atomic_{op}() operations only work on arrays with [u]int32, [u]int64, float32, or float64 "
+                    f"atomic_{op}() operations only work on arrays with [u]int32, [u]int64, bfloat16, float32, or float64 "
                     f"as the underlying scalar types, but got {type_repr(arr_type.dtype)} (with scalar type {type_repr(scalar_type)})"
                 )
         elif op in ("cas", "exch"):

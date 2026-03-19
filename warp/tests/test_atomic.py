@@ -184,8 +184,9 @@ test_atomic_return_double = make_atomic_return_test(wp.float64)
 
 
 def test_atomic_add_supported_dtypes(test, device, dtype):
-    N = 1024
     scalar_type = getattr(dtype, "_wp_scalar_type_", dtype)
+    # bfloat16 has ~7-bit mantissa, so use a smaller N to stay within representable range
+    N = 64 if scalar_type is wp.bfloat16 else 1024
 
     @wp.kernel(module="unique")
     def kernel(arr: wp.array(dtype=dtype)):
@@ -195,7 +196,13 @@ def test_atomic_add_supported_dtypes(test, device, dtype):
     wp.launch(kernel, dim=N, outputs=(arr,), device=device)
 
     size = 1 if not hasattr(dtype, "_shape_") else dtype._shape_
-    assert_np_equal(arr.numpy().flatten(), np.full(size, N, dtype=wp.dtype_to_numpy(scalar_type)))
+    if scalar_type is wp.bfloat16:
+        # bfloat16 arrays are returned as uint16 (raw bits), so compare via float32
+        result = arr.numpy().flatten().astype(np.uint32) << 16
+        result_float = result.view(np.float32)
+        np.testing.assert_allclose(result_float, np.full(size, N, dtype=np.float32), rtol=1e-2)
+    else:
+        assert_np_equal(arr.numpy().flatten(), np.full(size, N, dtype=wp.dtype_to_numpy(scalar_type)))
 
 
 def test_atomic_min_supported_dtypes(test, device, dtype):
@@ -234,7 +241,7 @@ def test_atomic_add_unsupported_dtypes(test, device, dtype):
     with test.assertRaisesRegex(
         RuntimeError,
         (
-            r"atomic_add\(\) operations only work on arrays with \[u\]int32, \[u\]int64, float16, float32, or float64 "
+            r"atomic_add\(\) operations only work on arrays with \[u\]int32, \[u\]int64, float16, bfloat16, float32, or float64 "
             rf"as the underlying scalar types, but got {dtype_str} \(with scalar type {scalar_type_str}\)$"
         ),
     ):
@@ -255,7 +262,7 @@ def test_atomic_min_unsupported_dtypes(test, device, dtype):
     with test.assertRaisesRegex(
         RuntimeError,
         (
-            r"atomic_min\(\) operations only work on arrays with \[u\]int32, \[u\]int64, float32, or float64 "
+            r"atomic_min\(\) operations only work on arrays with \[u\]int32, \[u\]int64, bfloat16, float32, or float64 "
             rf"as the underlying scalar types, but got {dtype_str} \(with scalar type {scalar_type_str}\)$"
         ),
     ):
@@ -276,7 +283,7 @@ def test_atomic_max_unsupported_dtypes(test, device, dtype):
     with test.assertRaisesRegex(
         RuntimeError,
         (
-            r"atomic_max\(\) operations only work on arrays with \[u\]int32, \[u\]int64, float32, or float64 "
+            r"atomic_max\(\) operations only work on arrays with \[u\]int32, \[u\]int64, bfloat16, float32, or float64 "
             rf"as the underlying scalar types, but got {dtype_str} \(with scalar type {scalar_type_str}\)$"
         ),
     ):
@@ -310,6 +317,7 @@ for dtype in (
     wp.int64,
     wp.uint64,
     wp.float16,
+    wp.bfloat16,
     wp.float32,
     wp.float64,
     wp.vec3i,
@@ -327,6 +335,8 @@ for dtype in (
         f"test_atomic_add_supported_dtypes_{dtype.__name__}",
         test_atomic_add_supported_dtypes,
         devices=devices,
+        # bfloat16 .numpy() emits a UserWarning about raw uint16 representation
+        check_output=scalar_type is not wp.bfloat16,
         dtype=dtype,
     )
 
@@ -336,6 +346,7 @@ for dtype in (
             f"test_atomic_min_supported_dtypes_{dtype.__name__}",
             test_atomic_min_supported_dtypes,
             devices=devices,
+            check_output=scalar_type is not wp.bfloat16,
             dtype=dtype,
         )
         add_function_test(
@@ -343,6 +354,7 @@ for dtype in (
             f"test_atomic_max_supported_dtypes_{dtype.__name__}",
             test_atomic_max_supported_dtypes,
             devices=devices,
+            check_output=scalar_type is not wp.bfloat16,
             dtype=dtype,
         )
 

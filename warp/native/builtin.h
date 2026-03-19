@@ -2022,6 +2022,40 @@ template <> inline CUDA_CALLABLE double atomic_min(double* address, double val)
 #endif
 }
 
+// emulate atomic bfloat16 min with atomicCAS()
+template <> inline CUDA_CALLABLE bfloat16 atomic_min(bfloat16* buf, bfloat16 val)
+{
+#if !defined(__CUDA_ARCH__)
+    bfloat16 old = buf[0];
+    buf[0] = min(old, val);
+    return old;
+#else
+    unsigned int* address_as_uint = reinterpret_cast<unsigned int*>(reinterpret_cast<size_t>(buf) & ~size_t(2));
+    bool is_upper = (reinterpret_cast<size_t>(buf) & 2) != 0;
+    unsigned int old_val = *address_as_uint;
+    unsigned int assumed;
+
+    float val_f = bfloat16_to_float(val);
+    unsigned short int old_bf16_bits = is_upper ? (old_val >> 16) : (old_val & 0xFFFF);
+    bfloat16 old_bf16;
+    old_bf16.u = old_bf16_bits;
+    if (val_f < bfloat16_to_float(old_bf16)) {
+        do {
+            assumed = old_val;
+            old_bf16_bits = is_upper ? (assumed >> 16) : (assumed & 0xFFFF);
+            old_bf16.u = old_bf16_bits;
+            bfloat16 new_bf16 = float_to_bfloat16(min(bfloat16_to_float(old_bf16), val_f));
+            unsigned int new_uint = is_upper ? ((assumed & 0x0000FFFF) | (static_cast<unsigned int>(new_bf16.u) << 16))
+                                             : ((assumed & 0xFFFF0000) | static_cast<unsigned int>(new_bf16.u));
+            old_val = atomicCAS(address_as_uint, assumed, new_uint);
+        } while (assumed != old_val);
+    }
+    bfloat16 result;
+    result.u = is_upper ? (old_val >> 16) : (old_val & 0xFFFF);
+    return result;
+#endif
+}
+
 template <typename T> inline CUDA_CALLABLE T atomic_max(T* address, T val)
 {
 #if defined(__CUDA_ARCH__)
@@ -2082,6 +2116,40 @@ template <> inline CUDA_CALLABLE double atomic_max(double* address, double val)
     double old = *address;
     *address = max(old, val);
     return old;
+#endif
+}
+
+// emulate atomic bfloat16 max with atomicCAS()
+template <> inline CUDA_CALLABLE bfloat16 atomic_max(bfloat16* buf, bfloat16 val)
+{
+#if !defined(__CUDA_ARCH__)
+    bfloat16 old = buf[0];
+    buf[0] = max(old, val);
+    return old;
+#else
+    unsigned int* address_as_uint = reinterpret_cast<unsigned int*>(reinterpret_cast<size_t>(buf) & ~size_t(2));
+    bool is_upper = (reinterpret_cast<size_t>(buf) & 2) != 0;
+    unsigned int old_val = *address_as_uint;
+    unsigned int assumed;
+
+    float val_f = bfloat16_to_float(val);
+    unsigned short int old_bf16_bits = is_upper ? (old_val >> 16) : (old_val & 0xFFFF);
+    bfloat16 old_bf16;
+    old_bf16.u = old_bf16_bits;
+    if (val_f > bfloat16_to_float(old_bf16)) {
+        do {
+            assumed = old_val;
+            old_bf16_bits = is_upper ? (assumed >> 16) : (assumed & 0xFFFF);
+            old_bf16.u = old_bf16_bits;
+            bfloat16 new_bf16 = float_to_bfloat16(max(bfloat16_to_float(old_bf16), val_f));
+            unsigned int new_uint = is_upper ? ((assumed & 0x0000FFFF) | (static_cast<unsigned int>(new_bf16.u) << 16))
+                                             : ((assumed & 0xFFFF0000) | static_cast<unsigned int>(new_bf16.u));
+            old_val = atomicCAS(address_as_uint, assumed, new_uint);
+        } while (assumed != old_val);
+    }
+    bfloat16 result;
+    result.u = is_upper ? (old_val >> 16) : (old_val & 0xFFFF);
+    return result;
 #endif
 }
 

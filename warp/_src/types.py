@@ -3873,12 +3873,15 @@ class array(Array[DType, NDim]):
         else:
             warp.copy(self, array(data=src, dtype=self.dtype, copy=False, device="cpu"))
 
-    def numpy(self):
+    def numpy(self, *, _suppress_bfloat16_warning=False):
         """Convert the array to a :class:`numpy.ndarray` (aliasing memory through the array interface protocol)
         If the array is on the GPU, a synchronous device-to-host copy (on the CUDA default stream) will be
         automatically performed to ensure that any outstanding work is completed.
         """
-        if self.dtype is bfloat16 or (issubclass(self.dtype, ctypes.Array) and self.dtype._wp_scalar_type_ is bfloat16):
+        if not _suppress_bfloat16_warning and (
+            self.dtype is bfloat16
+            or (isinstance(self.dtype, type) and issubclass(self.dtype, ctypes.Array) and self.dtype._wp_scalar_type_ is bfloat16)
+        ):
             warp._src.utils.warn(
                 "bfloat16 arrays are returned as np.uint16 (raw bit representation) "
                 "because NumPy does not natively support bfloat16. "
@@ -3935,7 +3938,7 @@ class array(Array[DType, NDim]):
 
     def list(self):
         """Return a flattened list of items in the array as a Python list."""
-        a = self.numpy()
+        a = self.numpy(_suppress_bfloat16_warning=True)
 
         if isinstance(self.dtype, warp._src.codegen.Struct):
             # struct
@@ -3949,6 +3952,9 @@ class array(Array[DType, NDim]):
             data = a.ctypes.data
             stride = a.strides[0]
             return [self.dtype.from_ptr(data + i * stride) for i in range(self.size)]
+        elif self.dtype is bfloat16:
+            # bfloat16 numpy arrays are uint16 (raw bits), convert back to bfloat16 scalars
+            return [bfloat16(bfloat16_bits_to_float(int(x))) for x in a.flatten()]
         else:
             # scalar
             return a.flatten().tolist()
