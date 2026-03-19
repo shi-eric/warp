@@ -11,7 +11,7 @@
 - **Experimental**: Add cuBQL BVH backend for `wp.Mesh`, selectable via `bvh_constructor="cubql"`.
   Currently only supports `wp.mesh_query_ray()`. Point queries, AABB queries, grouped queries,
   and winding number queries are not yet supported ([GH-1286](https://github.com/NVIDIA/warp/issues/1286)).
-- Add `wp.bfloat16` scalar data type with array allocation, kernel execution, autodiff, DLPack, PyTorch, and JAX interop.
+- Add `wp.bfloat16` scalar data type with array allocation, kernel execution, autodiff, DLPack, PyTorch, and JAX interop ([GH-591](https://github.com/NVIDIA/warp/issues/591)).
 
 ### Removed
 
