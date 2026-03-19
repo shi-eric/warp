@@ -71,12 +71,8 @@ def test_bf16_arithmetic(test, device):
     a_data = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
     b_data = np.array([0.5, 1.5, 2.0, 0.25], dtype=np.float32)
 
-    a_f32 = wp.array(a_data, dtype=wp.float32, device=device)
-    b_f32 = wp.array(b_data, dtype=wp.float32, device=device)
-    a = wp.zeros(n, dtype=wp.bfloat16, device=device)
-    b = wp.zeros(n, dtype=wp.bfloat16, device=device)
-    wp.launch(bf16_conversion_kernel, dim=n, inputs=[a_f32, a], device=device)
-    wp.launch(bf16_conversion_kernel, dim=n, inputs=[b_f32, b], device=device)
+    a = wp.array(a_data, dtype=wp.bfloat16, device=device)
+    b = wp.array(b_data, dtype=wp.bfloat16, device=device)
 
     out_add = wp.zeros(n, dtype=wp.bfloat16, device=device)
     out_sub = wp.zeros(n, dtype=wp.bfloat16, device=device)
@@ -122,11 +118,76 @@ def test_bf16_numpy(test, device):
     test.assertEqual(np_arr.dtype, np.uint16)
 
 
+def test_bf16_array_from_list(test, device):
+    """Test that wp.array([floats], dtype=wp.bfloat16) correctly converts float values."""
+    input_values = [1.0, 2.0, 3.0, -1.0, 0.0, 0.5, 100.0, -100.0]
+    arr = wp.array(input_values, dtype=wp.bfloat16, device=device)
+
+    test.assertEqual(arr.dtype, wp.bfloat16)
+    test.assertEqual(arr.shape, (len(input_values),))
+
+    # Verify the values survived the conversion by reading them back through a kernel
+    result = wp.zeros(len(input_values), dtype=wp.float32, device=device)
+    wp.launch(bf16_to_f32_kernel, dim=len(input_values), inputs=[arr, result], device=device)
+
+    np.testing.assert_allclose(result.numpy(), input_values, rtol=1e-2)
+
+
+def test_bf16_array_from_tuple(test, device):
+    """Test that wp.array(tuple_of_floats, dtype=wp.bfloat16) works."""
+    input_values = (1.5, 2.5, -3.5, 0.0)
+    arr = wp.array(input_values, dtype=wp.bfloat16, device=device)
+
+    result = wp.zeros(len(input_values), dtype=wp.float32, device=device)
+    wp.launch(bf16_to_f32_kernel, dim=len(input_values), inputs=[arr, result], device=device)
+
+    np.testing.assert_allclose(result.numpy(), input_values, rtol=1e-2)
+
+
+def test_bf16_array_from_numpy_float(test, device):
+    """Test that wp.array(np.array([...], dtype=np.float32), dtype=wp.bfloat16) works."""
+    input_data = np.array([1.0, 2.5, 3.14, -0.5, 0.0], dtype=np.float32)
+    arr = wp.array(input_data, dtype=wp.bfloat16, device=device)
+
+    result = wp.zeros(len(input_data), dtype=wp.float32, device=device)
+    wp.launch(bf16_to_f32_kernel, dim=len(input_data), inputs=[arr, result], device=device)
+
+    np.testing.assert_allclose(result.numpy(), input_data, rtol=1e-2)
+
+
+def test_bf16_array_from_numpy_uint16(test, device):
+    """Test that wp.array(np.array([...], dtype=np.uint16), dtype=wp.bfloat16) passes raw bits through."""
+    # Pre-encoded bfloat16 bits: 0x3F80 = 1.0, 0x4000 = 2.0, 0x4040 = 3.0
+    raw_bits = np.array([0x3F80, 0x4000, 0x4040], dtype=np.uint16)
+    arr = wp.array(raw_bits, dtype=wp.bfloat16, device=device)
+
+    result = wp.zeros(3, dtype=wp.float32, device=device)
+    wp.launch(bf16_to_f32_kernel, dim=3, inputs=[arr, result], device=device)
+
+    np.testing.assert_allclose(result.numpy(), [1.0, 2.0, 3.0], rtol=1e-2)
+
+
+def test_bf16_array_special_values(test, device):
+    """Test that special float values (inf, -inf, very small) convert correctly."""
+    input_values = [float("inf"), float("-inf"), 0.0, -0.0, 1e-6]
+    arr = wp.array(input_values, dtype=wp.bfloat16, device=device)
+
+    result = wp.zeros(len(input_values), dtype=wp.float32, device=device)
+    wp.launch(bf16_to_f32_kernel, dim=len(input_values), inputs=[arr, result], device=device)
+
+    r = result.numpy()
+    test.assertTrue(np.isinf(r[0]) and r[0] > 0, "Expected +inf")
+    test.assertTrue(np.isinf(r[1]) and r[1] < 0, "Expected -inf")
+    test.assertEqual(r[2], 0.0)
+    # -0.0 should preserve sign
+    test.assertEqual(r[3], 0.0)
+    # Very small value — bfloat16 has limited precision, just check it's close
+    np.testing.assert_allclose(r[4], 1e-6, rtol=0.5)
+
+
 def test_bf16_grad(test, device):
     x_data = np.array([1.0, 2.0, 3.0], dtype=np.float32)
-    x_f32 = wp.array(x_data, dtype=wp.float32, device=device)
-    x = wp.zeros(3, dtype=wp.bfloat16, device=device, requires_grad=True)
-    wp.launch(bf16_conversion_kernel, dim=3, inputs=[x_f32, x], device=device)
+    x = wp.array(x_data, dtype=wp.bfloat16, device=device, requires_grad=True)
 
     loss = wp.zeros(1, dtype=wp.float32, device=device, requires_grad=True)
 
@@ -160,11 +221,8 @@ def test_bf16_atomics(test, device):
 
 def test_bf16_interop_dlpack(test, device):
     n = 4
-    # Write known values
     input_data = np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32)
-    input_f32 = wp.array(input_data, dtype=wp.float32, device=device)
-    arr = wp.zeros(n, dtype=wp.bfloat16, device=device)
-    wp.launch(bf16_conversion_kernel, dim=n, inputs=[input_f32, arr], device=device)
+    arr = wp.array(input_data, dtype=wp.bfloat16, device=device)
 
     # Round-trip through DLPack
     dl = wp.to_dlpack(arr)
@@ -196,9 +254,7 @@ def test_bf16_interop_torch(test, device):
     # Verify values survive Warp -> Torch -> Warp round-trip
     n = 4
     input_data = np.array([1.0, 2.5, -3.0, 4.0], dtype=np.float32)
-    input_f32 = wp.array(input_data, dtype=wp.float32, device=device)
-    bf16_arr = wp.zeros(n, dtype=wp.bfloat16, device=device)
-    wp.launch(bf16_conversion_kernel, dim=n, inputs=[input_f32, bf16_arr], device=device)
+    bf16_arr = wp.array(input_data, dtype=wp.bfloat16, device=device)
 
     torch_rt = wp.to_torch(bf16_arr)
     wp_rt = wp.from_torch(torch_rt)
@@ -236,9 +292,7 @@ def test_bf16_math_builtins(test, device):
     # Use positive values to avoid domain errors for log; avoid pi/2 for tan
     n = 4
     input_data = np.array([0.25, 0.5, 1.0, 1.5], dtype=np.float32)
-    input_f32 = wp.array(input_data, dtype=wp.float32, device=device)
-    input_bf16 = wp.zeros(n, dtype=wp.bfloat16, device=device)
-    wp.launch(bf16_conversion_kernel, dim=n, inputs=[input_f32, input_bf16], device=device)
+    input_bf16 = wp.array(input_data, dtype=wp.bfloat16, device=device)
 
     out_sin = wp.zeros(n, dtype=wp.bfloat16, device=device)
     out_cos = wp.zeros(n, dtype=wp.bfloat16, device=device)
@@ -432,6 +486,11 @@ add_function_test(TestBf16, "test_bf16_conversion", test_bf16_conversion, device
 add_function_test(TestBf16, "test_bf16_kernel_parameter", test_bf16_kernel_parameter, devices=devices)
 add_function_test(TestBf16, "test_bf16_arithmetic", test_bf16_arithmetic, devices=devices)
 add_function_test(TestBf16, "test_bf16_numpy", test_bf16_numpy, devices=devices, check_output=False)
+add_function_test(TestBf16, "test_bf16_array_from_list", test_bf16_array_from_list, devices=devices)
+add_function_test(TestBf16, "test_bf16_array_from_tuple", test_bf16_array_from_tuple, devices=devices)
+add_function_test(TestBf16, "test_bf16_array_from_numpy_float", test_bf16_array_from_numpy_float, devices=devices)
+add_function_test(TestBf16, "test_bf16_array_from_numpy_uint16", test_bf16_array_from_numpy_uint16, devices=devices)
+add_function_test(TestBf16, "test_bf16_array_special_values", test_bf16_array_special_values, devices=devices)
 add_function_test(TestBf16, "test_bf16_grad", test_bf16_grad, devices=devices)
 add_function_test(TestBf16, "test_bf16_atomics", test_bf16_atomics, devices=devices)
 add_function_test(TestBf16, "test_bf16_interop_dlpack", test_bf16_interop_dlpack, devices=devices)

@@ -620,6 +620,47 @@ def bfloat16_bits_to_float(value):
     return warp._src.context.runtime.core.wp_bfloat16_bits_to_float(value)
 
 
+def _np_float32_to_bfloat16_bits(arr_f32: np.ndarray) -> np.ndarray:
+    """Convert a float32 NumPy array to bfloat16 stored as uint16 (round-to-nearest-even).
+
+    This performs the same conversion as ``float_to_bfloat16_bits`` but operates on entire
+    NumPy arrays using vectorized operations, which is significantly faster for bulk data.
+
+    TODO: When ``ml_dtypes`` is approved as a dependency, this can be replaced with
+    ``np.asarray(data, dtype=ml_dtypes.bfloat16).view(np.uint16)`` for cleaner conversion.
+    """
+    arr_f32 = np.asarray(arr_f32, dtype=np.float32)
+    bits = arr_f32.view(np.uint32)
+
+    # Handle NaN: preserve NaN payload but ensure it stays NaN after truncation.
+    # A float32 NaN has exponent=0xFF and a non-zero mantissa (23 bits).
+    # Truncating to bfloat16 keeps only the top 7 mantissa bits, which could become
+    # zero and turn the NaN into an infinity. Force the quiet-NaN bit (bit 22 of
+    # float32, i.e. bit 6 of the bfloat16 mantissa) so the value remains NaN.
+    nan_mask = np.isnan(arr_f32)
+    bits = np.where(nan_mask, bits | np.uint32(0x0040_0000), bits)
+
+    # Round-to-nearest-even: add rounding bias based on the LSB of the result
+    rounding_bias = (bits >> 16) & np.uint32(1)
+    bits_rounded = bits + np.uint32(0x7FFF) + rounding_bias
+
+    return ((bits_rounded >> 16) & np.uint32(0xFFFF)).astype(np.uint16)
+
+
+def _np_bfloat16_bits_to_float32(arr_u16: np.ndarray) -> np.ndarray:
+    """Convert a bfloat16 (uint16) NumPy array back to float32.
+
+    This performs the same conversion as ``bfloat16_bits_to_float`` but operates on entire
+    NumPy arrays using vectorized operations.
+
+    TODO: When ``ml_dtypes`` is approved as a dependency, this can be replaced with
+    ``arr_u16.view(ml_dtypes.bfloat16).astype(np.float32)`` for cleaner conversion.
+    """
+    arr_u16 = np.asarray(arr_u16, dtype=np.uint16)
+    bits = arr_u16.astype(np.uint32) << 16
+    return bits.view(np.float32)
+
+
 def _is_bit_converted_float(dtype):
     """Check if a scalar type requires bit conversion (stored as uint16 internally)."""
     return dtype is float16 or dtype is bfloat16
@@ -1982,7 +2023,7 @@ warp_type_to_np_dtype = {
     uint32: np.uint32,
     uint64: np.uint64,
     float16: np.float16,
-    bfloat16: np.uint16,  # TODO: Use ml_dtypes.bfloat16 when available for proper NumPy bf16 support
+    bfloat16: np.uint16,  # TODO: Use ml_dtypes.bfloat16 when available (see also _np_float32_to_bfloat16_bits)
     float32: np.float32,
     float64: np.float64,
 }
@@ -3217,7 +3258,17 @@ class array(Array[DType, NDim]):
                     f"Failed to convert input data to an array with Warp type {warp._src.context.type_str(dtype)}"
                 )
             try:
-                arr = np.asarray(data, dtype=npdtype)
+                if scalar_dtype is bfloat16:
+                    # bfloat16 is stored as uint16 internally. When the input data is already
+                    # uint16 (e.g. pre-encoded bfloat16 bits from a numpy array), use it directly.
+                    # Otherwise, convert float values to their bfloat16 bit representation rather
+                    # than just truncating to integer.
+                    if isinstance(data, np.ndarray) and data.dtype == np.uint16:
+                        arr = data
+                    else:
+                        arr = _np_float32_to_bfloat16_bits(np.asarray(data, dtype=np.float32))
+                else:
+                    arr = np.asarray(data, dtype=npdtype)
             except Exception as e:
                 raise RuntimeError(f"Failed to convert input data to an array with type {npdtype}: {e}") from e
 
