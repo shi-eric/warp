@@ -804,6 +804,9 @@ class Kernel:
 
         # cache for invoke() struct types (avoids dynamic type() calls)
         self._invoke_cache = {}
+        self._invoke_last_fwd = None  # fast-path cache for last forward invoke
+        self._invoke_last_adj = None  # fast-path cache for last adjoint invoke
+        self._launch_cache = None  # fast-path cache for (device, block_dim, module_exec, hooks)
 
         if self.module:
             self.module.register_kernel(self)
@@ -2409,6 +2412,9 @@ class Module:
         # hash data, including the module hash. Module may store multiple hashes (one per block_dim used)
         self.hashers = {}
 
+        # cached module hash for fast-path load() — avoids recomputing hash on every launch
+        self._last_module_hash = None
+
         # LLVM executable modules are identified using strings.  Since it's possible for multiple
         # executable versions to be loaded at the same time, we need a way to ensure uniqueness.
         # A unique handle is created from the module name and this auto-incremented integer id.
@@ -2930,7 +2936,8 @@ class Module:
         output_arch: int | None = None,
         meta_path: os.PathLike | None = None,
     ) -> ModuleExec | None:
-        device = runtime.get_device(device)
+        if type(device) is not Device:
+            device = runtime.get_device(device)
 
         # update module options if launching with a new block dim
         if block_dim is not None:
@@ -2941,8 +2948,12 @@ class Module:
         # check if executable module is already loaded and not stale
         exec = self.execs.get((device.context, active_block_dim))
         if exec is not None:
+            # Fast path: if module content hasn't changed since last load, skip hash recomputation
+            if exec.module_hash == self._last_module_hash:
+                return exec
             current_hash = self.get_module_hash(active_block_dim)
             if self.options["strip_hash"] or (exec.module_hash == current_hash):
+                self._last_module_hash = current_hash
                 return exec
             # else: Hash mismatch means module changed, need to recompile
             if warp.config.verbose:
@@ -3038,9 +3049,14 @@ class Module:
         # clear loaded modules
         self.execs = {}
 
+        # invalidate per-kernel launch caches that reference our module_exec objects
+        for kernel in self._get_live_kernels():
+            kernel._launch_cache = None
+
     def mark_modified(self):
         # clear hash data
         self.hashers = {}
+        self._last_module_hash = None
 
         # clear build failures
         self.failed_builds = set()
@@ -5086,6 +5102,7 @@ class Runtime:
 
         self.device_map = {}  # device lookup by alias
         self.context_map = {}  # device lookup by context
+        self._last_device = None  # cache for get_device fast path
 
         # register CPU device
         cpu_name = platform.processor()
@@ -5476,9 +5493,15 @@ class Runtime:
         elif ident is None:
             return self.default_device
 
+        # fast path: check if same as last resolved device
+        last = self._last_device
+        if last is not None and last[0] is ident:
+            return last[1]
+
         # string lookup
         device = self.device_map.get(ident)
         if device is not None:
+            self._last_device = (ident, device)
             return device
         elif ident == "cuda":
             return self.get_current_cuda_device()
@@ -6714,8 +6737,22 @@ def event_from_ipc_handle(handle, device: DeviceLike = None) -> Event:
 
 # given a kernel destination argument type and a value convert
 #  to a c-type that can be passed to a kernel
+_is_array_types = None  # lazily initialized tuple for isinstance check
+
+
 def pack_arg(kernel, arg_type, arg_name, value, device, adjoint=False):
-    if warp._src.types.is_array(arg_type):
+    # Fast path for scalar types (float32, int32, etc.)
+    # These inherit from scalar_base and have a _type_ attribute for ctypes conversion
+    if isinstance(arg_type, type) and issubclass(arg_type, warp._src.types.scalar_base):
+        if value is not None:
+            return arg_type._type_(value)
+        elif adjoint:
+            return arg_type._type_(0)
+
+    global _is_array_types
+    if _is_array_types is None:
+        _is_array_types = (warp._src.types.array_types, warp._src.types._ArrayAnnotationBase)
+    if isinstance(arg_type, _is_array_types):
         if value is None:
             # allow for NULL arrays
             return arg_type.__ctype__()
@@ -6725,6 +6762,11 @@ def pack_arg(kernel, arg_type, arg_name, value, device, adjoint=False):
             return value
 
         else:
+            # Fast path for the common case: warp.array with matching type, dtype, ndim, device
+            if type(value) is warp.array and not adjoint:
+                if value.dtype is arg_type.dtype and value.ndim == arg_type.ndim and value.device is device:
+                    return value.__ctype__()
+
             # check for array type
             # - in forward passes, array types have to match
             # - in backward passes, indexed array gradients are regular arrays
@@ -6924,7 +6966,24 @@ def pack_arg(kernel, arg_type, arg_name, value, device, adjoint=False):
 
 # invoke a CPU kernel by passing the parameters as a ctypes structure
 def invoke(kernel, hooks, params: Sequence[Any], adjoint: bool):
-    # Build cache key from parameter types
+    # Ultra-fast path: for repeated calls with the same kernel and adjoint flag,
+    # the param types are always the same (pack_arg ensures type consistency).
+    # Skip tuple construction and dict lookup entirely.
+    last = kernel._invoke_last_fwd if not adjoint else kernel._invoke_last_adj
+    if last is not None:
+        ArgsStruct, fields = last[0], last[1]
+        # Construct struct with positional args (avoids setattr loop)
+        args = ArgsStruct(*params[1 : 1 + len(fields)])
+        if not adjoint:
+            hooks.forward(params[0], ctypes.byref(args))
+        else:
+            AdjArgsStruct, adj_fields = last[2], last[3]
+            nf = len(fields)
+            adj_args = AdjArgsStruct(*params[1 + nf : 1 + nf + len(adj_fields)])
+            hooks.backward(params[0], ctypes.byref(args), ctypes.byref(adj_args))
+        return
+
+    # Build cache key from parameter types (needed for generic kernels with varying types)
     param_types = tuple(type(p) for p in params[1:])  # skip launch bounds
     cache_key = (param_types, adjoint)
 
@@ -6933,8 +6992,10 @@ def invoke(kernel, hooks, params: Sequence[Any], adjoint: bool):
         # Fast path: use cached struct types
         if adjoint:
             ArgsStruct, AdjArgsStruct, fields, adj_fields = cached
+            kernel._invoke_last_adj = cached
         else:
             ArgsStruct, fields = cached
+            kernel._invoke_last_fwd = cached
 
         args = ArgsStruct()
         for i, field in enumerate(fields):
@@ -6964,7 +7025,9 @@ def invoke(kernel, hooks, params: Sequence[Any], adjoint: bool):
         setattr(args, name, params[1 + i])
 
     if not adjoint:
-        kernel._invoke_cache[cache_key] = (ArgsStruct, fields)
+        entry = (ArgsStruct, fields)
+        kernel._invoke_cache[cache_key] = entry
+        kernel._invoke_last_fwd = entry
         hooks.forward(params[0], ctypes.byref(args))
 
     # for adjoint kernels the adjoint arguments are passed through a second struct
@@ -6983,7 +7046,9 @@ def invoke(kernel, hooks, params: Sequence[Any], adjoint: bool):
             name = field[0]
             setattr(adj_args, name, params[1 + len(fields) + i])
 
-        kernel._invoke_cache[cache_key] = (ArgsStruct, AdjArgsStruct, fields, adj_fields)
+        entry = (ArgsStruct, AdjArgsStruct, fields, adj_fields)
+        kernel._invoke_cache[cache_key] = entry
+        kernel._invoke_last_adj = entry
         hooks.backward(params[0], ctypes.byref(args), ctypes.byref(adj_args))
 
 
@@ -7257,7 +7322,8 @@ def launch(
         block_dim: The number of threads per block (always 1 for "cpu" devices).
     """
 
-    init()
+    if runtime is None:
+        init()
 
     # if stream is specified, use the associated device
     if stream is not None:
@@ -7265,73 +7331,82 @@ def launch(
     else:
         device = runtime.get_device(device)
 
-    if device == "cpu":
+    if device.is_cpu:
         block_dim = 1
-
-    # check function is a Kernel
-    if not isinstance(kernel, Kernel):
-        raise RuntimeError("Error launching kernel, can only launch functions decorated with @wp.kernel.")
 
     # debugging aid
     if warp.config.print_launches:
         print(f"kernel: {kernel.key} dim: {dim} inputs: {inputs} outputs: {outputs} device: {device}")
 
-    # construct launch bounds
-    bounds = launch_bounds_t(dim)
+    # construct launch bounds — inline 1D int fast path to skip isinstance in constructor
+    if type(dim) is int:
+        if dim <= 0:
+            return
+        bounds = launch_bounds_t.__new__(launch_bounds_t)
+        bounds.ndim = 1
+        bounds.size = dim
+        bounds.shape[0] = dim
+        bounds.shape[1] = 1
+        bounds.shape[2] = 1
+        bounds.shape[3] = 1
+    else:
+        bounds = launch_bounds_t(dim)
+        if bounds.size <= 0:
+            return
 
     if bounds.size > 0:
         # first param is the number of threads
-        params = []
-        params.append(bounds)
+        params = [bounds]
 
-        # converts arguments to kernel's expected ctypes and packs into params
-        def pack_args(args, params, adjoint=False):
-            for i, a in enumerate(args):
-                arg_type = kernel.adj.args[i].type
-                arg_name = kernel.adj.args[i].label
+        # Fast path: reuse cached module_exec+hooks when kernel, device, block_dim unchanged
+        # Skip arg count check and generic/unique module checks on repeated launches
+        _lc = kernel._launch_cache
+        if _lc is not None and _lc[0] is device and _lc[1] == block_dim:
+            module_exec, hooks = _lc[2], _lc[3]
+        else:
+            num_fwd_args = len(inputs) + len(outputs)
 
-                params.append(pack_arg(kernel, arg_type, arg_name, a, device, adjoint))
+            if num_fwd_args != len(kernel.adj.args):
+                raise RuntimeError(
+                    f"Error launching kernel '{kernel.key}', passed {num_fwd_args} arguments but kernel requires {len(kernel.adj.args)}."
+                )
 
-        fwd_args = []
-        fwd_args.extend(inputs)
-        fwd_args.extend(outputs)
+            # if it's a generic kernel, infer the required overload from the arguments
+            if kernel.is_generic:
+                fwd_args = [*inputs, *outputs] if outputs else list(inputs)
+                fwd_types = kernel.infer_argument_types(fwd_args)
+                kernel = kernel.add_overload(fwd_types)
 
-        adj_args = []
-        adj_args.extend(adj_inputs)
-        adj_args.extend(adj_outputs)
+            # For unique module kernels, reset skip_build to allow compilation attempts on different devices.
+            if kernel.is_unique_module:
+                kernel.adj.skip_build = False
+            try:
+                module_exec = kernel.module.load(device, block_dim)
+            except Exception:
+                kernel.adj.skip_build = True
+                raise
 
-        if (len(fwd_args)) != (len(kernel.adj.args)):
-            raise RuntimeError(
-                f"Error launching kernel '{kernel.key}', passed {len(fwd_args)} arguments but kernel requires {len(kernel.adj.args)}."
-            )
+            if not module_exec:
+                return
 
-        # if it's a generic kernel, infer the required overload from the arguments
-        if kernel.is_generic:
-            fwd_types = kernel.infer_argument_types(fwd_args)
-            kernel = kernel.add_overload(fwd_types)
+            hooks = module_exec.get_kernel_hooks(kernel)
+            kernel._launch_cache = (device, block_dim, module_exec, hooks)
 
-        # For unique module kernels, reset skip_build to allow compilation attempts on different devices.
-        # Even though a Module compiles separately for each device (stored in Module.execs),
-        # the skip_build flag is on the Adjoint which is shared across devices.
-        # A failure on one device shouldn't prevent compilation attempts on other devices.
-        if kernel.is_unique_module:
-            kernel.adj.skip_build = False
+        # pack forward arguments (iterate inputs+outputs directly, avoid intermediate list)
+        kernel_args = kernel.adj.args
+        i = 0
+        for a in inputs:
+            params.append(pack_arg(kernel, kernel_args[i].type, kernel_args[i].label, a, device, False))
+            i += 1
+        for a in outputs:
+            params.append(pack_arg(kernel, kernel_args[i].type, kernel_args[i].label, a, device, False))
+            i += 1
 
-        # delay load modules, including new overload if needed
-        try:
-            module_exec = kernel.module.load(device, block_dim)
-        except Exception:
-            kernel.adj.skip_build = True
-            raise
-
-        if not module_exec:
-            return
-
-        # late bind
-        hooks = module_exec.get_kernel_hooks(kernel)
-
-        pack_args(fwd_args, params, adjoint=False)
-        pack_args(adj_args, params, adjoint=True)
+        # pack adjoint arguments (only when provided)
+        if adj_inputs or adj_outputs:
+            adj_args = [*adj_inputs, *adj_outputs] if adj_outputs else list(adj_inputs)
+            for i, a in enumerate(adj_args):
+                params.append(pack_arg(kernel, kernel_args[i].type, kernel_args[i].label, a, device, True))
 
         # run kernel
         if device.is_cpu:
@@ -7456,6 +7531,7 @@ def launch(
 
         # detect illegal inter-kernel read/write access patterns if verification flag is set
         if warp.config.verify_autograd_array_access:
+            fwd_args = [*inputs, *outputs] if outputs else list(inputs)
             runtime.tape._check_kernel_array_access(kernel, fwd_args)
 
 

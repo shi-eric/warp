@@ -2065,23 +2065,25 @@ class launch_bounds_t(ctypes.Structure):
 
     def __init__(self, shape: int | Sequence[int]):
         if isinstance(shape, int):
-            # 1d launch
+            # 1d launch (most common path)
             self.ndim = 1
             self.size = shape
             self.shape[0] = shape
-
+            self.shape[1] = 1
+            self.shape[2] = 1
+            self.shape[3] = 1
         else:
             # nd launch
-            self.ndim = len(shape)
-            self.size = 1
-
-            for i in range(self.ndim):
+            ndim = len(shape)
+            self.ndim = ndim
+            size = 1
+            for i in range(ndim):
                 self.shape[i] = shape[i]
-                self.size = self.size * shape[i]
-
-        # initialize the remaining dims to 1
-        for i in range(self.ndim, LAUNCH_MAX_DIMS):
-            self.shape[i] = 1
+                size *= shape[i]
+            self.size = size
+            # initialize the remaining dims to 1 (unrolled for LAUNCH_MAX_DIMS=4)
+            for i in range(ndim, LAUNCH_MAX_DIMS):
+                self.shape[i] = 1
 
 
 INT_WIDTH = ctypes.sizeof(ctypes.c_int) * 8
