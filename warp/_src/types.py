@@ -3880,7 +3880,11 @@ class array(Array[DType, NDim]):
         """
         if not _suppress_bfloat16_warning and (
             self.dtype is bfloat16
-            or (isinstance(self.dtype, type) and issubclass(self.dtype, ctypes.Array) and self.dtype._wp_scalar_type_ is bfloat16)
+            or (
+                isinstance(self.dtype, type)
+                and issubclass(self.dtype, ctypes.Array)
+                and self.dtype._wp_scalar_type_ is bfloat16
+            )
         ):
             warp._src.utils.warn(
                 "bfloat16 arrays are returned as np.uint16 (raw bit representation) "
