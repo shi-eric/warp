@@ -207,10 +207,6 @@ def test_bf16_grad(test, device):
 
 
 def test_bf16_atomics(test, device):
-    device = wp.get_device(device)
-    if not device.is_cuda:
-        test.skipTest("bfloat16 atomics test requires CUDA")
-
     output = wp.zeros(1, dtype=wp.bfloat16, device=device)
     wp.launch(bf16_atomic_kernel, dim=10, inputs=[output], device=device)
 
