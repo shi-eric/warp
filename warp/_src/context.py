@@ -2256,10 +2256,17 @@ class ModuleBuilder:
             source += warp._src.codegen.codegen_module(kernel, device=device, options=self.options)
 
         # add headers
+        # Detect whether this module uses bfloat16; if not, define WP_NO_BFLOAT16
+        # to skip compiling bfloat16 overloads in builtin.h (significant LLVM speedup).
+        type_defines = "" if "bfloat16" in source else "#define WP_NO_BFLOAT16\n"
         if device == "cpu":
-            source = warp._src.codegen.cpu_module_header.format(block_dim=self.options["block_dim"]) + source
+            source = (
+                type_defines + warp._src.codegen.cpu_module_header.format(block_dim=self.options["block_dim"]) + source
+            )
         else:
-            source = warp._src.codegen.cuda_module_header.format(block_dim=self.options["block_dim"]) + source
+            source = (
+                type_defines + warp._src.codegen.cuda_module_header.format(block_dim=self.options["block_dim"]) + source
+            )
 
         return source
 

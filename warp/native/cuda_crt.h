@@ -1224,6 +1224,7 @@ __device_forceinline__ __half atomicAdd(__half* const address, const __half val)
     return __short_as_half(old);
 }
 
+#ifndef WP_NO_BFLOAT16
 struct __nv_bfloat16 {
     unsigned short u;
 };
@@ -1270,6 +1271,7 @@ __device_forceinline__ __nv_bfloat16 atomicAdd(__nv_bfloat16* const address, con
 
     return __short_as_bfloat16(old);
 }
+#endif  // WP_NO_BFLOAT16
 
 __device_forceinline__ double atomicAdd(double* const address, const double val) { return __dAtomicAdd(address, val); }
 
