@@ -10,30 +10,30 @@ from warp.tests.unittest_utils import *
 
 
 @wp.kernel
-def bf16_conversion_kernel(input: wp.array(dtype=wp.float32), output: wp.array(dtype=wp.bfloat16)):
+def bf16_conversion_kernel(input: wp.array[wp.float32], output: wp.array[wp.bfloat16]):
     tid = wp.tid()
     output[tid] = wp.bfloat16(input[tid])
 
 
 @wp.kernel
-def bf16_to_f32_kernel(input: wp.array(dtype=wp.bfloat16), output: wp.array(dtype=wp.float32)):
+def bf16_to_f32_kernel(input: wp.array[wp.bfloat16], output: wp.array[wp.float32]):
     tid = wp.tid()
     output[tid] = wp.float32(input[tid])
 
 
 @wp.kernel
-def bf16_param_kernel(x: wp.bfloat16, output: wp.array(dtype=wp.bfloat16)):
+def bf16_param_kernel(x: wp.bfloat16, output: wp.array[wp.bfloat16]):
     output[0] = x
 
 
 @wp.kernel
 def bf16_arithmetic_kernel(
-    a: wp.array(dtype=wp.bfloat16),
-    b: wp.array(dtype=wp.bfloat16),
-    out_add: wp.array(dtype=wp.bfloat16),
-    out_sub: wp.array(dtype=wp.bfloat16),
-    out_mul: wp.array(dtype=wp.bfloat16),
-    out_div: wp.array(dtype=wp.bfloat16),
+    a: wp.array[wp.bfloat16],
+    b: wp.array[wp.bfloat16],
+    out_add: wp.array[wp.bfloat16],
+    out_sub: wp.array[wp.bfloat16],
+    out_mul: wp.array[wp.bfloat16],
+    out_div: wp.array[wp.bfloat16],
 ):
     tid = wp.tid()
     out_add[tid] = a[tid] + b[tid]
@@ -98,8 +98,8 @@ def test_bf16_arithmetic(test, device):
 
 @wp.kernel
 def bf16_grad_kernel(
-    x: wp.array(dtype=wp.bfloat16),
-    loss: wp.array(dtype=wp.float32),
+    x: wp.array[wp.bfloat16],
+    loss: wp.array[wp.float32],
 ):
     tid = wp.tid()
     v = wp.float32(x[tid])
@@ -107,7 +107,7 @@ def bf16_grad_kernel(
 
 
 @wp.kernel
-def bf16_atomic_kernel(output: wp.array(dtype=wp.bfloat16)):
+def bf16_atomic_kernel(output: wp.array[wp.bfloat16]):
     wp.atomic_add(output, 0, wp.bfloat16(1.0))
 
 
@@ -266,15 +266,15 @@ def test_bf16_interop_torch(test, device):
 
 @wp.kernel
 def bf16_math_kernel(
-    input: wp.array(dtype=wp.bfloat16),
-    out_sin: wp.array(dtype=wp.bfloat16),
-    out_cos: wp.array(dtype=wp.bfloat16),
-    out_sqrt: wp.array(dtype=wp.bfloat16),
-    out_exp: wp.array(dtype=wp.bfloat16),
-    out_log: wp.array(dtype=wp.bfloat16),
-    out_pow: wp.array(dtype=wp.bfloat16),
-    out_tan: wp.array(dtype=wp.bfloat16),
-    out_abs: wp.array(dtype=wp.bfloat16),
+    input: wp.array[wp.bfloat16],
+    out_sin: wp.array[wp.bfloat16],
+    out_cos: wp.array[wp.bfloat16],
+    out_sqrt: wp.array[wp.bfloat16],
+    out_exp: wp.array[wp.bfloat16],
+    out_log: wp.array[wp.bfloat16],
+    out_pow: wp.array[wp.bfloat16],
+    out_tan: wp.array[wp.bfloat16],
+    out_abs: wp.array[wp.bfloat16],
 ):
     tid = wp.tid()
     x = input[tid]
@@ -343,9 +343,9 @@ bf16_mat22 = wp.types.matrix(shape=(2, 2), dtype=wp.bfloat16)
 
 @wp.kernel
 def bf16_vec3_kernel(
-    out_x: wp.array(dtype=wp.float32),
-    out_y: wp.array(dtype=wp.float32),
-    out_z: wp.array(dtype=wp.float32),
+    out_x: wp.array[wp.float32],
+    out_y: wp.array[wp.float32],
+    out_z: wp.array[wp.float32],
 ):
     v = bf16_vec3(wp.bfloat16(1.0), wp.bfloat16(2.0), wp.bfloat16(3.0))
     out_x[0] = wp.float32(v[0])
@@ -355,10 +355,10 @@ def bf16_vec3_kernel(
 
 @wp.kernel
 def bf16_mat22_kernel(
-    out_00: wp.array(dtype=wp.float32),
-    out_01: wp.array(dtype=wp.float32),
-    out_10: wp.array(dtype=wp.float32),
-    out_11: wp.array(dtype=wp.float32),
+    out_00: wp.array[wp.float32],
+    out_01: wp.array[wp.float32],
+    out_10: wp.array[wp.float32],
+    out_11: wp.array[wp.float32],
 ):
     m = bf16_mat22(wp.bfloat16(1.0), wp.bfloat16(2.0), wp.bfloat16(3.0), wp.bfloat16(4.0))
     out_00[0] = wp.float32(m[0, 0])
@@ -401,8 +401,8 @@ class Bf16Struct:
 @wp.kernel
 def bf16_struct_kernel(
     s: Bf16Struct,
-    out_bf16: wp.array(dtype=wp.float32),
-    out_f32: wp.array(dtype=wp.float32),
+    out_bf16: wp.array[wp.float32],
+    out_f32: wp.array[wp.float32],
 ):
     out_bf16[0] = wp.float32(s.bf16_val)
     out_f32[0] = s.f32_val
@@ -425,7 +425,7 @@ def test_bf16_struct(test, device):
 # Test comparison operators
 @wp.kernel
 def bf16_comparison_kernel(
-    results: wp.array(dtype=wp.int32),
+    results: wp.array[wp.int32],
 ):
     a = wp.bfloat16(1.0)
     b = wp.bfloat16(2.0)
@@ -476,9 +476,7 @@ class TestBf16(unittest.TestCase):
     pass
 
 
-devices = []
-if wp.is_cpu_available():
-    devices.append("cpu")
+devices = [wp.get_device("cpu")]
 for cuda_device in get_selected_cuda_test_devices():
     if cuda_device.arch >= 80:
         devices.append(cuda_device)
