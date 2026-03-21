@@ -6,6 +6,7 @@
 #include "builtin.h"
 
 #include "array.h"
+#include "mat.h"
 
 #define PNANOVDB_C
 #define PNANOVDB_MEMCPY_CUSTOM

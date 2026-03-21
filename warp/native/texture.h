@@ -4,6 +4,7 @@
 #pragma once
 
 #include "builtin.h"
+#include "vec.h"
 
 namespace wp {
 

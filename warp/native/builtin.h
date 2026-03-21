@@ -1218,9 +1218,13 @@ inline CUDA_CALLABLE void adj_floor(T x, T& adj_x, T adj_ret){ }\
 inline CUDA_CALLABLE void adj_ceil(T x, T& adj_x, T adj_ret){ }\
 inline CUDA_CALLABLE void adj_frac(T x, T& adj_x, T adj_ret){ }
 
+#ifndef WP_NO_FLOAT16_OPS
 DECLARE_ADJOINTS(float16)
+#endif
 DECLARE_ADJOINTS(float32)
+#ifndef WP_NO_FLOAT64_OPS
 DECLARE_ADJOINTS(float64)
+#endif
 
 template <typename C, typename T> CUDA_CALLABLE inline T where(const C& cond, const T& a, const T& b)
 {
@@ -1881,12 +1885,20 @@ inline CUDA_CALLABLE void adj_printf(const char* fmt, ...) { }
 
 // clang-format off
 // These includes must remain in this order due to dependencies
+#ifndef WP_NO_VEC
 #include "vec.h"
+#endif
+#ifndef WP_NO_MAT
 #include "mat.h"
+#endif
+#ifndef WP_NO_QUAT
 #include "quat.h"
 #include "spatial.h"
+#endif
+#ifndef WP_NO_INTERSECT
 #include "intersect.h"
 #include "intersect_adj.h"
+#endif
 // clang-format on
 
 //--------------
@@ -1937,9 +1949,13 @@ CUDA_CALLABLE inline void adj_lerp(const T& a, const T& b, T t, T& adj_a, T& adj
     adj_t += b*adj_ret - a*adj_ret;\
 }
 
+#ifndef WP_NO_FLOAT16_OPS
 DECLARE_INTERP_FUNCS(float16)
+#endif
 DECLARE_INTERP_FUNCS(float32)
+#ifndef WP_NO_FLOAT64_OPS
 DECLARE_INTERP_FUNCS(float64)
+#endif
 
 inline CUDA_CALLABLE void print(const str s) { printf("%s\n", s); }
 
@@ -1965,37 +1981,6 @@ inline CUDA_CALLABLE void print(unsigned long long i) { printf("%llu\n", i); }
 
 inline CUDA_CALLABLE void print(bool b) { printf(b ? "True\n" : "False\n"); }
 
-template <unsigned Length, typename Type> inline CUDA_CALLABLE void print(vec_t<Length, Type> v)
-{
-    for (unsigned i = 0; i < Length; ++i) {
-        printf("%g ", float(v[i]));
-    }
-    printf("\n");
-}
-
-template <typename Type> inline CUDA_CALLABLE void print(quat_t<Type> i)
-{
-    printf("%g %g %g %g\n", float(i.x), float(i.y), float(i.z), float(i.w));
-}
-
-template <unsigned Rows, unsigned Cols, typename Type> inline CUDA_CALLABLE void print(const mat_t<Rows, Cols, Type>& m)
-{
-    for (unsigned i = 0; i < Rows; ++i) {
-        for (unsigned j = 0; j < Cols; ++j) {
-            printf("%g ", float(m.data[i][j]));
-        }
-        printf("\n");
-    }
-}
-
-template <typename Type> inline CUDA_CALLABLE void print(transform_t<Type> t)
-{
-    printf(
-        "(%g %g %g) (%g %g %g %g)\n", float(t.p[0]), float(t.p[1]), float(t.p[2]), float(t.q.x), float(t.q.y),
-        float(t.q.z), float(t.q.w)
-    );
-}
-
 template <typename T> inline CUDA_CALLABLE void adj_print(const T& x, const T& adj_x)
 {
     printf("adj: <type without print implementation>\n");
@@ -2019,42 +2004,6 @@ inline CUDA_CALLABLE void adj_print(unsigned long x, unsigned long adj_x) { prin
 inline CUDA_CALLABLE void adj_print(unsigned long long x, unsigned long long adj_x) { printf("adj: %llu\n", adj_x); }
 
 inline CUDA_CALLABLE void adj_print(bool x, bool adj_x) { printf("adj: %s\n", (adj_x ? "True" : "False")); }
-
-template <unsigned Length, typename Type>
-inline CUDA_CALLABLE void adj_print(const vec_t<Length, Type>& v, const vec_t<Length, Type>& adj_v)
-{
-    printf("adj:");
-    for (unsigned i = 0; i < Length; i++)
-        printf(" %g", float(adj_v[i]));
-    printf("\n");
-}
-
-template <unsigned Rows, unsigned Cols, typename Type>
-inline CUDA_CALLABLE void adj_print(const mat_t<Rows, Cols, Type>& m, const mat_t<Rows, Cols, Type>& adj_m)
-{
-    for (unsigned i = 0; i < Rows; i++) {
-        if (i == 0)
-            printf("adj:");
-        else
-            printf("    ");
-        for (unsigned j = 0; j < Cols; j++)
-            printf(" %g", float(adj_m.data[i][j]));
-        printf("\n");
-    }
-}
-
-template <typename Type> inline CUDA_CALLABLE void adj_print(const quat_t<Type>& q, const quat_t<Type>& adj_q)
-{
-    printf("adj: %g %g %g %g\n", float(adj_q.x), float(adj_q.y), float(adj_q.z), float(adj_q.w));
-}
-
-template <typename Type> inline CUDA_CALLABLE void adj_print(const transform_t<Type>& t, const transform_t<Type>& adj_t)
-{
-    printf(
-        "adj: (%g %g %g) (%g %g %g %g)\n", float(adj_t.p[0]), float(adj_t.p[1]), float(adj_t.p[2]), float(adj_t.q.x),
-        float(adj_t.q.y), float(adj_t.q.z), float(adj_t.q.w)
-    );
-}
 
 inline CUDA_CALLABLE void adj_print(str t, str& adj_t) { printf("adj: %s\n", t); }
 
@@ -2104,6 +2053,7 @@ template <typename T> inline CUDA_CALLABLE void expect_near(const T& actual, con
     }
 }
 
+#ifndef WP_NO_VEC
 inline CUDA_CALLABLE void expect_near(const vec3& actual, const vec3& expected, const float& tolerance)
 {
     const float diff
@@ -2119,6 +2069,7 @@ inline CUDA_CALLABLE void expect_near(const vec3& actual, const vec3& expected, 
         print(diff);
     }
 }
+#endif
 
 template <typename T>
 inline CUDA_CALLABLE void adj_expect_near(
@@ -2128,12 +2079,14 @@ inline CUDA_CALLABLE void adj_expect_near(
     // nop
 }
 
+#ifndef WP_NO_VEC
 inline CUDA_CALLABLE void adj_expect_near(
     const vec3& actual, const vec3& expected, float tolerance, vec3& adj_actual, vec3& adj_expected, float adj_tolerance
 )
 {
     // nop
 }
+#endif
 
 
 }  // namespace wp
@@ -2142,18 +2095,37 @@ inline CUDA_CALLABLE void adj_expect_near(
 // include array.h so we have the print, isfinite functions for the inner array types defined
 #include "array.h"
 #include "tuple.h"
+#ifndef WP_NO_MESH
 #include "mesh.h"
-#include "bvh.h" 
+#endif
+#ifndef WP_NO_BVH
+#include "bvh.h"
+#endif
+#ifndef WP_NO_SVD
 #include "svd.h"
+#endif
+#ifndef WP_NO_HASHGRID
 #include "hashgrid.h"
+#endif
+#ifndef WP_NO_VOLUME
 #include "volume.h"
+#endif
+#ifndef WP_NO_TEXTURE
 #include "texture.h"
+#endif
 #include "range.h"
+#ifndef WP_NO_RAND
 #include "rand.h"
+#endif
+#ifndef WP_NO_NOISE
 #include "noise.h"
+#endif
 #include "matnn.h"
+#include "tile_storage.h"
+#ifndef WP_NO_TILE
 #include "tile.h"
 #include "tile_reduce.h"
 #include "tile_scan.h"
 #include "tile_radix_sort.h"
+#endif
 // clang-format on

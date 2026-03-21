@@ -417,6 +417,7 @@ add_builtin(
     .. attention:: This function will no longer support integer types as input. Please use float types instead.
     """,
     is_differentiable=False,
+    compile_guard="WP_NO_VEC",
 )
 add_builtin(
     "isfinite",
@@ -429,6 +430,7 @@ add_builtin(
     .. attention:: This function will no longer support integer types as input. Please use float types instead.
     """,
     is_differentiable=False,
+    compile_guard="WP_NO_VEC",
 )
 add_builtin(
     "isfinite",
@@ -441,6 +443,7 @@ add_builtin(
     .. attention:: This function will no longer support integer types as input. Please use float types instead.
     """,
     is_differentiable=False,
+    compile_guard="WP_NO_MAT",
 )
 
 add_builtin(
@@ -466,6 +469,7 @@ add_builtin(
     .. attention:: This function will no longer support integer types as input. Please use float types instead.
     """,
     is_differentiable=False,
+    compile_guard="WP_NO_VEC",
 )
 add_builtin(
     "isnan",
@@ -478,6 +482,7 @@ add_builtin(
     .. attention:: This function will no longer support integer types as input. Please use float types instead.
     """,
     is_differentiable=False,
+    compile_guard="WP_NO_VEC",
 )
 add_builtin(
     "isnan",
@@ -490,6 +495,7 @@ add_builtin(
     .. attention:: This function will no longer support integer types as input. Please use float types instead.
     """,
     is_differentiable=False,
+    compile_guard="WP_NO_MAT",
 )
 
 add_builtin(
@@ -515,6 +521,7 @@ add_builtin(
     .. attention:: This function will no longer support integer types as input. Please use float types instead.
     """,
     is_differentiable=False,
+    compile_guard="WP_NO_VEC",
 )
 add_builtin(
     "isinf",
@@ -527,6 +534,7 @@ add_builtin(
     .. attention:: This function will no longer support integer types as input. Please use float types instead.
     """,
     is_differentiable=False,
+    compile_guard="WP_NO_VEC",
 )
 add_builtin(
     "isinf",
@@ -539,6 +547,7 @@ add_builtin(
     .. attention:: This function will no longer support integer types as input. Please use float types instead.
     """,
     is_differentiable=False,
+    compile_guard="WP_NO_MAT",
 )
 
 
@@ -597,6 +606,7 @@ add_builtin(
     value_func=scalar_sametypes_value_func,
     group="Vector Math",
     doc="""Compute the dot product.""",
+    compile_guard="WP_NO_VEC",
 )
 add_builtin(
     "ddot",
@@ -605,6 +615,7 @@ add_builtin(
     value_func=scalar_sametypes_value_func,
     group="Vector Math",
     doc="Compute the double dot product between two matrices.",
+    compile_guard="WP_NO_MAT",
 )
 
 add_builtin(
@@ -617,6 +628,7 @@ add_builtin(
     Returns:
         The element-wise minimum of ``a`` and ``b``.""",
     group="Vector Math",
+    compile_guard="WP_NO_VEC",
 )
 add_builtin(
     "max",
@@ -628,6 +640,7 @@ add_builtin(
     Returns:
         The element-wise maximum of ``a`` and ``b``.""",
     group="Vector Math",
+    compile_guard="WP_NO_VEC",
 )
 
 add_builtin(
@@ -639,6 +652,7 @@ add_builtin(
     Returns:
         The minimum element of ``a``.""",
     group="Vector Math",
+    compile_guard="WP_NO_VEC",
 )
 add_builtin(
     "max",
@@ -649,6 +663,7 @@ add_builtin(
     Returns:
         The maximum element of ``a``.""",
     group="Vector Math",
+    compile_guard="WP_NO_VEC",
 )
 
 add_builtin(
@@ -658,6 +673,7 @@ add_builtin(
     doc="Compute the index of the minimum element of vector ``a``.",
     group="Vector Math",
     is_differentiable=False,
+    compile_guard="WP_NO_VEC",
 )
 add_builtin(
     "argmax",
@@ -666,6 +682,7 @@ add_builtin(
     doc="Compute the index of the maximum element of vector ``a``.",
     group="Vector Math",
     is_differentiable=False,
+    compile_guard="WP_NO_VEC",
 )
 
 add_builtin(
@@ -678,6 +695,7 @@ add_builtin(
     Returns:
         The element-wise absolute value of ``x``.""",
     group="Vector Math",
+    compile_guard="WP_NO_VEC",
 )
 
 add_builtin(
@@ -690,6 +708,7 @@ add_builtin(
     Returns:
         -1 for negative elements of ``x`` and 1 otherwise.""",
     group="Vector Math",
+    compile_guard="WP_NO_VEC",
 )
 
 
@@ -709,6 +728,7 @@ add_builtin(
     value_func=outer_value_func,
     group="Vector Math",
     doc="Compute the outer product ``a*b^T`` for two vectors.",
+    compile_guard="WP_NO_MAT",
 )
 
 add_builtin(
@@ -717,6 +737,7 @@ add_builtin(
     value_func=sametypes_create_value_func(vector(length=3, dtype=Scalar)),
     group="Vector Math",
     doc="Compute the cross product of two 3D vectors.",
+    compile_guard="WP_NO_VEC",
 )
 add_builtin(
     "skew",
@@ -728,6 +749,7 @@ add_builtin(
     ),
     group="Vector Math",
     doc="Compute the skew-symmetric 3x3 matrix for a 3D vector ``vec``.",
+    compile_guard="WP_NO_MAT",
 )
 
 add_builtin(
@@ -739,6 +761,7 @@ add_builtin(
 
     Compute the length of a floating-point vector.""",
     require_original_output_arg=True,
+    compile_guard="WP_NO_VEC",
 )
 add_builtin(
     "length",
@@ -749,6 +772,7 @@ add_builtin(
 
     Compute the length of a quaternion.""",
     require_original_output_arg=True,
+    compile_guard="WP_NO_VEC",
 )
 add_builtin(
     "length_sq",
@@ -758,6 +782,7 @@ add_builtin(
     doc="""Compute the squared length of ``a``.
 
     Compute the squared length of a vector.""",
+    compile_guard="WP_NO_VEC",
 )
 add_builtin(
     "length_sq",
@@ -767,6 +792,7 @@ add_builtin(
     doc="""Compute the squared length of ``a``.
 
     Compute the squared length of a quaternion.""",
+    compile_guard="WP_NO_VEC",
 )
 add_builtin(
     "normalize",
@@ -777,6 +803,7 @@ add_builtin(
 
     If ``length(a)`` is 0, the zero vector is returned.""",
     require_original_output_arg=True,
+    compile_guard="WP_NO_VEC",
 )
 add_builtin(
     "normalize",
@@ -786,6 +813,7 @@ add_builtin(
     doc="""Compute the normalized value of ``a``.
 
     If ``length(a)`` is 0, the zero quaternion is returned.""",
+    compile_guard="WP_NO_VEC",
 )
 
 add_builtin(
@@ -798,6 +826,7 @@ add_builtin(
     ),
     group="Vector Math",
     doc="Compute the transpose of matrix ``a``.",
+    compile_guard="WP_NO_MAT",
 )
 
 
@@ -815,6 +844,7 @@ add_builtin(
     group="Vector Math",
     doc="""Compute the inverse of matrix ``a``.""",
     require_original_output_arg=True,
+    compile_guard="WP_NO_MAT",
 )
 
 add_builtin(
@@ -824,6 +854,7 @@ add_builtin(
     group="Vector Math",
     doc="""Compute the inverse of matrix ``a``.""",
     require_original_output_arg=True,
+    compile_guard="WP_NO_MAT",
 )
 
 add_builtin(
@@ -833,6 +864,7 @@ add_builtin(
     group="Vector Math",
     doc="""Compute the inverse of matrix ``a``.""",
     require_original_output_arg=True,
+    compile_guard="WP_NO_MAT",
 )
 
 add_builtin(
@@ -846,6 +878,7 @@ add_builtin(
     Falls back to exact inverse on CPU.""",
     require_original_output_arg=True,
     export=False,
+    compile_guard="WP_NO_MAT",
 )
 
 add_builtin(
@@ -859,6 +892,7 @@ add_builtin(
     Falls back to exact inverse on CPU.""",
     require_original_output_arg=True,
     export=False,
+    compile_guard="WP_NO_MAT",
 )
 
 add_builtin(
@@ -872,6 +906,7 @@ add_builtin(
     Falls back to exact inverse on CPU.""",
     require_original_output_arg=True,
     export=False,
+    compile_guard="WP_NO_MAT",
 )
 
 
@@ -888,6 +923,7 @@ add_builtin(
     value_func=determinant_value_func,
     group="Vector Math",
     doc="""Compute the determinant of matrix ``a``.""",
+    compile_guard="WP_NO_MAT",
 )
 
 add_builtin(
@@ -896,6 +932,7 @@ add_builtin(
     value_func=determinant_value_func,
     group="Vector Math",
     doc="""Compute the determinant of matrix ``a``.""",
+    compile_guard="WP_NO_MAT",
 )
 
 add_builtin(
@@ -904,6 +941,7 @@ add_builtin(
     value_func=determinant_value_func,
     group="Vector Math",
     doc="""Compute the determinant of matrix ``a``.""",
+    compile_guard="WP_NO_MAT",
 )
 
 
@@ -922,6 +960,7 @@ add_builtin(
     value_func=trace_value_func,
     group="Vector Math",
     doc="Compute the trace of matrix ``a``.",
+    compile_guard="WP_NO_MAT",
 )
 
 
@@ -938,6 +977,7 @@ add_builtin(
     value_func=diag_value_func,
     group="Vector Math",
     doc="Construct a matrix with the components of vector ``vec`` on the diagonal.",
+    compile_guard="WP_NO_MAT",
 )
 
 
@@ -958,6 +998,7 @@ add_builtin(
     value_func=get_diag_value_func,
     group="Vector Math",
     doc="Extract a vector containing the diagonal elements of square matrix ``mat``.",
+    compile_guard="WP_NO_MAT",
 )
 
 add_builtin(
@@ -967,6 +1008,7 @@ add_builtin(
     value_func=sametypes_create_value_func(vector(length=Any, dtype=Scalar)),
     group="Vector Math",
     doc="""Compute the component-wise product of ``a`` and ``b``.""",
+    compile_guard="WP_NO_VEC",
 )
 add_builtin(
     "cw_div",
@@ -976,6 +1018,7 @@ add_builtin(
     group="Vector Math",
     doc="""Compute the component-wise division of ``a`` by ``b``.""",
     require_original_output_arg=True,
+    compile_guard="WP_NO_VEC",
 )
 
 add_builtin(
@@ -985,6 +1028,7 @@ add_builtin(
     value_func=sametypes_create_value_func(matrix(shape=(Any, Any), dtype=Scalar)),
     group="Vector Math",
     doc="""Compute the component-wise product of ``a`` and ``b``.""",
+    compile_guard="WP_NO_MAT",
 )
 add_builtin(
     "cw_div",
@@ -994,6 +1038,7 @@ add_builtin(
     group="Vector Math",
     doc="""Compute the component-wise division of ``a`` by ``b``.""",
     require_original_output_arg=True,
+    compile_guard="WP_NO_MAT",
 )
 
 
@@ -1116,6 +1161,7 @@ add_builtin(
     If no arguments are given, the vector is zero-initialized.""",
     group="Vector Math",
     export=False,
+    compile_guard="WP_NO_VEC",
 )
 
 
@@ -1241,6 +1287,7 @@ add_builtin(
     If no positional arguments are given, the matrix is zero-initialized.""",
     group="Vector Math",
     export=False,
+    compile_guard="WP_NO_MAT",
 )
 
 
@@ -1308,6 +1355,7 @@ add_builtin(
     doc="Construct a matrix with each vector argument as a column.",
     group="Vector Math",
     export=False,
+    compile_guard="WP_NO_MAT",
 )
 
 add_builtin(
@@ -1321,6 +1369,7 @@ add_builtin(
     doc="Construct a matrix with each vector argument as a row.",
     group="Vector Math",
     export=False,
+    compile_guard="WP_NO_MAT",
 )
 
 
@@ -1360,6 +1409,7 @@ add_builtin(
     group="Vector Math",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_MAT",
 )
 
 
@@ -1396,6 +1446,7 @@ add_builtin(
     .. deprecated:: 1.8""",
     group="Vector Math",
     export=False,
+    compile_guard="WP_NO_MAT",
 )
 
 
@@ -1423,6 +1474,7 @@ add_builtin(
     doc="""Compute the SVD of a 3x3 matrix ``A``.
 
     The singular values are returned in ``sigma``, while the left and right basis vectors are returned in ``U`` and ``V``.""",
+    compile_guard="WP_NO_SVD",
 )
 
 add_builtin(
@@ -1439,6 +1491,7 @@ add_builtin(
     doc="""Compute the SVD of a 3x3 matrix ``A``.
 
     The singular values are returned in ``sigma``, while the left and right basis vectors are returned in ``U`` and ``V``.""",
+    compile_guard="WP_NO_SVD",
 )
 
 
@@ -1466,6 +1519,7 @@ add_builtin(
     doc="""Compute the SVD of a 2x2 matrix ``A``.
 
     The singular values are returned in ``sigma``, while the left and right basis vectors are returned in ``U`` and ``V``.""",
+    compile_guard="WP_NO_SVD",
 )
 
 add_builtin(
@@ -1482,6 +1536,7 @@ add_builtin(
     doc="""Compute the SVD of a 2x2 matrix ``A``.
 
     The singular values are returned in ``sigma``, while the left and right basis vectors are returned in ``U`` and ``V``.""",
+    compile_guard="WP_NO_SVD",
 )
 
 
@@ -1507,6 +1562,7 @@ add_builtin(
     doc="""Compute the QR decomposition of a 3x3 matrix ``A``.
 
     The orthogonal matrix is returned in ``Q``, while the upper triangular matrix is returned in ``R``.""",
+    compile_guard="WP_NO_SVD",
 )
 
 add_builtin(
@@ -1522,6 +1578,7 @@ add_builtin(
     doc="""Compute the QR decomposition of a 3x3 matrix ``A``.
 
     The orthogonal matrix is returned in ``Q``, while the upper triangular matrix is returned in ``R``.""",
+    compile_guard="WP_NO_SVD",
 )
 
 
@@ -1544,6 +1601,7 @@ add_builtin(
     doc="""Compute the eigendecomposition of a 3x3 matrix ``A``.
 
     The eigenvectors are returned as the columns of ``Q``, while the corresponding eigenvalues are returned in ``d``.""",
+    compile_guard="WP_NO_SVD",
 )
 
 add_builtin(
@@ -1559,6 +1617,7 @@ add_builtin(
     doc="""Compute the eigendecomposition of a 3x3 matrix ``A``.
 
     The eigenvectors are returned as the columns of ``Q``, while the corresponding eigenvalues are returned in ``d``.""",
+    compile_guard="WP_NO_SVD",
 )
 
 # ---------------------------------
@@ -1635,6 +1694,7 @@ add_builtin(
     Zero-initialize the quaternion. Quaternions are laid out as
     ``[ix, iy, iz, r]``, where ``ix``, ``iy``, ``iz`` are the imaginary part, and ``r`` the real part.""",
     export=False,
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "quaternion",
@@ -1649,6 +1709,7 @@ add_builtin(
 
     Use the supplied components (type inferred from component type).""",
     export=False,
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "quaternion",
@@ -1663,6 +1724,7 @@ add_builtin(
 
     Use the supplied vector/scalar (type inferred from scalar type).""",
     export=False,
+    compile_guard="WP_NO_QUAT",
 )
 
 add_builtin(
@@ -1678,6 +1740,7 @@ add_builtin(
 
     Convert ``quat`` to the specified ``dtype``.""",
     export=False,
+    compile_guard="WP_NO_QUAT",
 )
 
 
@@ -1713,6 +1776,7 @@ add_builtin(
     doc="Construct an identity quaternion with zero imaginary part and real part of 1.0.",
     export=True,
     is_differentiable=False,
+    compile_guard="WP_NO_QUAT",
 )
 
 add_builtin(
@@ -1721,6 +1785,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: quaternion(dtype=float_infer_type(arg_types)),
     group="Quaternion Math",
     doc="Construct a quaternion representing a rotation of angle radians around the given axis.",
+    compile_guard="WP_NO_QUAT",
 )
 
 
@@ -1738,6 +1803,7 @@ add_builtin(
     value_func=quat_to_axis_angle_value_func,
     group="Quaternion Math",
     doc="Extract the rotation axis and angle radians a quaternion represents.",
+    compile_guard="WP_NO_QUAT",
 )
 
 add_builtin(
@@ -1747,6 +1813,7 @@ add_builtin(
     group="Quaternion Math",
     doc="Extract the rotation axis and angle radians a quaternion represents.",
     export=False,
+    compile_guard="WP_NO_QUAT",
 )
 
 
@@ -1758,6 +1825,7 @@ add_builtin(
     doc="""Construct a quaternion from a matrix.
 
     If the matrix is not a pure rotation, but for example includes scaling or skewing, the result is undefined.""",
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "quat_from_matrix",
@@ -1767,6 +1835,7 @@ add_builtin(
     doc="""Construct a quaternion from a matrix.
 
     If the top-left 3x3 block of the matrix is not a pure rotation, but for example includes scaling or skewing, the result is undefined.""",
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "quat_rpy",
@@ -1774,6 +1843,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: quaternion(dtype=float_infer_type(arg_types)),
     group="Quaternion Math",
     doc="Construct a quaternion representing a combined roll (z), pitch (x), yaw rotations (y) in radians.",
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "quat_inverse",
@@ -1781,6 +1851,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: quaternion(dtype=float_infer_type(arg_types)),
     group="Quaternion Math",
     doc="Compute quaternion conjugate.",
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "quat_rotate",
@@ -1788,6 +1859,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: vector(length=3, dtype=float_infer_type(arg_types)),
     group="Quaternion Math",
     doc="Rotate a vector by a quaternion.",
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "quat_rotate_inv",
@@ -1795,6 +1867,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: vector(length=3, dtype=float_infer_type(arg_types)),
     group="Quaternion Math",
     doc="Rotate a vector by the inverse of a quaternion.",
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "quat_slerp",
@@ -1803,6 +1876,7 @@ add_builtin(
     group="Quaternion Math",
     doc="Linearly interpolate between two quaternions.",
     require_original_output_arg=True,
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "quat_to_matrix",
@@ -1810,6 +1884,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: matrix(shape=(3, 3), dtype=float_infer_type(arg_types)),
     group="Quaternion Math",
     doc="Convert a quaternion to a 3x3 rotation matrix.",
+    compile_guard="WP_NO_QUAT",
 )
 
 add_builtin(
@@ -1818,6 +1893,7 @@ add_builtin(
     value_func=float_sametypes_value_func,
     group="Quaternion Math",
     doc="""Compute the dot product.""",
+    compile_guard="WP_NO_QUAT",
 )
 # ---------------------------------
 # Transformations
@@ -1924,6 +2000,7 @@ add_builtin(
 
     Use translation ``p`` and rotation ``q``.""",
     export=False,
+    compile_guard="WP_NO_QUAT",
 )
 
 
@@ -1942,6 +2019,7 @@ add_builtin(
     Build a spatial transform vector from components.""",
     group="Spatial Math",
     export=False,
+    compile_guard="WP_NO_QUAT",
 )
 
 
@@ -1977,6 +2055,7 @@ add_builtin(
     doc="Construct an identity transform with zero translation and identity rotation.",
     export=True,
     is_differentiable=False,
+    compile_guard="WP_NO_QUAT",
 )
 
 add_builtin(
@@ -1985,6 +2064,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: vector(length=3, dtype=float_infer_type(arg_types)),
     group="Transformations",
     doc="Extract the translational part of transform ``xform``.",
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "transform_get_rotation",
@@ -1992,6 +2072,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: quaternion(dtype=float_infer_type(arg_types)),
     group="Transformations",
     doc="Extract the rotational part of transform ``xform``.",
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "transform_set_translation",
@@ -1999,6 +2080,7 @@ add_builtin(
     value_type=None,
     group="Transformations",
     doc="Set the translational part of a transform ``xform``.",
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "transform_set_rotation",
@@ -2006,6 +2088,7 @@ add_builtin(
     value_type=None,
     group="Transformations",
     doc="Set the rotational part of a transform ``xform``.",
+    compile_guard="WP_NO_QUAT",
 )
 # performs a copy internally if wp.config.enable_vector_component_overwrites is True
 add_builtin(
@@ -2016,6 +2099,7 @@ add_builtin(
     doc="Set the translational part of a transform ``xform``.",
     hidden=True,
     export=False,
+    compile_guard="WP_NO_QUAT",
 )
 # performs a copy internally if wp.config.enable_vector_component_overwrites is True
 add_builtin(
@@ -2026,6 +2110,7 @@ add_builtin(
     doc="Set the rotational part of a transform ``xform``.",
     hidden=True,
     export=False,
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "transform_multiply",
@@ -2033,6 +2118,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: transformation(dtype=float_infer_type(arg_types)),
     group="Transformations",
     doc="Multiply two rigid body transformations together.",
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "transform_point",
@@ -2042,6 +2128,7 @@ add_builtin(
     doc="""Apply a transform to a point.
 
     Treat the homogeneous coordinate as w=1 (translation and rotation).""",
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "transform_point",
@@ -2057,6 +2144,7 @@ add_builtin(
     This is in contrast to some libraries, notably USD, which applies transforms to row vectors, ``y^T = point^T*mat^T``.
     If the transform is coming from a library that uses row-vectors, then users should transpose the transformation
     matrix before calling this method.""",
+    compile_guard="WP_NO_MAT",
 )
 add_builtin(
     "transform_vector",
@@ -2066,6 +2154,7 @@ add_builtin(
     doc="""Apply a transform to a vector.
 
     Treat the homogeneous coordinate as w=0 (rotation only).""",
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "transform_vector",
@@ -2081,6 +2170,7 @@ add_builtin(
     This is in contrast to some libraries, notably USD, which applies transforms to row vectors, ``y^T = vec^T*mat^T``.
     If the transform is coming from a library that uses row-vectors, then users should transpose the transformation
     matrix before calling this method.""",
+    compile_guard="WP_NO_MAT",
 )
 add_builtin(
     "transform_inverse",
@@ -2088,6 +2178,7 @@ add_builtin(
     value_func=sametypes_create_value_func(transformation(dtype=Float)),
     group="Transformations",
     doc="Compute the inverse of the transformation ``xform``.",
+    compile_guard="WP_NO_QUAT",
 )
 # ---------------------------------
 # Spatial Math
@@ -2154,6 +2245,7 @@ add_builtin(
 
     Zero-initialize the vector.""",
     export=False,
+    compile_guard="WP_NO_QUAT",
 )
 
 
@@ -2170,6 +2262,7 @@ add_builtin(
 
     Use two 3D vectors.""",
     export=False,
+    compile_guard="WP_NO_QUAT",
 )
 
 add_builtin(
@@ -2186,6 +2279,7 @@ add_builtin(
 
     Use six scalar values.""",
     export=False,
+    compile_guard="WP_NO_QUAT",
 )
 
 
@@ -2196,6 +2290,7 @@ add_builtin(
     group="Spatial Math",
     doc="Construct a 6x6 spatial inertial matrix from two 3x3 diagonal blocks.",
     export=False,
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "spatial_dot",
@@ -2203,6 +2298,7 @@ add_builtin(
     value_func=float_sametypes_value_func,
     group="Spatial Math",
     doc="Compute the dot product of two 6D screw vectors.",
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "spatial_cross",
@@ -2210,6 +2306,7 @@ add_builtin(
     value_func=sametypes_create_value_func(vector(length=6, dtype=Float)),
     group="Spatial Math",
     doc="Compute the cross product of two 6D screw vectors.",
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "spatial_cross_dual",
@@ -2217,6 +2314,7 @@ add_builtin(
     value_func=sametypes_create_value_func(vector(length=6, dtype=Float)),
     group="Spatial Math",
     doc="Compute the dual cross product of two 6D screw vectors.",
+    compile_guard="WP_NO_QUAT",
 )
 
 add_builtin(
@@ -2229,6 +2327,7 @@ add_builtin(
     ),
     group="Spatial Math",
     doc="Extract the top (first) part of a 6D screw vector.",
+    compile_guard="WP_NO_QUAT",
 )
 add_builtin(
     "spatial_bottom",
@@ -2240,6 +2339,7 @@ add_builtin(
     ),
     group="Spatial Math",
     doc="Extract the bottom (second) part of a 6D screw vector.",
+    compile_guard="WP_NO_QUAT",
 )
 
 add_builtin(
@@ -2256,6 +2356,7 @@ add_builtin(
     value_type=None,
     doc="Compute the spatial Jacobian matrix for a kinematic chain.",
     group="Spatial Math",
+    compile_guard="WP_NO_QUAT",
 )
 
 add_builtin(
@@ -2270,6 +2371,7 @@ add_builtin(
     value_type=None,
     doc="Compute the composite rigid-body mass matrix for a kinematic chain.",
     group="Spatial Math",
+    compile_guard="WP_NO_QUAT",
 )
 
 # ------------------
@@ -2335,6 +2437,7 @@ add_builtin(
         A zero-initialized tile with shape and data type as specified.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 # overload for scalar shape
@@ -2349,6 +2452,7 @@ add_builtin(
     doc="""Allocate a tile of zero-initialized items.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -2410,6 +2514,7 @@ add_builtin(
         A one-initialized tile with shape and data type as specified.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 # overload for scalar shape
@@ -2423,6 +2528,7 @@ add_builtin(
     doc="""Allocate a tile of one-initialized items.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -2491,6 +2597,7 @@ add_builtin(
         A tile filled with the specified value.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -2505,6 +2612,7 @@ add_builtin(
     doc="""Allocate a tile filled with the specified value.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -2601,6 +2709,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -2615,6 +2724,7 @@ add_builtin(
     doc="""Allocate a tile filled with a value from a specific thread.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -2718,6 +2828,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 # overload for scalar shape
@@ -2731,6 +2842,7 @@ add_builtin(
     doc="""Generate a tile of random integers.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -2783,6 +2895,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 # overload for scalar shape
@@ -2798,6 +2911,7 @@ add_builtin(
     Sample values in the range [min, max).""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -2901,6 +3015,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 # overload for scalar shape
@@ -2914,6 +3029,7 @@ add_builtin(
     doc="""Generate a tile of random floats.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -2966,6 +3082,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 # overload for scalar shape
@@ -2981,6 +3098,7 @@ add_builtin(
     Sample values in the range [min, max).""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -3085,6 +3203,7 @@ add_builtin(
         A tile with ``shape=(n)`` with linearly spaced elements of specified data type.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -3168,6 +3287,7 @@ add_builtin(
         A tile with shape as specified and data type the same as the source array.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 # overload for scalar shape
@@ -3180,6 +3300,7 @@ add_builtin(
     doc="""Load a tile from a global memory array.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -3327,6 +3448,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -3403,6 +3525,7 @@ add_builtin(
         bounds_check: Needed for unaligned tiles, but can disable for memory-aligned tiles for faster write times.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 # overload for scalar offset
@@ -3422,6 +3545,7 @@ add_builtin(
     doc="""Store a tile to a global memory array.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -3568,6 +3692,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -3651,6 +3776,7 @@ add_builtin(
         A tile with the same dimensions and data type as the source tile, holding the original value of the destination elements.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 # overload for scalar offset
@@ -3670,6 +3796,7 @@ add_builtin(
     doc="""Atomically add a tile onto the array ``a``.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -3808,6 +3935,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -3883,6 +4011,7 @@ add_builtin(
     group="Tile Primitives",
     is_differentiable=False,
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -3959,6 +4088,7 @@ add_builtin(
         The input tile but with all or a subset of the dimensions of length one removed.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -4043,6 +4173,7 @@ add_builtin(
         A tile containing the same data as the input tile, but arranged in a new shape.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -4079,6 +4210,7 @@ add_builtin(
         A tile with the same data as the input tile, but with a different data type.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -4137,6 +4269,7 @@ add_builtin(
         offset: Offset in the destination tile to write to.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 # handles expressions like tile[i,j] = 1.0
@@ -4147,6 +4280,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     hidden=True,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -4156,6 +4290,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     hidden=True,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -4165,6 +4300,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     hidden=True,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -4181,6 +4317,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     hidden=True,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -4198,6 +4335,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     hidden=True,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -4216,6 +4354,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     hidden=True,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -4325,6 +4464,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -4405,6 +4545,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -4467,6 +4608,7 @@ add_builtin(
         The value of the element at the specified tile location with the same data type as the input tile.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -4489,6 +4631,7 @@ add_builtin(
         The value of the element at the specified tile location with the same data type as the input tile.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -4512,6 +4655,7 @@ add_builtin(
         The value of the element at the specified tile location with the same data type as the input tile.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -4536,6 +4680,7 @@ add_builtin(
         The value of the element at the specified tile location, with the same data type as the input tile.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -4568,6 +4713,7 @@ add_builtin(
         The value of the element at the specified tile location, with the same data type as the input tile.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -4602,6 +4748,7 @@ add_builtin(
         The value of the element at the specified tile location, with the same data type as the input tile.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -4625,6 +4772,7 @@ add_builtin(
     group="Tile Primitives",
     hidden=True,
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 add_builtin(
     "tile_add_inplace",
@@ -4633,6 +4781,7 @@ add_builtin(
     group="Tile Primitives",
     hidden=True,
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 add_builtin(
     "tile_add_inplace",
@@ -4641,6 +4790,7 @@ add_builtin(
     group="Tile Primitives",
     hidden=True,
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 add_builtin(
     "tile_add_inplace",
@@ -4649,6 +4799,7 @@ add_builtin(
     group="Tile Primitives",
     hidden=True,
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -4658,6 +4809,7 @@ add_builtin(
     group="Tile Primitives",
     hidden=True,
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 add_builtin(
     "tile_sub_inplace",
@@ -4666,6 +4818,7 @@ add_builtin(
     group="Tile Primitives",
     hidden=True,
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 add_builtin(
     "tile_sub_inplace",
@@ -4674,6 +4827,7 @@ add_builtin(
     group="Tile Primitives",
     hidden=True,
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 add_builtin(
     "tile_sub_inplace",
@@ -4682,6 +4836,7 @@ add_builtin(
     group="Tile Primitives",
     hidden=True,
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -4692,6 +4847,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 add_builtin(
     "tile_bit_and_inplace",
@@ -4701,6 +4857,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 add_builtin(
     "tile_bit_and_inplace",
@@ -4710,6 +4867,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 add_builtin(
     "tile_bit_and_inplace",
@@ -4719,6 +4877,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -4729,6 +4888,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 add_builtin(
     "tile_bit_or_inplace",
@@ -4738,6 +4898,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 add_builtin(
     "tile_bit_or_inplace",
@@ -4747,6 +4908,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 add_builtin(
     "tile_bit_or_inplace",
@@ -4756,6 +4918,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -4766,6 +4929,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 add_builtin(
     "tile_bit_xor_inplace",
@@ -4775,6 +4939,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 add_builtin(
     "tile_bit_xor_inplace",
@@ -4784,6 +4949,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 add_builtin(
     "tile_bit_xor_inplace",
@@ -4793,6 +4959,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -4847,6 +5014,7 @@ add_builtin(
         Tile with ``shape=(N,M)``.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -4919,6 +5087,7 @@ add_builtin(
         Tile with broadcast shape.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -4973,6 +5142,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -5049,6 +5219,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -5137,6 +5308,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -5191,6 +5363,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -5245,6 +5418,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -5298,6 +5472,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -5351,6 +5526,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -5409,6 +5585,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -5491,6 +5668,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -5556,6 +5734,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -5621,6 +5800,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -5689,6 +5869,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -5757,6 +5938,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -5843,6 +6025,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -5971,6 +6154,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -6108,6 +6292,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -6248,6 +6433,7 @@ add_builtin(
         root: The root to begin the query from (optional, default: -1)""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_BVH",
 )
 
 add_builtin(
@@ -6272,6 +6458,7 @@ add_builtin(
         root: The root to begin the query from (optional, default: -1)""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_BVH",
 )
 
 add_builtin(
@@ -6296,6 +6483,7 @@ add_builtin(
         max_dist: The maximum distance along the ray to check for intersections for ray queries. Not effective for aabb query.""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_BVH",
 )
 
 # Primary naming convention (grouped with other geometry functions)
@@ -6315,6 +6503,7 @@ add_builtin(
     native_func="tile_bvh_query_aabb",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_BVH",
 )
 
 add_builtin(
@@ -6333,6 +6522,7 @@ add_builtin(
     native_func="tile_bvh_query_ray",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_BVH",
 )
 
 
@@ -6377,6 +6567,7 @@ add_builtin(
     native_func="tile_bvh_query_next",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_BVH",
 )
 
 # Aliases for backward compatibility (tile_* naming convention)
@@ -6398,6 +6589,7 @@ add_builtin(
     native_func="tile_bvh_query_aabb",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -6418,6 +6610,7 @@ add_builtin(
     native_func="tile_bvh_query_ray",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -6444,6 +6637,7 @@ add_builtin(
     native_func="tile_bvh_query_next",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -6463,6 +6657,7 @@ add_builtin(
             (sentinel for the BVH global root). Pass ``-1`` to BVH queries to traverse from the global root.""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_BVH",
 )
 
 add_builtin(
@@ -6481,6 +6676,7 @@ add_builtin(
             (sentinel for the mesh's global root). Pass ``-1`` to mesh queries to traverse from the global root.""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -6516,6 +6712,7 @@ add_builtin(
         ``True`` if a point < ``max_dist`` is found.""",
     export=False,
     hidden=True,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -6539,6 +6736,7 @@ add_builtin(
         max_dist: Mesh faces above this distance will not be considered by the query.""",
     require_original_output_arg=True,
     export=False,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -6589,6 +6787,7 @@ add_builtin(
 """,
     export=False,
     hidden=True,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -6627,6 +6826,7 @@ add_builtin(
 """,
     require_original_output_arg=True,
     export=False,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -6657,6 +6857,7 @@ add_builtin(
         ``True`` if a point < ``max_dist`` is found.""",
     export=False,
     hidden=True,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -6678,6 +6879,7 @@ add_builtin(
         max_dist: Mesh faces above this distance will not be considered by the query.""",
     require_original_output_arg=True,
     export=False,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -6708,6 +6910,7 @@ add_builtin(
         ``True`` if a point > ``min_dist`` is found.""",
     export=False,
     hidden=True,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -6729,6 +6932,7 @@ add_builtin(
         min_dist: Mesh faces below this distance will not be considered by the query.""",
     require_original_output_arg=True,
     export=False,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -6768,6 +6972,7 @@ add_builtin(
         ``True`` if a point < ``max_dist`` is found.""",
     export=False,
     hidden=True,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -6795,6 +7000,7 @@ add_builtin(
             fraction of the average edge length, also for treating closest point as being on edge/vertex default 1e-3.""",
     require_original_output_arg=True,
     export=False,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -6837,6 +7043,7 @@ add_builtin(
         ``True`` if a point < ``max_dist`` is found.""",
     export=False,
     hidden=True,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -6867,6 +7074,7 @@ add_builtin(
         threshold: The threshold of the winding number to be considered inside, default 0.5.""",
     require_original_output_arg=True,
     export=False,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -6908,6 +7116,7 @@ add_builtin(
         face: Returns the index of the hit face.""",
     export=False,
     hidden=True,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -6936,6 +7145,7 @@ add_builtin(
         root: The root node index for grouped BVH queries, or -1 for global root (optional, default: -1)""",
     require_original_output_arg=True,
     export=False,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -6964,6 +7174,7 @@ add_builtin(
         root: The root node index for grouped BVH queries, or -1 for global root (optional, default: -1)""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -7000,6 +7211,7 @@ add_builtin(
         The number of intersections (with ``t >= 0``) between the ray and the mesh.""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_MESH",
 )
 
 
@@ -7018,6 +7230,7 @@ add_builtin(
         high: The upper bound of the bounding box in mesh space.""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -7030,6 +7243,7 @@ add_builtin(
     The index of the current face is stored in ``index``, returns ``False`` if there are no more overlapping triangles.""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_MESH",
 )
 
 # Primary naming convention (grouped with other geometry functions)
@@ -7049,6 +7263,7 @@ add_builtin(
     native_func="tile_mesh_query_aabb",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_MESH",
 )
 
 
@@ -7095,6 +7310,7 @@ add_builtin(
     native_func="tile_mesh_query_aabb_next",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_MESH",
 )
 
 # Aliases for backward compatibility (tile_* naming convention)
@@ -7117,6 +7333,7 @@ add_builtin(
     native_func="tile_mesh_query_aabb",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -7144,6 +7361,7 @@ add_builtin(
     native_func="tile_mesh_query_aabb_next",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -7154,6 +7372,7 @@ add_builtin(
     group="Geometry",
     doc="""Evaluate the position on the :class:`warp.Mesh` given a face index and barycentric coordinates.""",
     export=False,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -7163,6 +7382,7 @@ add_builtin(
     group="Geometry",
     doc="""Evaluate the velocity on the :class:`warp.Mesh` given a face index and barycentric coordinates.""",
     export=False,
+    compile_guard="WP_NO_MESH",
 )
 
 
@@ -7181,6 +7401,7 @@ def _add_hash_grid_query_builtins(vec_type, scalar_type, query_type, precision_d
     This query can be used to iterate over all neighboring points within a fixed radius from the query point.""",
         export=False,
         is_differentiable=False,
+        compile_guard="WP_NO_HASHGRID",
     )
 
     add_builtin(
@@ -7193,6 +7414,7 @@ def _add_hash_grid_query_builtins(vec_type, scalar_type, query_type, precision_d
     The index of the current neighbor is stored in ``index``, returns ``False`` if there are no more neighbors.""",
         export=False,
         is_differentiable=False,
+        compile_guard="WP_NO_HASHGRID",
     )
 
 
@@ -7213,6 +7435,7 @@ add_builtin(
         -1 if the :class:`warp.HashGrid` has not been reserved.""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_HASHGRID",
 )
 
 add_builtin(
@@ -7228,6 +7451,7 @@ add_builtin(
         > 0 if triangles intersect.""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_INTERSECT",
 )
 
 
@@ -7244,6 +7468,7 @@ add_builtin(
         > 0 if triangles intersect.""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_INTERSECT",
 )
 
 
@@ -7255,6 +7480,7 @@ add_builtin(
     group="Geometry",
     doc="""Retrieve the mesh given its index.""",
     export=False,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -7265,6 +7491,7 @@ add_builtin(
     doc="""Evaluate the face normal the mesh given a face index.""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -7275,6 +7502,7 @@ add_builtin(
     doc="""Query the point of the mesh given an index.""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -7285,6 +7513,7 @@ add_builtin(
     doc="""Query the velocity of the mesh given an index.""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_MESH",
 )
 
 add_builtin(
@@ -7295,6 +7524,7 @@ add_builtin(
     doc="""Query the point-index of the mesh given a face-vertex index.""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_MESH",
 )
 
 
@@ -7316,14 +7546,27 @@ add_builtin(
     Returns:
         Barycentric weights to the points on each edge, as well as the closest distance between the edges.""",
     export=False,
+    compile_guard="WP_NO_INTERSECT",
 )
 
 # ---------------------------------
 # Ranges
 
-add_builtin("range", input_types={"end": int}, value_type=range_t, group="Utility", export=False, hidden=True)
 add_builtin(
-    "range", input_types={"start": int, "end": int}, value_type=range_t, group="Utility", export=False, hidden=True
+    "range",
+    input_types={"end": int},
+    value_type=range_t,
+    group="Utility",
+    export=False,
+    hidden=True,
+)
+add_builtin(
+    "range",
+    input_types={"start": int, "end": int},
+    value_type=range_t,
+    group="Utility",
+    export=False,
+    hidden=True,
 )
 add_builtin(
     "range",
@@ -7449,6 +7692,7 @@ add_builtin(
     doc="""Sample the volume of type ``dtype`` given by ``id`` at the volume local-space point ``uvw``.
 
     Interpolation should be :attr:`warp.Volume.CLOSEST` or :attr:`warp.Volume.LINEAR`.""",
+    compile_guard="WP_NO_VOLUME",
 )
 
 
@@ -7487,6 +7731,7 @@ add_builtin(
     doc="""Sample the volume given by ``id`` and its gradient at the volume local-space point ``uvw``.
 
     Interpolation should be :attr:`warp.Volume.CLOSEST` or :attr:`warp.Volume.LINEAR`.""",
+    compile_guard="WP_NO_VOLUME",
 )
 
 
@@ -7525,6 +7770,7 @@ add_builtin(
 
     If the voxel at this index does not exist, this function returns the background value.""",
     is_differentiable=False,
+    compile_guard="WP_NO_VOLUME",
 )
 
 
@@ -7546,6 +7792,7 @@ add_builtin(
     group="Volumes",
     doc="""Store ``value`` at the voxel with coordinates ``i``, ``j``, ``k``.""",
     is_differentiable=False,
+    compile_guard="WP_NO_VOLUME",
 )
 
 add_builtin(
@@ -7556,6 +7803,7 @@ add_builtin(
     doc="""Sample the volume given by ``id`` at the volume local-space point ``uvw``.
 
     Interpolation should be :attr:`warp.Volume.CLOSEST` or :attr:`warp.Volume.LINEAR`.""",
+    compile_guard="WP_NO_VOLUME",
 )
 
 add_builtin(
@@ -7566,6 +7814,7 @@ add_builtin(
     doc="""Sample the volume and its gradient given by ``id`` at the volume local-space point ``uvw``.
 
     Interpolation should be :attr:`warp.Volume.CLOSEST` or :attr:`warp.Volume.LINEAR`.""",
+    compile_guard="WP_NO_VOLUME",
 )
 
 add_builtin(
@@ -7577,6 +7826,7 @@ add_builtin(
 
     If the voxel at this index does not exist, this function returns the background value.""",
     is_differentiable=False,
+    compile_guard="WP_NO_VOLUME",
 )
 
 add_builtin(
@@ -7586,6 +7836,7 @@ add_builtin(
     doc="""Store ``value`` at the voxel with coordinates ``i``, ``j``, ``k``.""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_VOLUME",
 )
 
 add_builtin(
@@ -7596,6 +7847,7 @@ add_builtin(
     doc="""Sample the vector volume given by ``id`` at the volume local-space point ``uvw``.
 
     Interpolation should be :attr:`warp.Volume.CLOSEST` or :attr:`warp.Volume.LINEAR`.""",
+    compile_guard="WP_NO_VOLUME",
 )
 
 add_builtin(
@@ -7607,6 +7859,7 @@ add_builtin(
 
     If the voxel at this index does not exist, this function returns the background value.""",
     is_differentiable=False,
+    compile_guard="WP_NO_VOLUME",
 )
 
 add_builtin(
@@ -7616,6 +7869,7 @@ add_builtin(
     doc="""Store ``value`` at the voxel with coordinates ``i``, ``j``, ``k``.""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_VOLUME",
 )
 
 add_builtin(
@@ -7623,7 +7877,8 @@ add_builtin(
     input_types={"id": uint64, "uvw": vec3},
     value_type=int,
     group="Volumes",
-    doc="""Sample the :class:`warp.int32` volume given by ``id`` at the volume local-space point ``uvw``.""",
+    doc="""Sample the :class:`int32` volume given by ``id`` at the volume local-space point ``uvw``.""",
+    compile_guard="WP_NO_VOLUME",
 )
 
 add_builtin(
@@ -7635,6 +7890,7 @@ add_builtin(
 
     If the voxel at this index does not exist, this function returns the background value.""",
     is_differentiable=False,
+    compile_guard="WP_NO_VOLUME",
 )
 
 add_builtin(
@@ -7644,6 +7900,7 @@ add_builtin(
     doc="""Store ``value`` at the voxel with coordinates ``i``, ``j``, ``k``.""",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_VOLUME",
 )
 
 
@@ -7674,6 +7931,7 @@ add_builtin(
     Interpolation should be :attr:`warp.Volume.CLOSEST` or :attr:`warp.Volume.LINEAR`.
     This function is available for both index grids and classical volumes.
     """,
+    compile_guard="WP_NO_VOLUME",
 )
 
 
@@ -7713,6 +7971,7 @@ add_builtin(
     Interpolation should be :attr:`warp.Volume.CLOSEST` or :attr:`warp.Volume.LINEAR`.
     This function is available for both index grids and classical volumes.
    """,
+    compile_guard="WP_NO_VOLUME",
 )
 
 add_builtin(
@@ -7726,6 +7985,7 @@ add_builtin(
     This function is available for both index grids and classical volumes.
     """,
     is_differentiable=False,
+    compile_guard="WP_NO_VOLUME",
 )
 
 add_builtin(
@@ -7734,6 +7994,7 @@ add_builtin(
     value_type=vec3,
     group="Volumes",
     doc="""Transform a point ``uvw`` defined in volume index space to world space given the volume's intrinsic affine transformation.""",
+    compile_guard="WP_NO_VOLUME",
 )
 add_builtin(
     "volume_world_to_index",
@@ -7741,6 +8002,7 @@ add_builtin(
     value_type=vec3,
     group="Volumes",
     doc="""Transform a point ``xyz`` defined in volume world space to the volume's index space given the volume's intrinsic affine transformation.""",
+    compile_guard="WP_NO_VOLUME",
 )
 add_builtin(
     "volume_index_to_world_dir",
@@ -7748,6 +8010,7 @@ add_builtin(
     value_type=vec3,
     group="Volumes",
     doc="""Transform a direction ``uvw`` defined in volume index space to world space given the volume's intrinsic affine transformation.""",
+    compile_guard="WP_NO_VOLUME",
 )
 add_builtin(
     "volume_world_to_index_dir",
@@ -7755,6 +8018,7 @@ add_builtin(
     value_type=vec3,
     group="Volumes",
     doc="""Transform a direction ``xyz`` defined in volume world space to the volume's index space given the volume's intrinsic affine transformation.""",
+    compile_guard="WP_NO_VOLUME",
 )
 
 
@@ -7817,6 +8081,7 @@ add_builtin(
 
     Filtering mode is :attr:`warp.TextureFilterMode.CLOSEST` or :attr:`warp.TextureFilterMode.LINEAR`.""",
     is_differentiable=False,
+    compile_guard="WP_NO_TEXTURE",
 )
 
 
@@ -7864,6 +8129,7 @@ add_builtin(
 
     Filtering mode is :attr:`warp.TextureFilterMode.CLOSEST` or :attr:`warp.TextureFilterMode.LINEAR`.""",
     is_differentiable=False,
+    compile_guard="WP_NO_TEXTURE",
 )
 
 # texture_sample for 2D textures with separate u, v coordinates
@@ -7894,6 +8160,7 @@ add_builtin(
 
     Filtering mode is :attr:`warp.TextureFilterMode.CLOSEST` or :attr:`warp.TextureFilterMode.LINEAR`.""",
     is_differentiable=False,
+    compile_guard="WP_NO_TEXTURE",
 )
 
 
@@ -7941,6 +8208,7 @@ add_builtin(
 
     Filtering mode is :attr:`warp.TextureFilterMode.CLOSEST` or :attr:`warp.TextureFilterMode.LINEAR`.""",
     is_differentiable=False,
+    compile_guard="WP_NO_TEXTURE",
 )
 
 # texture_sample for 3D textures with separate u, v, w coordinates
@@ -7973,6 +8241,7 @@ add_builtin(
 
     Filtering mode is :attr:`warp.TextureFilterMode.CLOSEST` or :attr:`warp.TextureFilterMode.LINEAR`.""",
     is_differentiable=False,
+    compile_guard="WP_NO_TEXTURE",
 )
 
 
@@ -7991,6 +8260,7 @@ add_builtin(
     Returns:
         A 32-bit integer representing the RNG state.""",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 
 add_builtin(
@@ -8005,6 +8275,7 @@ add_builtin(
     This alternative constructor can be useful in parallel programs, where a kernel as a whole should share a seed,
     but each thread should generate uncorrelated values. In this case usage should be ``r = rand_init(seed, tid)``.""",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 
 add_builtin(
@@ -8016,6 +8287,7 @@ add_builtin(
 
     Sample in the range [-2^31, 2^31).""",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 add_builtin(
     "randi",
@@ -8026,6 +8298,7 @@ add_builtin(
 
     Sample in the range [low, high).""",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 add_builtin(
     "randu",
@@ -8036,6 +8309,7 @@ add_builtin(
 
     Sample in the range [0, 2^32).""",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 add_builtin(
     "randu",
@@ -8046,6 +8320,7 @@ add_builtin(
 
     Sample in the range [low, high).""",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 add_builtin(
     "randf",
@@ -8056,6 +8331,7 @@ add_builtin(
 
     Sample in the range [0.0, 1.0).""",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 add_builtin(
     "randf",
@@ -8066,6 +8342,7 @@ add_builtin(
 
     Sample in the range [low, high).""",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 add_builtin(
     "randn",
@@ -8074,6 +8351,7 @@ add_builtin(
     group="Random",
     doc="Sample a normal (Gaussian) distribution of mean 0 and variance 1.",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 
 add_builtin(
@@ -8083,6 +8361,7 @@ add_builtin(
     group="Random",
     doc="Inverse-transform sample a cumulative distribution function.",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 add_builtin(
     "sample_triangle",
@@ -8094,6 +8373,7 @@ add_builtin(
     Returns:
         Sample barycentric coordinates.""",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 add_builtin(
     "sample_unit_ring",
@@ -8102,6 +8382,7 @@ add_builtin(
     group="Random",
     doc="Uniformly sample a ring in the xy plane.",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 add_builtin(
     "sample_unit_disk",
@@ -8110,6 +8391,7 @@ add_builtin(
     group="Random",
     doc="Uniformly sample a disk in the xy plane.",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 add_builtin(
     "sample_unit_sphere_surface",
@@ -8118,6 +8400,7 @@ add_builtin(
     group="Random",
     doc="Uniformly sample a unit sphere surface.",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 add_builtin(
     "sample_unit_sphere",
@@ -8126,6 +8409,7 @@ add_builtin(
     group="Random",
     doc="Uniformly sample a unit sphere.",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 add_builtin(
     "sample_unit_hemisphere_surface",
@@ -8134,6 +8418,7 @@ add_builtin(
     group="Random",
     doc="Uniformly sample a unit hemisphere surface.",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 add_builtin(
     "sample_unit_hemisphere",
@@ -8142,6 +8427,7 @@ add_builtin(
     group="Random",
     doc="Uniformly sample a unit hemisphere.",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 add_builtin(
     "sample_unit_square",
@@ -8150,6 +8436,7 @@ add_builtin(
     group="Random",
     doc="Uniformly sample a unit square.",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 add_builtin(
     "sample_unit_cube",
@@ -8158,6 +8445,7 @@ add_builtin(
     group="Random",
     doc="Uniformly sample a unit cube.",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 
 add_builtin(
@@ -8171,6 +8459,7 @@ add_builtin(
         state: RNG state
         lam: The expected value of the distribution.""",
     is_differentiable=False,
+    compile_guard="WP_NO_RAND",
 )
 
 add_builtin(
@@ -8181,6 +8470,7 @@ add_builtin(
     doc="""Non-periodic Perlin-style noise.
 
     Sample 1D noise.""",
+    compile_guard="WP_NO_NOISE",
 )
 add_builtin(
     "noise",
@@ -8190,6 +8480,7 @@ add_builtin(
     doc="""Non-periodic Perlin-style noise.
 
     Sample 2D noise.""",
+    compile_guard="WP_NO_NOISE",
 )
 add_builtin(
     "noise",
@@ -8199,6 +8490,7 @@ add_builtin(
     doc="""Non-periodic Perlin-style noise.
 
     Sample 3D noise.""",
+    compile_guard="WP_NO_NOISE",
 )
 add_builtin(
     "noise",
@@ -8208,6 +8500,7 @@ add_builtin(
     doc="""Non-periodic Perlin-style noise.
 
     Sample 4D noise.""",
+    compile_guard="WP_NO_NOISE",
 )
 
 add_builtin(
@@ -8218,6 +8511,7 @@ add_builtin(
     doc="""Periodic Perlin-style noise.
 
     Sample 1D noise.""",
+    compile_guard="WP_NO_NOISE",
 )
 add_builtin(
     "pnoise",
@@ -8227,6 +8521,7 @@ add_builtin(
     doc="""Periodic Perlin-style noise.
 
     Sample 2D noise.""",
+    compile_guard="WP_NO_NOISE",
 )
 add_builtin(
     "pnoise",
@@ -8236,6 +8531,7 @@ add_builtin(
     doc="""Periodic Perlin-style noise.
 
     Sample 3D noise.""",
+    compile_guard="WP_NO_NOISE",
 )
 add_builtin(
     "pnoise",
@@ -8245,6 +8541,7 @@ add_builtin(
     doc="""Periodic Perlin-style noise.
 
     Sample 4D noise.""",
+    compile_guard="WP_NO_NOISE",
 )
 
 add_builtin(
@@ -8257,6 +8554,7 @@ add_builtin(
 
     Use the gradient of a Perlin noise function.""",
     is_differentiable=False,
+    compile_guard="WP_NO_NOISE",
 )
 add_builtin(
     "curlnoise",
@@ -8268,6 +8566,7 @@ add_builtin(
 
     Use the curl of three Perlin noise functions.""",
     is_differentiable=False,
+    compile_guard="WP_NO_NOISE",
 )
 add_builtin(
     "curlnoise",
@@ -8279,6 +8578,7 @@ add_builtin(
 
     Use the curl of three Perlin noise functions.""",
     is_differentiable=False,
+    compile_guard="WP_NO_NOISE",
 )
 
 
@@ -9649,7 +9949,13 @@ add_builtin(
     group="Utility",
 )
 
-add_builtin("extract", input_types={"s": shape_t, "i": int}, value_type=int, hidden=True, group="Utility")
+add_builtin(
+    "extract",
+    input_types={"s": shape_t, "i": int},
+    value_type=int,
+    hidden=True,
+    group="Utility",
+)
 
 
 def vector_index_value_func(arg_types: Mapping[str, type], arg_values: Mapping[str, Any]):
@@ -11564,6 +11870,7 @@ add_builtin(
     export=False,
     native_func="tile_neg",
     group="Operators",
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -11576,6 +11883,7 @@ add_builtin(
     doc="""Add ``a`` and ``b``.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -11588,6 +11896,7 @@ add_builtin(
     doc="""Subtract ``b`` from ``a``.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 # NOTE: The tile*tile overload must be registered before the tile*Any overload below.
@@ -11602,6 +11911,7 @@ add_builtin(
     doc="""Element-wise multiplication of tiles.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -11617,6 +11927,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -11632,6 +11943,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -11647,6 +11959,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -11663,6 +11976,7 @@ add_builtin(
     export=False,
     native_func="tile_mul",
     group="Operators",
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -11686,6 +12000,7 @@ add_builtin(
     export=False,
     native_func="tile_mul",
     group="Operators",
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -11699,6 +12014,7 @@ add_builtin(
     doc="""Element-wise division of tiles.""",
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -11716,6 +12032,7 @@ add_builtin(
     Underlying scalar types must match.""",
     export=False,
     group="Operators",
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -11733,6 +12050,7 @@ add_builtin(
     Underlying scalar types must match.""",
     export=False,
     group="Operators",
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -11760,6 +12078,7 @@ add_builtin(
     hidden=True,
     native_func="tile_add_inplace",
     group="Operators",
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -11772,6 +12091,7 @@ add_builtin(
     hidden=True,
     native_func="tile_sub_inplace",
     group="Operators",
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -11785,6 +12105,7 @@ add_builtin(
     native_func="tile_bit_and_inplace",
     group="Operators",
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -11798,6 +12119,7 @@ add_builtin(
     native_func="tile_bit_or_inplace",
     group="Operators",
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -11811,6 +12133,7 @@ add_builtin(
     native_func="tile_bit_xor_inplace",
     group="Operators",
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -11876,6 +12199,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -12096,6 +12420,7 @@ add_builtin(
 """,
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -12132,6 +12457,7 @@ add_builtin(
 """,
     group="Tile Primitives",
     export=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -12267,6 +12593,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     namespace="",
+    compile_guard="WP_NO_TILE",
 )
 
 add_builtin(
@@ -12291,6 +12618,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     namespace="",
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -12447,6 +12775,7 @@ add_builtin(
     export=False,
     namespace="",
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -12476,6 +12805,7 @@ add_builtin(
     export=False,
     namespace="",
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -12641,6 +12971,7 @@ add_builtin(
     export=False,
     namespace="",
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -12666,6 +12997,7 @@ add_builtin(
     export=False,
     namespace="",
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -12834,6 +13166,7 @@ add_builtin(
     export=False,
     namespace="",
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -12861,6 +13194,7 @@ add_builtin(
     export=False,
     namespace="",
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -13029,6 +13363,7 @@ add_builtin(
     export=False,
     namespace="",
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
@@ -13056,6 +13391,7 @@ add_builtin(
     export=False,
     namespace="",
     is_differentiable=False,
+    compile_guard="WP_NO_TILE",
 )
 
 
