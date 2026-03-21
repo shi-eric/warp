@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "vec.h"
+
 namespace wp {
 
 // Note: Field order is important! Type-independent fields come first so that

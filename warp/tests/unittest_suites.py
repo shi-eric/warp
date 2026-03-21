@@ -126,6 +126,7 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
     from warp.tests.test_codegen import TestCodeGen
     from warp.tests.test_codegen_instancing import TestCodeGenInstancing
     from warp.tests.test_compile_consts import TestConstants
+    from warp.tests.test_compile_guards import TestCompileGuards
     from warp.tests.test_conditional import TestConditional
     from warp.tests.test_context import TestContext
     from warp.tests.test_copy import TestCopy
@@ -222,6 +223,7 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
         TestClosestPointEdgeEdgeMethods,
         TestCodeGen,
         TestCodeGenInstancing,
+        TestCompileGuards,
         TestConditional,
         TestConstants,
         TestContext,

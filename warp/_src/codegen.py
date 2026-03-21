@@ -1597,6 +1597,10 @@ class Adjoint:
         # Resolve the exact function signature among any existing overload.
         func = adj.resolve_func(func, arg_types, kwarg_types, min_outputs)
 
+        # Collect compile guard from resolved builtin
+        if func.is_builtin() and adj.builder is not None:
+            adj.builder.require_guard(func.compile_guard)
+
         # Bind the positional and keyword arguments to the function's signature
         # in order to process them as Python does it.
         bound_args: inspect.BoundArguments = func.signature.bind(*args, **kwargs)
@@ -4128,10 +4132,91 @@ class Adjoint:
 # ----------------
 # code generation
 
+# ---------------------------------------------------------------------------
+# Compile guard system
+#
+# Each add_builtin() call can declare a compile_guard indicating which C++
+# header the builtin needs.  During code generation the collected guards
+# determine which WP_NO_XXX macros to emit before #include "builtin.h".
+# Builtins without a compile_guard (None) are always included.
+#
+# Guard-to-type mappings are defined once here and used by both the type
+# inspector (_inspect_type_for_guards) and the safety-net source scanner.
+# ---------------------------------------------------------------------------
+
+# Type generic string (from _wp_generic_type_str_) -> guard.
+# Used by _inspect_type_for_guards and the safety-net source scanner.
+_GENERIC_TYPE_GUARDS: dict[str, str] = {
+    "vec_t": "WP_NO_VEC",
+    "mat_t": "WP_NO_MAT",
+    "quat_t": "WP_NO_QUAT",
+    "transform_t": "WP_NO_QUAT",
+}
+
+# Scalar type name -> guard.  Keyed by name string (not the type object)
+# to avoid importing the types module at codegen load time.
+_SCALAR_TYPE_GUARDS: dict[str, str] = {
+    "float16": "WP_NO_FLOAT16_OPS",
+    "float64": "WP_NO_FLOAT64_OPS",
+}
+
+# All valid compile guard strings (None means always included).
+VALID_COMPILE_GUARDS: frozenset[str | None] = frozenset(
+    {
+        None,
+        "WP_NO_MESH",
+        "WP_NO_BVH",
+        "WP_NO_INTERSECT",
+        "WP_NO_VEC",
+        "WP_NO_MAT",
+        "WP_NO_QUAT",
+        "WP_NO_SVD",
+        "WP_NO_HASHGRID",
+        "WP_NO_VOLUME",
+        "WP_NO_TEXTURE",
+        "WP_NO_NOISE",
+        "WP_NO_TILE",
+        "WP_NO_RAND",
+        "WP_NO_FLOAT16_OPS",
+        "WP_NO_FLOAT64_OPS",
+    }
+)
+
+# C++ source patterns for the safety-net scan, derived from the type tables.
+# The scan catches types created inside @wp.func bodies that the annotation
+# and type-inspection layers cannot see (e.g. FEM custom matrix sizes).
+# Features accessed only through builtins (mesh, bvh, volume, etc.) don't
+# need source scanning — their builtins carry the correct compile_guard.
+_SOURCE_GUARD_PATTERNS: dict[str, list[str]] = {
+    "WP_NO_VEC": ["vec_t<", "vec2", "vec3", "vec4"],
+    "WP_NO_MAT": ["mat_t<"],
+    "WP_NO_QUAT": ["quat_t", "transform_t", "spatial_vector", "spatial_matrix"],
+    "WP_NO_FLOAT16_OPS": ["float16"],
+    "WP_NO_FLOAT64_OPS": ["float64"],
+}
+
+
+def scan_source_for_guards(source: str, required: set[str]) -> None:
+    """Scan generated C++ source for type patterns and add guards to *required*."""
+    for guard, patterns in _SOURCE_GUARD_PATTERNS.items():
+        if guard not in required and any(p in source for p in patterns):
+            required.add(guard)
+
+
+def compute_compile_guards(required: set[str]) -> str:
+    """Return #define WP_NO_XXX directives for features not in *required*."""
+    all_guards = VALID_COMPILE_GUARDS - {None}
+    guards = set(all_guards - required)
+
+    if not guards:
+        return ""
+    return "\n".join(f"#define {g}" for g in sorted(guards)) + "\n"
+
+
 cpu_module_header = """
 #define WP_TILE_BLOCK_DIM {block_dim}
 #define WP_NO_CRT
-#include "builtin.h"
+{compile_guards}#include "builtin.h"
 
 // avoid namespacing of float type for casting to float type, this is to avoid wp::float(x), which is not valid in C++
 #define float(x) cast_float(x)
@@ -4152,7 +4237,7 @@ cpu_module_header = """
 cuda_module_header = """
 #define WP_TILE_BLOCK_DIM {block_dim}
 #define WP_NO_CRT
-#include "builtin.h"
+{compile_guards}#include "builtin.h"
 
 // Map wp.breakpoint() to a device brkpt at the call site so cuda-gdb attributes the stop to the generated .cu line
 #if defined(__CUDACC__) && !defined(_MSC_VER)
