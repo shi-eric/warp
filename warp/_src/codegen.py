@@ -1597,6 +1597,10 @@ class Adjoint:
         # Resolve the exact function signature among any existing overload.
         func = adj.resolve_func(func, arg_types, kwarg_types, min_outputs)
 
+        # Collect compile guard from resolved builtin
+        if func.is_builtin() and adj.builder is not None:
+            adj.builder.require_guard(func.compile_guard)
+
         # Bind the positional and keyword arguments to the function's signature
         # in order to process them as Python does it.
         bound_args: inspect.BoundArguments = func.signature.bind(*args, **kwargs)
@@ -4128,10 +4132,68 @@ class Adjoint:
 # ----------------
 # code generation
 
+# Compile guard constants for CPU JIT header optimization.
+# Each builtin must declare which C++ header guard it needs.
+COMPILE_GUARD_ALWAYS = ""
+
+VALID_COMPILE_GUARDS = frozenset(
+    {
+        COMPILE_GUARD_ALWAYS,
+        "WP_NO_MESH",
+        "WP_NO_BVH",
+        "WP_NO_INTERSECT",
+        "WP_NO_VEC",
+        "WP_NO_MAT",
+        "WP_NO_QUAT",
+        "WP_NO_SVD",
+        "WP_NO_HASHGRID",
+        "WP_NO_VOLUME",
+        "WP_NO_TEXTURE",
+        "WP_NO_NOISE",
+        "WP_NO_TILE",
+        "WP_NO_RAND",
+        "WP_NO_FLOAT16_OPS",
+        "WP_NO_FLOAT64_OPS",
+    }
+)
+
+
+# Minimal source patterns for the safety-net scan.  These catch type usage
+# that builtin annotations and argument inspection can miss (e.g. vec/mat/quat
+# types created inside user-defined @wp.func functions, or wp.constant values).
+# Other features (mesh, bvh, hashgrid, volume, etc.) are only accessible
+# through builtins that carry the correct compile_guard, so source scanning
+# is not needed for them.
+_SOURCE_GUARD_PATTERNS: dict[str, list[str]] = {
+    "WP_NO_VEC": ["vec_t<", "vec2", "vec3", "vec4"],
+    "WP_NO_MAT": ["mat_t<"],
+    "WP_NO_QUAT": ["quat_t", "transform_t", "spatial_vector", "spatial_matrix"],
+    "WP_NO_FLOAT16_OPS": ["float16"],
+    "WP_NO_FLOAT64_OPS": ["float64"],
+}
+
+
+def scan_source_for_guards(source: str, required: set[str]) -> None:
+    """Scan generated C++ source for type patterns and add guards to *required*."""
+    for guard, patterns in _SOURCE_GUARD_PATTERNS.items():
+        if guard not in required and any(p in source for p in patterns):
+            required.add(guard)
+
+
+def compute_compile_guards(required: set[str]) -> str:
+    """Return #define WP_NO_XXX directives for features not in *required*."""
+    all_guards = VALID_COMPILE_GUARDS - {COMPILE_GUARD_ALWAYS}
+    guards = set(all_guards - required)
+
+    if not guards:
+        return ""
+    return "\n".join(f"#define {g}" for g in sorted(guards)) + "\n"
+
+
 cpu_module_header = """
 #define WP_TILE_BLOCK_DIM {block_dim}
 #define WP_NO_CRT
-#include "builtin.h"
+{compile_guards}#include "builtin.h"
 
 // avoid namespacing of float type for casting to float type, this is to avoid wp::float(x), which is not valid in C++
 #define float(x) cast_float(x)
@@ -4152,7 +4214,7 @@ cpu_module_header = """
 cuda_module_header = """
 #define WP_TILE_BLOCK_DIM {block_dim}
 #define WP_NO_CRT
-#include "builtin.h"
+{compile_guards}#include "builtin.h"
 
 // Map wp.breakpoint() to a device brkpt at the call site so cuda-gdb attributes the stop to the generated .cu line
 #if defined(__CUDACC__) && !defined(_MSC_VER)

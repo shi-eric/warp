@@ -180,12 +180,14 @@ class Function:
         skip_adding_overload: bool = False,
         require_original_output_arg: bool = False,
         scope_locals: dict[str, Any] | None = None,
+        compile_guard: str = "",
     ):
         if code_transformers is None:
             code_transformers = []
 
         self.func = func  # points to Python function decorated with @wp.func, may be None for builtins
         self.key = key
+        self.compile_guard = compile_guard
         self.namespace = namespace
         self.value_type = value_type
         self.value_func = value_func  # a function that takes a list of args and a list of templates and returns the value type, e.g.: load(array, index) returns the type of value being loaded
@@ -1553,6 +1555,7 @@ scalar_types.update({x: x._wp_scalar_type_ for x in warp._src.types.vector_types
 
 def add_builtin(
     key: str,
+    compile_guard: str,
     input_types: dict[str, type | TypeVar] | None = None,
     constraint: Callable[[Mapping[str, type]], bool] | None = None,
     value_type: type | None = None,
@@ -1578,6 +1581,10 @@ def add_builtin(
     Args:
         key: Function name. Multiple overloaded functions can be registered
             under the same name as long as their signature differ.
+        compile_guard: Identifier from ``VALID_COMPILE_GUARDS`` indicating
+            which C++ feature guard (``WP_NO_XXX``) this builtin requires.
+            Use ``COMPILE_GUARD_ALWAYS`` for builtins that are always
+            available.
         input_types: Signature of the user-facing function.
             Variadic arguments are supported by prefixing the parameter names
             with asterisks as in `*args` and `**kwargs`. Generic arguments are
@@ -1623,6 +1630,9 @@ def add_builtin(
             specify whether an adjoint parameter corresponding to the return
             value should be included in the signature of the backward function.
     """
+    if compile_guard not in warp._src.codegen.VALID_COMPILE_GUARDS:
+        raise ValueError(f"add_builtin({key!r}): compile_guard={compile_guard!r} is not in VALID_COMPILE_GUARDS")
+
     if input_types is None:
         input_types = {}
 
@@ -1731,6 +1741,7 @@ def add_builtin(
                 # finally we can generate a function call for these concrete types:
                 add_builtin(
                     key,
+                    compile_guard=compile_guard,
                     input_types=concrete_arg_types,
                     value_type=return_type,
                     value_func=value_func if return_type is Any else None,
@@ -1772,6 +1783,7 @@ def add_builtin(
         native_func=native_func,
         defaults=defaults,
         require_original_output_arg=require_original_output_arg,
+        compile_guard=compile_guard,
     )
 
     if key in builtin_functions:
@@ -2089,6 +2101,7 @@ class ModuleBuilder:
         self.ltoirs = {}  # map from lto symbol to lto binary
         self.ltoirs_decl = {}  # map from lto symbol to lto forward declaration
         self.shared_memory_bytes = {}  # map from lto symbol to shared memory requirements
+        self.required_guards: set[str] = set()
 
         if hasher is None:
             hasher = ModuleHasher(module)
@@ -2102,6 +2115,38 @@ class ModuleBuilder:
         for func in self.deferred_functions:
             self.build_function(func)
 
+    def require_guard(self, guard: str):
+        """Mark a compile guard as needed by this module."""
+        if guard:  # empty string (COMPILE_GUARD_ALWAYS) is skipped
+            assert guard in warp._src.codegen.VALID_COMPILE_GUARDS, f"Unknown guard: {guard!r}"
+            self.required_guards.add(guard)
+
+    def _inspect_type_for_guards(self, t):
+        """Inspect a Warp type and mark the features it needs so their guards are not emitted."""
+        import warp._src.types as warp_types  # noqa: PLC0415
+
+        # Get the scalar dtype (unwrap arrays, etc.)
+        dtype = t
+        if warp_types.is_array(t):
+            dtype = t.dtype
+
+        # Check generic type string for vec/mat/quat/transform
+        generic = getattr(dtype, "_wp_generic_type_str_", None)
+        if generic == "vec_t":
+            self.require_guard("WP_NO_VEC")
+        elif generic == "mat_t":
+            self.require_guard("WP_NO_MAT")
+        elif generic in ("quat_t", "transform_t"):
+            self.require_guard("WP_NO_QUAT")
+
+        # Check scalar type for float16/float64 (getattr fallback handles
+        # types that lack _wp_scalar_type_, e.g. bare float16/float64).
+        scalar = getattr(dtype, "_wp_scalar_type_", dtype)
+        if scalar is warp_types.float16:
+            self.require_guard("WP_NO_FLOAT16_OPS")
+        elif scalar is warp_types.float64:
+            self.require_guard("WP_NO_FLOAT64_OPS")
+
     def build_struct_recursive(self, struct: warp._src.codegen.Struct):
         structs = []
 
@@ -2112,6 +2157,7 @@ class ModuleBuilder:
             structs.append(s)
 
             for var in s.vars.values():
+                self._inspect_type_for_guards(var.type)
                 if isinstance(var.type, warp._src.codegen.Struct):
                     stack.append(var.type)
                 elif warp._src.types.is_array(var.type) and isinstance(var.type.dtype, warp._src.codegen.Struct):
@@ -2130,6 +2176,10 @@ class ModuleBuilder:
 
         kernel.adj.build(self)
 
+        # Inspect kernel argument types for compile guards
+        for arg in kernel.adj.args:
+            self._inspect_type_for_guards(arg.type)
+
         if kernel.adj.return_var is not None:
             raise WarpCodegenTypeError(f"'{kernel.key}': Error, kernels can't have return values")
 
@@ -2138,6 +2188,13 @@ class ModuleBuilder:
             return
         else:
             func.build(self)
+
+            # Inspect function argument and return types for compile guards
+            for arg in func.adj.args:
+                self._inspect_type_for_guards(arg.type)
+            if func.adj.return_var is not None:
+                for var in func.adj.return_var:
+                    self._inspect_type_for_guards(var.type)
 
             # use dict to preserve import order
             self.functions[func] = None
@@ -2244,10 +2301,28 @@ class ModuleBuilder:
             source += warp._src.codegen.codegen_module(kernel, device=device, options=self.options)
 
         # add headers
+        # Safety net: scan source for type patterns that builtin annotations
+        # and arg inspection may miss (e.g. user-defined functions that create
+        # vec/mat/quat types internally, or types from wp.constant).
+        warp._src.codegen.scan_source_for_guards(source, self.required_guards)
+        compile_guards = warp._src.codegen.compute_compile_guards(self.required_guards)
+
         if device == "cpu":
-            source = warp._src.codegen.cpu_module_header.format(block_dim=self.options["block_dim"]) + source
+            source = (
+                warp._src.codegen.cpu_module_header.format(
+                    block_dim=self.options["block_dim"],
+                    compile_guards=compile_guards,
+                )
+                + source
+            )
         else:
-            source = warp._src.codegen.cuda_module_header.format(block_dim=self.options["block_dim"]) + source
+            source = (
+                warp._src.codegen.cuda_module_header.format(
+                    block_dim=self.options["block_dim"],
+                    compile_guards=compile_guards,
+                )
+                + source
+            )
 
         return source
 
