@@ -168,6 +168,7 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
     from warp.tests.test_codegen_instancing import TestCodeGenInstancing
     from warp.tests.test_compilation import TestCompilation
     from warp.tests.test_compile_consts import TestConstants
+    from warp.tests.test_compile_guards import TestCompileGuards
     from warp.tests.test_composite_component_adjoint import TestCompositeComponentAdjoint
     from warp.tests.test_conditional import TestConditional
     from warp.tests.test_constant_precision import TestConstantPrecision
@@ -309,6 +310,7 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
         TestCodeGen,
         TestCodeGenInstancing,
         TestCompilation,
+        TestCompileGuards,
         TestCompositeComponentAdjoint,
         TestConstants,
         TestConditional,

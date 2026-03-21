@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "vec.h"
+
 namespace wp {
 
 enum HashGridTypeId {

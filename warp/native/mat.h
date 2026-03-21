@@ -4,6 +4,7 @@
 #pragma once
 
 #include "initializer_array.h"
+#include "vec.h"
 
 namespace wp {
 

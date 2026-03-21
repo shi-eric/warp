@@ -3,6 +3,7 @@
 
 #pragma once
 #include "array.h"
+#include "vec.h"
 
 #ifndef M_PI_F
 #define M_PI_F 3.14159265358979323846f
