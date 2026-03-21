@@ -6,6 +6,7 @@
 #include "builtin.h"
 
 #include "intersect.h"
+#include "vec.h"
 
 #ifdef __CUDA_ARCH__
 #define BVH_SHARED_STACK 1
