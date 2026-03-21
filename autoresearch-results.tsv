@@ -1,0 +1,18 @@
+# metric_direction: lower_is_better
+iteration	commit	metric	delta	guard	status	description
+0	3561af12	1.6351	0.0	-	baseline	initial state — CPU JIT compile time 1.6351s with -O3
+1	-	1.6438	+0.0087	-	discard	guard initialize_llvm() with static bool — no effect since benchmark warm-up already handles this
+2	-	1.6305	-0.0046	-	discard	disable loop unrolling with -fno-unroll-loops — marginal, within noise
+3	-	1.6111	-0.0240	-	discard	use -O1 instead of -O3 — 1.5% compile speedup but degrades runtime code quality
+4	-	1.6199	-0.0152	-	discard	use Small code model — too risky for correctness, user rejected
+5	a2395670	1.3977	-0.2374	pass	keep	guard heavy headers (mesh, bvh, hashgrid, volume, texture, noise, matnn) behind WP_USE_* macros
+6	06a36b3b	1.3396	-0.0581	pass	keep	guard intersect.h and intersect_adj.h behind WP_USE_INTERSECT
+7	-	1.3216	-0.0180	fail	discard	guard quat.h/spatial.h — guard failed: test_math uses quat without codegen defining WP_USE_QUAT
+8	5f201815	1.2762	-0.0634	pass	keep	guard tile operations (~5.2K lines) and tile_reduce/scan/sort behind WP_USE_TILES
+9	-	1.2958	+0.0196	-	discard	guard early tile utility templates — no improvement, templates not expensive to parse
+10	-	1.2928	+0.0166	-	discard	add -fno-exceptions -fno-rtti — no improvement, kernel code already has no EH/RTTI
+11	5144e643	0.3259	-1.3092	pass	keep	port full compile-guard system from worktree-2: codegen scans source, emits WP_NO_XXX, guards all headers + adjoint macros
+12	e5c95c4a	0.3258	0.0	pass	keep	fix compile-guard deps for volume/SVD/hashgrid vec_t/mat_t usage
+13	-	0.3221	-0.0037	-	discard	guard DECLARE_ADJOINTS(float32) — marginal, inline funcs not expensive when uncalled
+14	-	0.3335	+0.0077	-	discard	use host CPU name for TargetMachine — no improvement
+15	-	0.302	-0.024	-	discard	diagnostic: -O0 gives 302ms vs -O3 326ms — only 24ms from opt passes, rest is irreducible pipeline cost
