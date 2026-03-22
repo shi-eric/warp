@@ -920,8 +920,10 @@ DECLARE_FLOAT_FWD_OPS(bfloat16)
 DECLARE_FLOAT_FWD_OPS(float32)
 DECLARE_FLOAT_FWD_OPS(float64)
 
-// These scalar adjoints remain available because hand-written native
-// intersection adjoints call them even when generated backward code is off.
+// Note: DECLARE_FLOAT_ADJ_OPS is intentionally NOT guarded by WP_NO_BACKWARD
+// because intersect.h contains hand-written intersection functions with
+// interleaved forward/reverse passes that call scalar adj_mul, adj_add,
+// adj_sub, adj_div on float32 outside of any WP_NO_BACKWARD guard.
 DECLARE_FLOAT_ADJ_OPS(float16)
 #ifndef WP_NO_BFLOAT16
 DECLARE_FLOAT_ADJ_OPS(bfloat16)
