@@ -2566,7 +2566,7 @@ template <typename T> inline CUDA_CALLABLE T atomic_xor(T* buf, T value)
 #include "vec.h"
 #endif
 #ifndef WP_NO_MAT
-#include "mat.h"
+#include "mat_ops.h"
 #endif
 #ifndef WP_NO_QUAT
 #include "quat.h"
@@ -2574,7 +2574,6 @@ template <typename T> inline CUDA_CALLABLE T atomic_xor(T* buf, T value)
 #endif
 #ifndef WP_NO_INTERSECT
 #include "intersect.h"
-#include "intersect_adj.h"
 #endif
 // clang-format on
 
