@@ -15,6 +15,7 @@ import time
 
 
 EXAMPLES = [
+<<<<<<< Updated upstream
     "basic_shapes",
     "basic_joints",
     "cloth_hanging",
@@ -22,6 +23,19 @@ EXAMPLES = [
     "robot_cartpole",
     "softbody_hanging",
     "mpm_granular",
+=======
+    # One per major category
+    "basic_shapes",         # basic
+    "cloth_hanging",        # cloth
+    "diffsim_ball",         # diffsim
+    "softbody_hanging",     # softbody
+    "mpm_granular",         # mpm
+    "robot_g1",             # robot
+    "robot_h1",             # robot (humanoid)
+    "robot_ur10",           # robot (industrial arm)
+    "robot_allegro_hand",   # robot (dexterous hand)
+    "robot_panda_hydro",    # robot (hydroelastic contacts)
+>>>>>>> Stashed changes
 ]
 
 

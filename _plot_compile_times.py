@@ -32,12 +32,21 @@ BAR_WIDTH = 0.35
 # Isolated kernels (5 samples each)
 isolated_kernels = {
     "labels": [
+<<<<<<< Updated upstream
         "Scalar\nonly",
         "Vector\nmath",
         "Noise +\nrandom",
         "Mat + quat\n+ transform",
         "Volume\nsampling",
         "Mesh\nqueries",
+=======
+        "Scalar",
+        "Vec",
+        "Noise + Rand",
+        "Mat + Quat",
+        "Volume",
+        "Mesh",
+>>>>>>> Stashed changes
     ],
     "cpu_main": [1.617, 1.639, 1.663, 1.706, 1.721, 1.815],
     "cpu_branch": [0.329, 0.380, 0.432, 0.536, 0.611, 0.824],
@@ -48,11 +57,19 @@ isolated_kernels = {
 # Warp FEM examples — compile time only (3 samples each)
 fem_examples = {
     "labels": [
+<<<<<<< Updated upstream
         "navier\nstokes",
         "stokes",
         "deformed\ngeometry",
         "diffusion\n3d",
         "convection\ndiffusion",
+=======
+        "Navier-Stokes",
+        "Stokes Flow",
+        "Deformed Geom.",
+        "Diffusion 3D",
+        "Conv.-Diffusion",
+>>>>>>> Stashed changes
     ],
     "cpu_main": [67.1, 55.6, 50.6, 42.7, 31.6],
     "cpu_branch": [22.6, 17.8, 16.1, 13.1, 9.4],
@@ -85,7 +102,12 @@ def plot_comparison(ax, labels, main_vals, branch_vals, title, ylabel="Compile t
         color=COLOR_BRANCH,
     )
 
+<<<<<<< Updated upstream
     ax.set_xticks(x, labels)
+=======
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=25, ha="right", fontsize=12)
+>>>>>>> Stashed changes
     ax.set_ylabel(ylabel)
     ax.set_title(title)
     ax.set_ylim(bottom=0, top=1.25 * max(main_vals))
@@ -167,6 +189,7 @@ print(f"Saving {fname2}")
 fig.savefig(fname2, facecolor="w", dpi=150, bbox_inches="tight")
 
 # --------------------------------------------------------------------------
+<<<<<<< Updated upstream
 # Figure 3: Combined overview — CPU speedups only (single chart)
 # --------------------------------------------------------------------------
 
@@ -210,6 +233,52 @@ ax.legend(loc="upper left", fontsize=12)
 fig.tight_layout()
 
 fname3 = f"compile_guards_cpu_overview_{datetime.now():%Y_%m_%d}.png"
+=======
+# Figure 3: Newton examples — CPU + CUDA side by side
+# --------------------------------------------------------------------------
+
+newton_examples = {
+    "labels": [
+        "Robot UR10",
+        "Robot Allegro",
+        "Robot H1",
+        "Robot G1",
+        "Basic Shapes",
+        "Cloth Hanging",
+        "Softbody",
+        "Diffsim Ball",
+    ],
+    # CPU compile time (median, 3 samples)
+    "cpu_main":   [73.0, 96.3, 90.7, 87.8, 36.8, 27.8, 27.6, 13.6],
+    "cpu_branch": [33.6, 47.5, 45.4, 44.5, 23.1, 18.1, 17.9, 7.8],
+    # CUDA compile time (median, 3 samples)
+    "cuda_main":   [51.1, 87.9, 88.6, 95.3, 52.7, 46.8, 37.4, 10.6],
+    "cuda_branch": [43.1, 77.7, 78.2, 85.8, 49.4, 43.3, 34.4, 9.8],
+}
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+
+plot_comparison(
+    ax1,
+    newton_examples["labels"],
+    newton_examples["cpu_main"],
+    newton_examples["cpu_branch"],
+    "CPU (Clang JIT) — Newton Examples",
+)
+
+plot_comparison(
+    ax2,
+    newton_examples["labels"],
+    newton_examples["cuda_main"],
+    newton_examples["cuda_branch"],
+    "CUDA (NVRTC) — Newton Examples",
+)
+
+fig.suptitle("Cold-Compile Time for Newton Examples", fontsize=18, fontweight="bold", y=1.02)
+fig.tight_layout()
+
+fname3 = f"compile_guards_newton_examples_{datetime.now():%Y_%m_%d}.png"
+>>>>>>> Stashed changes
 print(f"Saving {fname3}")
 fig.savefig(fname3, facecolor="w", dpi=150, bbox_inches="tight")
 
