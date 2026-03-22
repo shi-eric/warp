@@ -691,6 +691,16 @@
 
 - Remove the Kit extensions from this repository ([GH-1296](https://github.com/NVIDIA/warp/issues/1296)).
 
+### Deprecated
+
+- Deprecate `Texture.copy_from_array()`, use `Texture.copy_from()` instead.
+- Deprecate `Texture.copy_to_array()`, use `Texture.copy_to()` instead.
+
+### Performance
+
+- Add compile guards to skip unused C++ headers during kernel JIT compilation, reducing CPU cold-compile
+  time by up to 5x and CUDA compile time by up to 2.8x.
+
 ### Changed
 
 - Pass tile parameters in `@wp.func` functions by reference for both register and shared storage,
