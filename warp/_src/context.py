@@ -2115,7 +2115,8 @@ class ModuleBuilder:
     def require_guard(self, guard):
         """Mark a compile guard as needed by this module."""
         if guard is not None:  # None means always included
-            assert guard in warp._src.codegen.VALID_COMPILE_GUARDS, f"Unknown guard: {guard!r}"
+            if guard not in warp._src.codegen.VALID_COMPILE_GUARDS:
+                raise ValueError(f"require_guard: unknown guard {guard!r}")
             self.required_guards.add(guard)
 
     def _inspect_type_for_guards(self, t):
@@ -2298,11 +2299,17 @@ class ModuleBuilder:
             source += warp._src.codegen.codegen_module(kernel, device=device, options=self.options)
 
         # add headers
-        # Safety net: scan source for type patterns that builtin annotations
-        # and arg inspection may miss (e.g. user-defined functions that create
-        # vec/mat/quat types internally, or types from wp.constant).
-        warp._src.codegen.scan_source_for_guards(source, self.required_guards)
         compile_guards = warp._src.codegen.compute_compile_guards(self.required_guards)
+
+        # When backward mode is disabled for the module AND no kernel
+        # overrides it, define WP_NO_BACKWARD so that native headers can
+        # skip parsing adjoint function definitions.
+        module_backward = self.options.get("enable_backward", True)
+        any_kernel_backward = any(
+            (self.options | k.options).get("enable_backward", True) for k in self.kernels
+        )
+        if not module_backward and not any_kernel_backward:
+            compile_guards = "#define WP_NO_BACKWARD\n" + compile_guards
 
         if device == "cpu":
             source = (

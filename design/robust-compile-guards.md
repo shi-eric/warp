@@ -20,24 +20,22 @@ doing so in a way that is robust against future changes to the builtin library.
 
 ## Requirements
 
-| ID  | Requirement | Priority | Notes |
+| ID  | Requirement | Priority | Status |
 | --- | --- | --- | --- |
-| R1  | New builtins that omit a guard fail at import time, not at user compile time | Must | |
-| R2  | Invalid guard names fail at import time | Must | |
-| R3  | Significant CPU cold-compile speedup | Must | |
-| R4  | Extend compile guards to CUDA (NVRTC) path | Should | |
-| R5  | No manual tables to maintain | Must | |
+| R1  | Invalid guard names fail at import time, not at user compile time | Must | Done — `add_builtin()` raises `ValueError` for invalid `compile_guard` values |
+| R2  | Significant CPU cold-compile speedup | Must | Done — up to 5x on CPU, 2.8x on CUDA |
+| R3  | Extend compile guards to CUDA (NVRTC) path | Should | Done — both `cpu_module_header` and `cuda_module_header` emit guards |
+| R4  | Minimize manual tables | Should | Partial — small tables remain (`VALID_COMPILE_GUARDS`, `_GENERIC_TYPE_GUARDS`, `_SOURCE_GUARD_PATTERNS`) but they are co-located in `codegen.py` and covered by sweep tests |
 
 ## Design
 
 ### Guard Detection
 
-Three layers determine which features a module needs, plus a safety-net
-fallback:
+Three layers determine which features a module needs:
 
 1. **`compile_guard` on `add_builtin()`** -- Every builtin declares which header
-   it needs.  Required parameter with no default (`TypeError` at import if
-   omitted), validated against `VALID_COMPILE_GUARDS` (`ValueError` for typos).
+   it needs.  Optional parameter defaulting to `None` (always included),
+   validated against `VALID_COMPILE_GUARDS` (`ValueError` for invalid names).
    Concrete specializations of generic builtins inherit the parent's guard.
 
 2. **Kernel/function/struct type inspection** -- `ModuleBuilder` inspects
@@ -49,10 +47,11 @@ fallback:
    builtin call, `func.compile_guard` is added to `required_guards`.  This is
    transitive across `@wp.func` call chains.
 
-4. **Safety-net source scan** -- After codegen produces the C++ source, a
-   lightweight pattern scan catches types created inside `@wp.func` bodies
-   that the annotation and type-inspection layers cannot see (e.g., custom
-   matrix sizes from FEM geometry, `wp.constant` values).
+4. **Variable creation in `Adjoint.add_var()`** -- When codegen creates a new
+   variable (local, temporary, or constant), `_inspect_type_for_guards()` is
+   called on its type.  This catches types created inside `@wp.func` bodies
+   (e.g., custom matrix sizes from FEM geometry) that are not visible in
+   function signatures.
 
 ### Guard Emission
 
@@ -68,7 +67,8 @@ relying on `builtin.h`'s include ordering:
 
 - `mat.h`, `hashgrid.h`, `intersect.h`, `texture.h`, `noise.h`, `bvh.h`,
   `rand.h` → `#include "vec.h"`
-- `spatial.h`, `svd.h`, `volume.h`, `tile.h` → `#include "mat.h"` (gets
+- `spatial.h` → `#include "mat.h"` (gets `vec.h` transitively)
+- `svd.h`, `volume.h`, `tile.h` → `#include "mat_ops.h"` (gets `mat.h` and
   `vec.h` transitively)
 
 With `#pragma once` on all headers, the C++ preprocessor handles transitive
@@ -78,7 +78,7 @@ makes vec types available regardless of whether `WP_NO_VEC` is defined.
 
 ### `tile_storage.h` Extraction
 
-`tile_shared_storage_t` (~110 lines) was extracted from `tile.h` (~5300 lines)
+`tile_shared_storage_t` (~150 lines) was extracted from `tile.h` (~6000 lines)
 into a standalone `tile_storage.h`.  This is included unconditionally from
 `builtin.h` (outside the `WP_NO_TILE` guard), so every kernel gets tile shared
 storage setup.  `WP_NO_TILE` then fully excludes the heavy tile operations
@@ -87,8 +87,8 @@ storage setup.  `WP_NO_TILE` then fully excludes the heavy tile operations
 ### Key Implementation Details
 
 **Guard constants** live in `codegen.py` (not `context.py`) to avoid circular
-imports.  `COMPILE_GUARD_ALWAYS = ""` is the sentinel for always-included
-builtins; `require_guard()` skips empty strings.
+imports.  `None` is the sentinel for always-included builtins;
+`require_guard()` skips `None` values.
 
 **Mixed-group builtins** -- The "Geometry" and "Random" groups in `builtins.py`
 contain builtins with different guards (e.g., `mesh_*` -> `WP_NO_MESH`,
@@ -154,17 +154,16 @@ Newton example compile times (3 samples each):
 
 ## Testing Strategy
 
-Unit tests in `warp/tests/test_compile_guards.py` (22 tests):
+Unit tests in `warp/tests/test_compile_guards.py` (19 tests):
 
-- **Validation**: `add_builtin()` raises `TypeError` without `compile_guard`,
-  `ValueError` for invalid names.
+- **Validation**: `add_builtin()` raises `ValueError` for invalid guard names.
 - **Sweep**: Every registered builtin has a valid `compile_guard`.
 - **C++ consistency**: Every guard in `VALID_COMPILE_GUARDS` has a matching
   `#ifndef` in the native headers.
 - **Guard computation**: `compute_compile_guards()` tested with empty, full,
   and single-feature scenarios.
-- **Source scan**: `scan_source_for_guards()` tested for vec/mat/quat/float16/
-  float64 detection, no-match, and idempotency.
+- **`add_var()` guard tracking**: `Adjoint.add_var()` tested for vec, mat,
+  and scalar types to verify guards are collected during codegen.
 - **Type inspection**: `_inspect_type_for_guards()` tested for vec, mat, quat,
   transform, float16, float64, array-of-vec, and scalar-is-noop.
 - **Return type inspection**: `build_function()` inspects function return types
@@ -178,9 +177,10 @@ Full test suite: 6622 tests pass, 0 errors, 16 skipped (matching baseline).
 substrings (e.g., `"mesh_query"` implies mesh.h is needed) to determine which
 guards to emit.  Rejected because the scan table is disconnected from the
 `add_builtin()` registrations — a new builtin whose C++ identifier isn't in the
-table silently breaks user kernels.  The safety-net source scan (layer 4 above)
-is a limited version of this approach, used only as a fallback for types that
-the annotation system cannot detect.
+table silently breaks user kernels.  An earlier version used a limited source
+scan as a safety net, but this was replaced by tracking guards in
+`Adjoint.add_var()` which catches the same cases (types created inside
+`@wp.func` bodies) without maintaining fragile string patterns.
 
 **Python-side dependency table** -- A `_COMPILE_GUARD_DEPS` dict mapping header
 inclusion constraints (e.g., "WP_NO_VEC can only be emitted if WP_NO_MAT is
@@ -193,6 +193,10 @@ Rejected because 12+ headers re-include `builtin.h`, the scalar math section is
 tightly interdependent, and the `WP_NO_XXX` model already produces identical
 preprocessor output.
 
-**Defaulting `compile_guard` to `COMPILE_GUARD_ALWAYS`** -- Rejected because it
-silently over-includes everything, causing gradual performance regression when
-new builtins are added without thought to which header they need.
+**Required `compile_guard` parameter** -- Making `compile_guard` a required
+positional parameter (no default) so that omitting it raises `TypeError` at
+import time.  This was the original design, but relaxed to an optional
+parameter defaulting to `None` (always included) to reduce churn when adding
+new builtins.  The `test_all_builtins_have_compile_guard` sweep test mitigates
+the regression risk by catching any builtin with `compile_guard=None` that
+should have a specific guard.

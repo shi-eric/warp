@@ -6,6 +6,7 @@
 #include "builtin.h"
 
 #include "array.h"
+#include "mat_ops.h"
 #include "bvh.h"
 #include "intersect.h"
 #include "rand.h"

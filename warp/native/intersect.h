@@ -5,6 +5,7 @@
 
 #include "builtin.h"
 #include "vec.h"
+#include "mat_ops.h"
 
 namespace wp {
 

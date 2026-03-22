@@ -131,6 +131,7 @@ dense_solve(int n, const array_t<float>& A, const array_t<float>& L, const array
 //     printf("]\n");
 // }
 
+#ifndef WP_NO_BACKWARD
 // adjoint methods
 CUDA_CALLABLE inline void adj_dense_gemm(
     int m,
@@ -218,5 +219,6 @@ CUDA_CALLABLE inline void adj_dense_solve(
         }
     }
 }
+#endif  // WP_NO_BACKWARD
 
 }  // namespace wp

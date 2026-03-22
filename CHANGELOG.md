@@ -25,6 +25,11 @@
 - Deprecate `Texture.copy_from_array()`, use `Texture.copy_from()` instead.
 - Deprecate `Texture.copy_to_array()`, use `Texture.copy_to()` instead.
 
+### Performance
+
+- Add compile guards to skip unused C++ headers during kernel JIT compilation, reducing CPU cold-compile
+  time by up to 5x and CUDA compile time by up to 2.8x.
+
 ### Changed
 
 - Centralize module option resolution so the hasher and compiler always see identical values, fixing unnecessary

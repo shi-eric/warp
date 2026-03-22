@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import glob
@@ -9,7 +9,6 @@ import warp as wp
 from warp._src.codegen import (
     VALID_COMPILE_GUARDS,
     compute_compile_guards,
-    scan_source_for_guards,
 )
 from warp._src.context import ModuleBuilder, add_builtin, builtin_functions
 
@@ -124,38 +123,50 @@ class TestCompileGuards(unittest.TestCase):
         self.assertNotIn("WP_NO_MESH", result)
 
     # ------------------------------------------------------------------
-    # scan_source_for_guards() — safety-net source scanning
+    # add_var() — guard tracking during codegen
     # ------------------------------------------------------------------
 
-    def test_scan_source_detects_vec(self):
-        """Source containing vec3 triggers WP_NO_VEC."""
-        required = set()
-        scan_source_for_guards("wp::vec3 v = {};", required)
-        self.assertIn("WP_NO_VEC", required)
+    def test_add_var_tracks_vec_guard(self):
+        """Creating a variable with a vec type registers WP_NO_VEC."""
+        from warp._src.codegen import Adjoint
 
-    def test_scan_source_detects_mat(self):
-        """Source containing mat_t< triggers WP_NO_MAT."""
-        required = set()
-        scan_source_for_guards("mat_t<3, 2, float32> m;", required)
-        self.assertIn("WP_NO_MAT", required)
+        builder = self._make_builder()
+        adj = Adjoint.__new__(Adjoint)
+        adj.builder = builder
+        adj.variables = []
+        adj.blocks = [type("Block", (), {"vars": []})()]
+        adj.lineno = 0
 
-    def test_scan_source_detects_quat(self):
-        """Source containing quat_t triggers WP_NO_QUAT."""
-        required = set()
-        scan_source_for_guards("quat_t<float32> q;", required)
-        self.assertIn("WP_NO_QUAT", required)
+        adj.add_var(type=wp.vec3)
+        self.assertIn("WP_NO_VEC", builder.required_guards)
 
-    def test_scan_source_no_match(self):
-        """Source with no type patterns leaves required empty."""
-        required = set()
-        scan_source_for_guards("float x = 1.0f;", required)
-        self.assertEqual(required, set())
+    def test_add_var_tracks_mat_guard(self):
+        """Creating a variable with a mat type registers WP_NO_MAT."""
+        from warp._src.codegen import Adjoint
 
-    def test_scan_source_idempotent(self):
-        """Scanning with guard already present does not error."""
-        required = {"WP_NO_VEC"}
-        scan_source_for_guards("vec3 v;", required)
-        self.assertIn("WP_NO_VEC", required)
+        builder = self._make_builder()
+        adj = Adjoint.__new__(Adjoint)
+        adj.builder = builder
+        adj.variables = []
+        adj.blocks = [type("Block", (), {"vars": []})()]
+        adj.lineno = 0
+
+        adj.add_var(type=wp.mat22)
+        self.assertIn("WP_NO_MAT", builder.required_guards)
+
+    def test_add_var_scalar_adds_no_guard(self):
+        """Creating a variable with a scalar type adds no guards."""
+        from warp._src.codegen import Adjoint
+
+        builder = self._make_builder()
+        adj = Adjoint.__new__(Adjoint)
+        adj.builder = builder
+        adj.variables = []
+        adj.blocks = [type("Block", (), {"vars": []})()]
+        adj.lineno = 0
+
+        adj.add_var(type=wp.float32)
+        self.assertEqual(builder.required_guards, set())
 
     # ------------------------------------------------------------------
     # _inspect_type_for_guards() — type inspection

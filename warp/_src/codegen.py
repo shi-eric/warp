@@ -1407,6 +1407,12 @@ class Adjoint:
         # allocate new variable
         v = Var(name, type=type, constant=constant, relative_lineno=adj.lineno)
 
+        # Track compile guards from the variable's type so that guards
+        # are collected naturally during codegen rather than via a
+        # post-hoc source scan.
+        if type is not None and adj.builder is not None:
+            adj.builder._inspect_type_for_guards(type)
+
         adj.variables.append(v)
 
         adj.blocks[-1].vars.append(v)
@@ -4217,7 +4223,7 @@ class Adjoint:
 # ---------------------------------------------------------------------------
 
 # Type generic string (from _wp_generic_type_str_) -> guard.
-# Used by _inspect_type_for_guards and the safety-net source scanner.
+# Used by _inspect_type_for_guards in context.py.
 _GENERIC_TYPE_GUARDS: dict[str, str] = {
     "vec_t": "WP_NO_VEC",
     "mat_t": "WP_NO_MAT",
@@ -4254,25 +4260,6 @@ VALID_COMPILE_GUARDS: frozenset[str | None] = frozenset(
     }
 )
 
-# C++ source patterns for the safety-net scan, derived from the type tables.
-# The scan catches types created inside @wp.func bodies that the annotation
-# and type-inspection layers cannot see (e.g. FEM custom matrix sizes).
-# Features accessed only through builtins (mesh, bvh, volume, etc.) don't
-# need source scanning — their builtins carry the correct compile_guard.
-_SOURCE_GUARD_PATTERNS: dict[str, list[str]] = {
-    "WP_NO_VEC": ["vec_t<", "vec2", "vec3", "vec4"],
-    "WP_NO_MAT": ["mat_t<"],
-    "WP_NO_QUAT": ["quat_t", "transform_t", "spatial_vector", "spatial_matrix"],
-    "WP_NO_FLOAT16_OPS": ["float16"],
-    "WP_NO_FLOAT64_OPS": ["float64"],
-}
-
-
-def scan_source_for_guards(source: str, required: set[str]) -> None:
-    """Scan generated C++ source for type patterns and add guards to *required*."""
-    for guard, patterns in _SOURCE_GUARD_PATTERNS.items():
-        if guard not in required and any(p in source for p in patterns):
-            required.add(guard)
 
 
 def compute_compile_guards(required: set[str]) -> str:
@@ -4349,6 +4336,7 @@ struct {name}
 
 }};
 
+#ifndef WP_NO_BACKWARD
 static CUDA_CALLABLE void adj_{name}({reverse_args})
 {{
 {reverse_body}}}
@@ -4362,6 +4350,7 @@ CUDA_CALLABLE {name} add(const {name}& a, const {name}& b)
 CUDA_CALLABLE void adj_atomic_add({name}* p, {name} t)
 {{
 {atomic_add_body}}}
+#endif  // WP_NO_BACKWARD
 
 
 """
@@ -4950,7 +4939,9 @@ def codegen_func(adj, c_func_name: str, device="cpu", options=None, forward_only
             if should_generate_adjoint:
                 reverse_body = codegen_func_reverse(adj, func_type="function", device=device)
             else:
-                reverse_body = '\t// reverse mode disabled (module option "enable_backward" is False or no dependent kernel found with "enable_backward")\n'
+                # Skip emitting the empty reverse function entirely — it's
+                # dead code when backward is disabled and reduces compile time.
+                return s
         s += template_prefix + reverse_template.format(
             name=c_func_name,
             return_type=return_type,

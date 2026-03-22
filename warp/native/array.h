@@ -146,7 +146,9 @@ struct shape_t {
 
 CUDA_CALLABLE inline int extract(const shape_t& s, int i) { return s.dims[i]; }
 
+#ifndef WP_NO_BACKWARD
 CUDA_CALLABLE inline void adj_extract(const shape_t& s, int i, const shape_t& adj_s, int adj_i, int adj_ret) { }
+#endif // WP_NO_BACKWARD
 
 inline CUDA_CALLABLE void print(shape_t s)
 {
@@ -943,6 +945,7 @@ template <typename T> CUDA_CALLABLE inline indexedarray_t<T> view(indexedarray_t
     return a;
 }
 
+#ifndef WP_NO_BACKWARD
 template <template <typename> class A1, template <typename> class A2, template <typename> class A3, typename T>
 inline CUDA_CALLABLE void adj_view(A1<T>& src, int i, A2<T>& adj_src, int adj_i, A3<T>& adj_ret)
 {
@@ -958,6 +961,7 @@ adj_view(A1<T>& src, int i, int j, int k, A2<T>& adj_src, int adj_i, int adj_j, 
 }
 
 template <typename... Args> CUDA_CALLABLE inline void adj_view(Args&&...) { }
+#endif // WP_NO_BACKWARD
 
 // TODO: lower_bound() for indexed arrays?
 
@@ -986,6 +990,7 @@ template <typename T> CUDA_CALLABLE inline int lower_bound(const array_t<T>& arr
     return lower_bound(arr, 0, arr.shape[0], value);
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename T>
 inline CUDA_CALLABLE void adj_lower_bound(const array_t<T>& arr, T value, array_t<T> adj_arr, T adj_value, int adj_ret)
 {
@@ -1004,6 +1009,7 @@ inline CUDA_CALLABLE void adj_lower_bound(
 )
 {
 }
+#endif // WP_NO_BACKWARD
 
 template <template <typename> class A, typename T> inline CUDA_CALLABLE T atomic_add(const A<T>& buf, int i, T value)
 {
@@ -1254,6 +1260,7 @@ template <typename T1, typename T2> CUDA_CALLABLE inline T2 where(const array_t<
     return arr.data ? a : b;
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename T1, typename T2>
 CUDA_CALLABLE inline void adj_where(
     const array_t<T1>& arr,
@@ -1270,6 +1277,7 @@ CUDA_CALLABLE inline void adj_where(
     else
         adj_b += adj_ret;
 }
+#endif // WP_NO_BACKWARD
 
 // stub for the case where we have an nested array inside a struct and
 // atomic add the whole struct onto an array (e.g.: during backwards pass)
@@ -1310,6 +1318,7 @@ adj_address(const array_t<T>& buf, int i, int j, const array_t<T>& adj_buf, int 
     else if (buf.grad)
         adj_atomic_add(&index_grad(buf, i, j), adj_output);
 }
+#ifndef WP_NO_BACKWARD
 template <typename T>
 inline CUDA_CALLABLE void adj_address(
     const array_t<T>& buf,
@@ -1427,6 +1436,7 @@ template <typename T> inline CUDA_CALLABLE void adj_load(const T* address, const
 {
     // nop; generic load() operations are not differentiable
 }
+#endif // WP_NO_BACKWARD
 
 template <typename T>
 inline CUDA_CALLABLE void adj_atomic_add(
@@ -1587,6 +1597,7 @@ inline CUDA_CALLABLE void adj_atomic_sub(
 }
 
 // generic array types that do not support gradient computation (indexedarray, etc.)
+#ifndef WP_NO_BACKWARD
 template <template <typename> class A1, template <typename> class A2, typename T>
 inline CUDA_CALLABLE void adj_address(const A1<T>& buf, int i, const A2<T>& adj_buf, int adj_i, const T& adj_output)
 {
@@ -1652,6 +1663,7 @@ inline CUDA_CALLABLE void adj_array_store(
 )
 {
 }
+#endif // WP_NO_BACKWARD
 
 template <template <typename> class A1, template <typename> class A2, typename T>
 inline CUDA_CALLABLE void
@@ -2203,10 +2215,12 @@ inline CUDA_CALLABLE void adj_atomic_xor(
 
 template <template <typename> class A, typename T> CUDA_CALLABLE inline int len(const A<T>& a) { return a.shape[0]; }
 
+#ifndef WP_NO_BACKWARD
 template <template <typename> class A, typename T>
 CUDA_CALLABLE inline void adj_len(const A<T>& a, A<T>& adj_a, int& adj_ret)
 {
 }
+#endif // WP_NO_BACKWARD
 
 }  // namespace wp
 
