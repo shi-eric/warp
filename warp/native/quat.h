@@ -4,6 +4,7 @@
 #pragma once
 
 #include "mat.h"
+#include "crt.h"
 
 namespace wp {
 
@@ -1630,6 +1631,29 @@ inline CUDA_CALLABLE void expect_near(const quat_t<Type>& actual, const quat_t<T
         printf("    Max absolute difference: ");
         print(diff);
     }
+}
+
+template <typename Type>
+inline CUDA_CALLABLE void adj_expect_near(
+    const quat_t<Type>& actual,
+    const quat_t<Type>& expected,
+    Type tolerance,
+    quat_t<Type>& adj_actual,
+    quat_t<Type>& adj_expected,
+    Type adj_tolerance
+)
+{
+    // nop
+}
+
+template <typename Type> inline CUDA_CALLABLE void print(quat_t<Type> i)
+{
+    printf("%g %g %g %g\n", float(i.x), float(i.y), float(i.z), float(i.w));
+}
+
+template <typename Type> inline CUDA_CALLABLE void adj_print(const quat_t<Type>& q, const quat_t<Type>& adj_q)
+{
+    printf("adj: %g %g %g %g\n", float(adj_q.x), float(adj_q.y), float(adj_q.z), float(adj_q.w));
 }
 
 }  // namespace wp

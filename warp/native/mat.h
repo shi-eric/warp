@@ -5,6 +5,7 @@
 
 #include "initializer_array.h"
 #include "vec.h"
+#include "crt.h"
 
 namespace wp {
 
@@ -5207,6 +5208,43 @@ expect_near(const mat_t<Rows, Cols, Type>& actual, const mat_t<Rows, Cols, Type>
         print(actual);
         printf("    Max absolute difference: ");
         print(diff);
+    }
+}
+
+template <unsigned Rows, unsigned Cols, typename Type>
+inline CUDA_CALLABLE void adj_expect_near(
+    const mat_t<Rows, Cols, Type>& actual,
+    const mat_t<Rows, Cols, Type>& expected,
+    Type tolerance,
+    mat_t<Rows, Cols, Type>& adj_actual,
+    mat_t<Rows, Cols, Type>& adj_expected,
+    Type adj_tolerance
+)
+{
+    // nop
+}
+
+template <unsigned Rows, unsigned Cols, typename Type> inline CUDA_CALLABLE void print(const mat_t<Rows, Cols, Type>& m)
+{
+    for (unsigned i = 0; i < Rows; ++i) {
+        for (unsigned j = 0; j < Cols; ++j) {
+            printf("%g ", float(m.data[i][j]));
+        }
+        printf("\n");
+    }
+}
+
+template <unsigned Rows, unsigned Cols, typename Type>
+inline CUDA_CALLABLE void adj_print(const mat_t<Rows, Cols, Type>& m, const mat_t<Rows, Cols, Type>& adj_m)
+{
+    for (unsigned i = 0; i < Rows; i++) {
+        if (i == 0)
+            printf("adj:");
+        else
+            printf("    ");
+        for (unsigned j = 0; j < Cols; j++)
+            printf(" %g", float(adj_m.data[i][j]));
+        printf("\n");
     }
 }
 

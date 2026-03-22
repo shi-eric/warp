@@ -4,6 +4,7 @@
 #pragma once
 
 #include "initializer_array.h"
+#include "crt.h"
 
 namespace wp {
 
@@ -2101,5 +2102,27 @@ inline CUDA_CALLABLE void adj_vec3(float s, float& adj_s, const vec3& adj_ret) {
 inline CUDA_CALLABLE void adj_vec4(float s, float& adj_s, const vec4& adj_ret) { adj_vec_t(s, adj_s, adj_ret); }
 
 template <unsigned Length, typename Type> CUDA_CALLABLE inline int len(const vec_t<Length, Type>& x) { return Length; }
+
+template <unsigned Length, typename Type>
+CUDA_CALLABLE inline void adj_len(const vec_t<Length, Type>& x, vec_t<Length, Type>& adj_x, const int& adj_ret)
+{
+}
+
+template <unsigned Length, typename Type> inline CUDA_CALLABLE void print(vec_t<Length, Type> v)
+{
+    for (unsigned i = 0; i < Length; ++i) {
+        printf("%g ", float(v[i]));
+    }
+    printf("\n");
+}
+
+template <unsigned Length, typename Type>
+inline CUDA_CALLABLE void adj_print(const vec_t<Length, Type>& v, const vec_t<Length, Type>& adj_v)
+{
+    printf("adj:");
+    for (unsigned i = 0; i < Length; i++)
+        printf(" %g", float(adj_v[i]));
+    printf("\n");
+}
 
 }  // namespace wp
