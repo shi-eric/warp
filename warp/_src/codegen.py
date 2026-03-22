@@ -4277,6 +4277,7 @@ struct {name}
 
 }};
 
+#ifndef WP_NO_BACKWARD
 static CUDA_CALLABLE void adj_{name}({reverse_args})
 {{
 {reverse_body}}}
@@ -4290,6 +4291,7 @@ CUDA_CALLABLE {name} add(const {name}& a, const {name}& b)
 CUDA_CALLABLE void adj_atomic_add({name}* p, {name} t)
 {{
 {atomic_add_body}}}
+#endif  // WP_NO_BACKWARD
 
 
 """
@@ -4834,7 +4836,9 @@ def codegen_func(adj, c_func_name: str, device="cpu", options=None, forward_only
             if should_generate_adjoint:
                 reverse_body = codegen_func_reverse(adj, func_type="function", device=device)
             else:
-                reverse_body = '\t// reverse mode disabled (module option "enable_backward" is False or no dependent kernel found with "enable_backward")\n'
+                # Skip emitting the empty reverse function entirely — it's
+                # dead code when backward is disabled and reduces compile time.
+                return s
         s += reverse_template.format(
             name=c_func_name,
             return_type=return_type,

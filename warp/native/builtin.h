@@ -326,8 +326,8 @@ template <typename T> CUDA_CALLABLE inline void adj_float64(T x, T& adj_x, float
 
 #define kEps 0.0f
 
-// basic ops for integer types
-#define DECLARE_INT_OPS(T) \
+// basic ops for integer types (forward)
+#define DECLARE_INT_FWD_OPS(T) \
 inline CUDA_CALLABLE T mul(T a, T b) { return a*b; } \
 inline CUDA_CALLABLE T div(T a, T b) { return a/b; } \
 inline CUDA_CALLABLE T add(T a, T b) { return a+b; } \
@@ -347,7 +347,10 @@ inline CUDA_CALLABLE T rshift(T a, T b) { return a>>b; } \
 inline CUDA_CALLABLE T invert(T x) { return ~x; } \
 inline CUDA_CALLABLE bool isfinite(T x) { return ::isfinite(double(x)); } \
 inline CUDA_CALLABLE bool isnan(T x) { return ::isnan(double(x)); } \
-inline CUDA_CALLABLE bool isinf(T x) { return ::isinf(double(x)); } \
+inline CUDA_CALLABLE bool isinf(T x) { return ::isinf(double(x)); }
+
+// basic ops for integer types (adjoint)
+#define DECLARE_INT_ADJ_OPS(T) \
 inline CUDA_CALLABLE void adj_mul(T a, T b, T& adj_a, T& adj_b, T adj_ret) { } \
 inline CUDA_CALLABLE void adj_div(T a, T b, T ret, T& adj_a, T& adj_b, T adj_ret) { } \
 inline CUDA_CALLABLE void adj_add(T a, T b, T& adj_a, T& adj_b, T adj_ret) { } \
@@ -381,14 +384,25 @@ inline CUDA_CALLABLE uint16 abs(uint16 x) { return x; }
 inline CUDA_CALLABLE uint32 abs(uint32 x) { return x; }
 inline CUDA_CALLABLE uint64 abs(uint64 x) { return x; }
 
-DECLARE_INT_OPS(int8)
-DECLARE_INT_OPS(int16)
-DECLARE_INT_OPS(int32)
-DECLARE_INT_OPS(int64)
-DECLARE_INT_OPS(uint8)
-DECLARE_INT_OPS(uint16)
-DECLARE_INT_OPS(uint32)
-DECLARE_INT_OPS(uint64)
+DECLARE_INT_FWD_OPS(int8)
+DECLARE_INT_FWD_OPS(int16)
+DECLARE_INT_FWD_OPS(int32)
+DECLARE_INT_FWD_OPS(int64)
+DECLARE_INT_FWD_OPS(uint8)
+DECLARE_INT_FWD_OPS(uint16)
+DECLARE_INT_FWD_OPS(uint32)
+DECLARE_INT_FWD_OPS(uint64)
+
+#ifndef WP_NO_BACKWARD
+DECLARE_INT_ADJ_OPS(int8)
+DECLARE_INT_ADJ_OPS(int16)
+DECLARE_INT_ADJ_OPS(int32)
+DECLARE_INT_ADJ_OPS(int64)
+DECLARE_INT_ADJ_OPS(uint8)
+DECLARE_INT_ADJ_OPS(uint16)
+DECLARE_INT_ADJ_OPS(uint32)
+DECLARE_INT_ADJ_OPS(uint64)
+#endif
 
 
 inline CUDA_CALLABLE int8 step(int8 x) { return x < 0 ? 1 : 0; }
@@ -435,8 +449,8 @@ inline CUDA_CALLABLE void print(float f) { printf("%g\n", f); }
 inline CUDA_CALLABLE void print(double f) { printf("%g\n", f); }
 
 
-// basic ops for float types
-#define DECLARE_FLOAT_OPS(T) \
+// basic ops for float types (forward)
+#define DECLARE_FLOAT_FWD_OPS(T) \
 inline CUDA_CALLABLE T mul(T a, T b) { return a*b; } \
 inline CUDA_CALLABLE T add(T a, T b) { return a+b; } \
 inline CUDA_CALLABLE T sub(T a, T b) { return a-b; } \
@@ -446,6 +460,22 @@ inline CUDA_CALLABLE T sign(T x) { return x < T(0) ? -1 : 1; } \
 inline CUDA_CALLABLE T step(T x) { return x < T(0) ? T(1) : T(0); }\
 inline CUDA_CALLABLE T nonzero(T x) { return x == T(0) ? T(0) : T(1); }\
 inline CUDA_CALLABLE T clamp(T x, T a, T b) { return min(max(a, x), b); }\
+inline CUDA_CALLABLE T div(T a, T b)\
+{\
+    DO_IF_FPCHECK(\
+    if (!isfinite(a) || !isfinite(b) || b == T(0))\
+    {\
+        printf("%s:%d div(%f, %f)\n", __FILE__, __LINE__, float(a), float(b));\
+        assert(0);\
+    })\
+    return a/b;\
+}\
+inline CUDA_CALLABLE void adj_isnan(const T&, T&, bool) { }\
+inline CUDA_CALLABLE void adj_isinf(const T&, T&, bool) { }\
+inline CUDA_CALLABLE void adj_isfinite(const T&, T&, bool) { }
+
+// basic ops for float types (adjoint)
+#define DECLARE_FLOAT_ADJ_OPS(T) \
 inline CUDA_CALLABLE void adj_abs(T x, T& adj_x, T adj_ret) \
 {\
     if (x < T(0))\
@@ -484,16 +514,6 @@ inline CUDA_CALLABLE void adj_clamp(T x, T a, T b, T& adj_x, T& adj_a, T& adj_b,
     else\
         adj_x += adj_ret;\
 }\
-inline CUDA_CALLABLE T div(T a, T b)\
-{\
-    DO_IF_FPCHECK(\
-    if (!isfinite(a) || !isfinite(b) || b == T(0))\
-    {\
-        printf("%s:%d div(%f, %f)\n", __FILE__, __LINE__, float(a), float(b));\
-        assert(0);\
-    })\
-    return a/b;\
-}\
 inline CUDA_CALLABLE void adj_div(T a, T b, T ret, T& adj_a, T& adj_b, T adj_ret)\
 {\
     adj_a += adj_ret/b;\
@@ -504,15 +524,17 @@ inline CUDA_CALLABLE void adj_div(T a, T b, T ret, T& adj_a, T& adj_b, T adj_ret
         printf("%s:%d - adj_div(%f, %f, %f, %f, %f)\n", __FILE__, __LINE__, float(a), float(b), float(adj_a), float(adj_b), float(adj_ret));\
         assert(0);\
     })\
-}\
-inline CUDA_CALLABLE void adj_isnan(const T&, T&, bool) { }\
-inline CUDA_CALLABLE void adj_isinf(const T&, T&, bool) { }\
-inline CUDA_CALLABLE void adj_isfinite(const T&, T&, bool) { }
+}
 
-DECLARE_FLOAT_OPS(float16)
-DECLARE_FLOAT_OPS(float32)
-DECLARE_FLOAT_OPS(float64)
+DECLARE_FLOAT_FWD_OPS(float16)
+DECLARE_FLOAT_FWD_OPS(float32)
+DECLARE_FLOAT_FWD_OPS(float64)
 
+DECLARE_FLOAT_ADJ_OPS(float16)
+DECLARE_FLOAT_ADJ_OPS(float32)
+DECLARE_FLOAT_ADJ_OPS(float64)
+
+#ifndef WP_NO_BACKWARD
 // Adjoint for approximate scalar division
 #define DECLARE_ADJ_APPROX_DIV(T) \
 inline CUDA_CALLABLE void adj_approx_div(T a, T b, T ret, T& adj_a, T& adj_b, T adj_ret) \
@@ -524,6 +546,7 @@ inline CUDA_CALLABLE void adj_approx_div(T a, T b, T ret, T& adj_a, T& adj_b, T 
 DECLARE_ADJ_APPROX_DIV(float16)
 DECLARE_ADJ_APPROX_DIV(float32)
 DECLARE_ADJ_APPROX_DIV(float64)
+#endif
 
 #undef DECLARE_ADJ_APPROX_DIV
 
@@ -848,6 +871,7 @@ inline CUDA_CALLABLE double erfcinv(double a)
     return ::erfcinv(a);
 }
 
+#ifndef WP_NO_BACKWARD
 inline CUDA_CALLABLE void adj_erf(half a, half& adj_a, half adj_ret)
 {
     adj_a += half(M_2_SQRT_PI_F * ::expf(-float(a) * float(a))) * adj_ret;
@@ -943,6 +967,7 @@ inline CUDA_CALLABLE void adj_erfcinv(double a, double ret, double& adj_a, doubl
 #endif
     adj_a -= M_SQRT_PI_2 * ::exp(ret * ret) * adj_ret;
 }
+#endif  // WP_NO_BACKWARD
 
 inline CUDA_CALLABLE float leaky_min(float a, float b, float r) { return min(a, b); }
 inline CUDA_CALLABLE float leaky_max(float a, float b, float r) { return max(a, b); }
@@ -1218,6 +1243,7 @@ inline CUDA_CALLABLE void adj_floor(T x, T& adj_x, T adj_ret){ }\
 inline CUDA_CALLABLE void adj_ceil(T x, T& adj_x, T adj_ret){ }\
 inline CUDA_CALLABLE void adj_frac(T x, T& adj_x, T adj_ret){ }
 
+#ifndef WP_NO_BACKWARD
 #ifndef WP_NO_FLOAT16_OPS
 DECLARE_ADJOINTS(float16)
 #endif
@@ -1225,6 +1251,7 @@ DECLARE_ADJOINTS(float32)
 #ifndef WP_NO_FLOAT64_OPS
 DECLARE_ADJOINTS(float64)
 #endif
+#endif  // WP_NO_BACKWARD
 
 template <typename C, typename T> CUDA_CALLABLE inline T where(const C& cond, const T& a, const T& b)
 {
@@ -1897,7 +1924,9 @@ inline CUDA_CALLABLE void adj_printf(const char* fmt, ...) { }
 #endif
 #ifndef WP_NO_INTERSECT
 #include "intersect.h"
+#ifndef WP_NO_BACKWARD
 #include "intersect_adj.h"
+#endif
 #endif
 // clang-format on
 
@@ -1907,19 +1936,27 @@ namespace wp {
 
 // dot for scalar types just to make some templates compile for scalar/vector
 inline CUDA_CALLABLE float dot(float a, float b) { return mul(a, b); }
+#ifndef WP_NO_BACKWARD
 inline CUDA_CALLABLE void adj_dot(float a, float b, float& adj_a, float& adj_b, float adj_ret)
 {
     adj_mul(a, b, adj_a, adj_b, adj_ret);
 }
+#endif
 inline CUDA_CALLABLE float tensordot(float a, float b) { return mul(a, b); }
 
 
-#define DECLARE_INTERP_FUNCS(T) \
+#define DECLARE_INTERP_FWD_FUNCS(T) \
 CUDA_CALLABLE inline T smoothstep(T edge0, T edge1, T x)\
 {\
     x = clamp((x - edge0) / (edge1 - edge0), T(0), T(1));\
     return x * x * (T(3) - T(2) * x);\
 }\
+CUDA_CALLABLE inline T lerp(const T& a, const T& b, T t)\
+{\
+    return a*(T(1)-t) + b*t;\
+}
+
+#define DECLARE_INTERP_ADJ_FUNCS(T) \
 CUDA_CALLABLE inline void adj_smoothstep(T edge0, T edge1, T x, T& adj_edge0, T& adj_edge1, T& adj_x, T adj_ret)\
 {\
     T ab = edge0 - edge1;\
@@ -1938,10 +1975,6 @@ CUDA_CALLABLE inline void adj_smoothstep(T edge0, T edge1, T x, T& adj_edge0, T&
     adj_edge1 += adj_ret * ((T(6) * ax * ax * xb) / ab4);\
     adj_x     += adj_ret * ((T(6) * ax * bx     ) / ab3);\
 }\
-CUDA_CALLABLE inline T lerp(const T& a, const T& b, T t)\
-{\
-    return a*(T(1)-t) + b*t;\
-}\
 CUDA_CALLABLE inline void adj_lerp(const T& a, const T& b, T t, T& adj_a, T& adj_b, T& adj_t, const T& adj_ret)\
 {\
     adj_a += adj_ret*(T(1)-t);\
@@ -1950,12 +1983,22 @@ CUDA_CALLABLE inline void adj_lerp(const T& a, const T& b, T t, T& adj_a, T& adj
 }
 
 #ifndef WP_NO_FLOAT16_OPS
-DECLARE_INTERP_FUNCS(float16)
+DECLARE_INTERP_FWD_FUNCS(float16)
 #endif
-DECLARE_INTERP_FUNCS(float32)
+DECLARE_INTERP_FWD_FUNCS(float32)
 #ifndef WP_NO_FLOAT64_OPS
-DECLARE_INTERP_FUNCS(float64)
+DECLARE_INTERP_FWD_FUNCS(float64)
 #endif
+
+#ifndef WP_NO_BACKWARD
+#ifndef WP_NO_FLOAT16_OPS
+DECLARE_INTERP_ADJ_FUNCS(float16)
+#endif
+DECLARE_INTERP_ADJ_FUNCS(float32)
+#ifndef WP_NO_FLOAT64_OPS
+DECLARE_INTERP_ADJ_FUNCS(float64)
+#endif
+#endif  // WP_NO_BACKWARD
 
 inline CUDA_CALLABLE void print(const str s) { printf("%s\n", s); }
 

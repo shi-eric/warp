@@ -70,6 +70,7 @@ template <typename Type> CUDA_CALLABLE inline vec_t<3, Type> spatial_bottom(cons
     return v_vec(a);
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 CUDA_CALLABLE inline void adj_spatial_dot(
     const spatial_vector_t<Type>& a,
@@ -125,6 +126,7 @@ adj_spatial_bottom(const spatial_vector_t<Type>& a, spatial_vector_t<Type>& adj_
 {
     v_vec(adj_a) += adj_ret;
 }
+#endif  // WP_NO_BACKWARD
 
 
 //---------------------------------------------------------------------------------
@@ -187,12 +189,14 @@ template <typename Type> CUDA_CALLABLE inline transform_t<Type> pos(const transf
 
 template <typename Type> CUDA_CALLABLE inline transform_t<Type> neg(const transform_t<Type>& x) { return -x; }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 CUDA_CALLABLE inline void
 adj_neg(const transform_t<Type>& x, transform_t<Type>& adj_x, const transform_t<Type>& adj_ret)
 {
     adj_x -= adj_ret;
 }
+#endif  // WP_NO_BACKWARD
 
 template <typename Type> inline CUDA_CALLABLE bool operator==(const transform_t<Type>& a, const transform_t<Type>& b)
 {
@@ -215,6 +219,7 @@ template <typename Type> CUDA_CALLABLE inline quat_t<Type> transform_get_rotatio
     return t.q;
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 CUDA_CALLABLE inline void
 adj_transform_get_translation(const transform_t<Type>& t, transform_t<Type>& adj_t, const vec_t<3, Type>& adj_ret)
@@ -228,6 +233,7 @@ adj_transform_get_rotation(const transform_t<Type>& t, transform_t<Type>& adj_t,
 {
     adj_t.q += adj_ret;
 }
+#endif  // WP_NO_BACKWARD
 
 template <typename Type>
 CUDA_CALLABLE inline void transform_set_translation(transform_t<Type>& t, const vec_t<3, Type>& p)
@@ -256,6 +262,7 @@ CUDA_CALLABLE inline transform_t<Type> transform_set_rotation_copy(transform_t<T
     return ret;
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 CUDA_CALLABLE inline void adj_transform_set_translation(
     transform_t<Type>& t, const vec_t<3, Type>& p, const transform_t<Type>& adj_t, vec_t<3, Type>& adj_p
@@ -297,6 +304,7 @@ CUDA_CALLABLE inline void adj_transform_set_rotation_copy(
     adj_q += adj_ret.q;
     adj_t.p += adj_ret.p;
 }
+#endif  // WP_NO_BACKWARD
 
 template <typename Type> inline CUDA_CALLABLE void transform_add_inplace(transform_t<Type>& t, const vec_t<3, Type>& p)
 {
@@ -308,6 +316,7 @@ template <typename Type> inline CUDA_CALLABLE void transform_sub_inplace(transfo
     t.p -= p;
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 inline CUDA_CALLABLE void adj_transform_add_inplace(
     transform_t<Type>& t, const vec_t<3, Type>& p, transform_t<Type>& adj_t, vec_t<3, Type>& adj_p
@@ -323,6 +332,7 @@ inline CUDA_CALLABLE void adj_transform_sub_inplace(
 {
     adj_p -= adj_t.p;
 }
+#endif  // WP_NO_BACKWARD
 
 template <typename Type>
 CUDA_CALLABLE inline transform_t<Type> transform_multiply(const transform_t<Type>& a, const transform_t<Type>& b)
@@ -330,6 +340,7 @@ CUDA_CALLABLE inline transform_t<Type> transform_multiply(const transform_t<Type
     return { quat_rotate(a.q, b.p) + a.p, mul(a.q, b.q) };
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 CUDA_CALLABLE inline void adj_transform_multiply(
     const transform_t<Type>& a,
@@ -346,6 +357,7 @@ CUDA_CALLABLE inline void adj_transform_multiply(
     // rotational part
     adj_mul(a.q, b.q, adj_a.q, adj_b.q, adj_ret.q);
 }
+#endif  // WP_NO_BACKWARD
 
 
 template <typename Type> CUDA_CALLABLE inline transform_t<Type> transform_inverse(const transform_t<Type>& t)
@@ -484,6 +496,7 @@ template <typename Type> inline CUDA_CALLABLE Type* indexref(transform_t<Type>* 
     return &((*t)[idx]);
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 inline void CUDA_CALLABLE
 adj_extract(const transform_t<Type>& t, int idx, transform_t<Type>& adj_t, int& adj_idx, Type adj_ret)
@@ -529,6 +542,7 @@ adj_indexref(transform_t<Type>* t, int idx, transform_t<Type>& adj_t, int adj_id
 {
     // nop
 }
+#endif  // WP_NO_BACKWARD
 
 template <typename Type> inline CUDA_CALLABLE void add_inplace(transform_t<Type>& t, int idx, Type value)
 {
@@ -567,6 +581,7 @@ inline CUDA_CALLABLE void add_inplace(transform_t<Type>& t, slice_t slice, const
 }
 
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 inline CUDA_CALLABLE void
 adj_add_inplace(transform_t<Type>& t, int idx, Type value, transform_t<Type>& adj_t, int adj_idx, Type& adj_value)
@@ -611,6 +626,7 @@ inline CUDA_CALLABLE void adj_add_inplace(
 
     assert(ii == SliceLength);
 }
+#endif  // WP_NO_BACKWARD
 
 
 template <typename Type> inline CUDA_CALLABLE void sub_inplace(transform_t<Type>& t, int idx, Type value)
@@ -650,6 +666,7 @@ inline CUDA_CALLABLE void sub_inplace(transform_t<Type>& t, slice_t slice, const
 }
 
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 inline CUDA_CALLABLE void
 adj_sub_inplace(transform_t<Type>& t, int idx, Type value, transform_t<Type>& adj_t, int adj_idx, Type& adj_value)
@@ -694,6 +711,7 @@ inline CUDA_CALLABLE void adj_sub_inplace(
 
     assert(ii == SliceLength);
 }
+#endif  // WP_NO_BACKWARD
 
 
 template <typename Type> inline CUDA_CALLABLE void assign_inplace(transform_t<Type>& t, int idx, Type value)
@@ -731,6 +749,7 @@ inline CUDA_CALLABLE void assign_inplace(transform_t<Type>& t, slice_t slice, co
     assert(ii == SliceLength);
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 inline CUDA_CALLABLE void
 adj_assign_inplace(transform_t<Type>& t, int idx, Type value, transform_t<Type>& adj_t, int& adj_idx, Type& adj_value)
@@ -774,6 +793,7 @@ inline CUDA_CALLABLE void adj_assign_inplace(
 
     assert(ii == SliceLength);
 }
+#endif  // WP_NO_BACKWARD
 
 
 template <typename Type> inline CUDA_CALLABLE transform_t<Type> assign_copy(transform_t<Type>& t, int idx, Type value)
@@ -803,6 +823,7 @@ assign_copy(transform_t<Type>& t, slice_t slice, const vec_t<SliceLength, Type>&
     return ret;
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 inline CUDA_CALLABLE void adj_assign_copy(
     transform_t<Type>& t,
@@ -865,9 +886,11 @@ inline CUDA_CALLABLE void adj_assign_copy(
 
     assert(ii == SliceLength);
 }
+#endif  // WP_NO_BACKWARD
 
 
 // adjoint methods
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 CUDA_CALLABLE inline void adj_add(
     const transform_t<Type>& a,
@@ -952,6 +975,7 @@ CUDA_CALLABLE inline void adj_mul(
 {
     adj_transform_multiply(a, b, adj_a, adj_b, adj_ret);
 }
+#endif  // WP_NO_BACKWARD
 
 
 template <typename Type>
@@ -963,6 +987,7 @@ inline CUDA_CALLABLE transform_t<Type> atomic_add(transform_t<Type>* addr, const
     return transform_t<Type>(p, q);
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 CUDA_CALLABLE inline void adj_transform_t(
     const vec_t<3, Type>& p,
@@ -1037,6 +1062,7 @@ CUDA_CALLABLE inline void adj_transform_point(
     adj_quat_rotate(t.q, x, adj_t.q, adj_x, adj_ret);
     adj_t.p += adj_ret;
 }
+#endif  // WP_NO_BACKWARD
 
 
 template <typename Type> CUDA_CALLABLE void print(transform_t<Type> t);
@@ -1047,6 +1073,7 @@ CUDA_CALLABLE inline transform_t<Type> lerp(const transform_t<Type>& a, const tr
     return a * (Type(1) - t) + b * t;
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 CUDA_CALLABLE inline void adj_lerp(
     const transform_t<Type>& a,
@@ -1062,13 +1089,16 @@ CUDA_CALLABLE inline void adj_lerp(
     adj_b += adj_ret * t;
     adj_t += tensordot(b, adj_ret) - tensordot(a, adj_ret);
 }
+#endif  // WP_NO_BACKWARD
 
 template <typename Type> CUDA_CALLABLE inline int len(const transform_t<Type>& t) { return 7; }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 CUDA_CALLABLE inline void adj_len(const transform_t<Type>& t, transform_t<Type>& adj_t, const int& adj_ret)
 {
 }
+#endif  // WP_NO_BACKWARD
 
 CUDA_CALLABLE inline int row_index(int stride, int i, int j) { return i * stride + j; }
 
@@ -1121,6 +1151,7 @@ CUDA_CALLABLE inline void spatial_jacobian(
     }
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 CUDA_CALLABLE inline void adj_spatial_jacobian(
     const spatial_vector_t<Type>* S,
@@ -1179,6 +1210,7 @@ CUDA_CALLABLE inline void adj_spatial_jacobian(
         }
     }
 }
+#endif  // WP_NO_BACKWARD
 
 #ifndef WP_NO_MAT  // spatial_matrix_t, spatial_adjoint, spatial_mass use mat_ops.h
 template <typename Type> using spatial_matrix_t = mat_t<6, 6, Type>;
@@ -1209,6 +1241,7 @@ inline CUDA_CALLABLE spatial_matrix_t<Type> spatial_adjoint(const mat_t<3, 3, Ty
     return adT;
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 inline CUDA_CALLABLE void adj_spatial_adjoint(
     const mat_t<3, 3, Type>& R,
@@ -1233,6 +1266,7 @@ inline CUDA_CALLABLE void adj_spatial_adjoint(
         }
     }
 }
+#endif  // WP_NO_BACKWARD
 
 
 template <typename Type>
@@ -1250,6 +1284,7 @@ spatial_mass(const spatial_matrix_t<Type>* I_s, int joint_start, int joint_count
     }
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 CUDA_CALLABLE inline void adj_spatial_mass(
     const spatial_matrix_t<Type>* I_s,
@@ -1274,6 +1309,7 @@ CUDA_CALLABLE inline void adj_spatial_mass(
         }
     }
 }
+#endif  // WP_NO_BACKWARD
 
 using transform = transform_t<float>;
 using transformh = transform_t<half>;

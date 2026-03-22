@@ -100,30 +100,36 @@ template <typename Type> inline bool CUDA_CALLABLE isfinite(const quat_t<Type>& 
     return isfinite(q.x) && isfinite(q.y) && isfinite(q.z) && isfinite(q.w);
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 inline void CUDA_CALLABLE adj_isfinite(const quat_t<Type>& q, quat_t<Type>& adj_q, const bool& adj_ret)
 {
 }
+#endif  // WP_NO_BACKWARD
 
 template <typename Type> inline bool CUDA_CALLABLE isnan(const quat_t<Type>& q)
 {
     return isnan(q.x) || isnan(q.y) || isnan(q.z) || isnan(q.w);
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 inline void CUDA_CALLABLE adj_isnan(const quat_t<Type>& q, quat_t<Type>& adj_q, const bool& adj_ret)
 {
 }
+#endif  // WP_NO_BACKWARD
 
 template <typename Type> inline bool CUDA_CALLABLE isinf(const quat_t<Type>& q)
 {
     return isinf(q.x) || isinf(q.y) || isinf(q.z) || isinf(q.w);
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 inline void CUDA_CALLABLE adj_isinf(const quat_t<Type>& q, quat_t<Type>& adj_q, const bool& adj_ret)
 {
 }
+#endif  // WP_NO_BACKWARD
 
 template <typename Type> inline CUDA_CALLABLE quat_t<Type> atomic_add(quat_t<Type>* addr, quat_t<Type> value)
 {
@@ -135,6 +141,7 @@ template <typename Type> inline CUDA_CALLABLE quat_t<Type> atomic_add(quat_t<Typ
     return quat_t<Type>(x, y, z, w);
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 inline CUDA_CALLABLE void
 adj_quat_t(Type x, Type y, Type z, Type w, Type& adj_x, Type& adj_y, Type& adj_z, Type& adj_w, quat_t<Type> adj_ret)
@@ -165,6 +172,7 @@ adj_quat_t(const quat_t<OtherType>& other, quat_t<OtherType>& adj_other, const q
     adj_other.z += static_cast<OtherType>(adj_ret.z);
     adj_other.w += static_cast<OtherType>(adj_ret.w);
 }
+#endif  // WP_NO_BACKWARD
 
 // forward methods
 
@@ -257,11 +265,13 @@ template <typename Type> CUDA_CALLABLE inline quat_t<Type> pos(const quat_t<Type
 
 template <typename Type> CUDA_CALLABLE inline quat_t<Type> neg(const quat_t<Type>& q) { return -q; }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 CUDA_CALLABLE inline void adj_neg(const quat_t<Type>& q, quat_t<Type>& adj_q, const quat_t<Type>& adj_ret)
 {
     adj_q -= adj_ret;
 }
+#endif  // WP_NO_BACKWARD
 
 template <typename Type> inline CUDA_CALLABLE quat_t<Type> mul(const quat_t<Type>& a, const quat_t<Type>& b)
 {
@@ -494,6 +504,7 @@ template <typename Type> inline CUDA_CALLABLE Type* indexref(quat_t<Type>* q, in
     return &((*q)[idx]);
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 inline CUDA_CALLABLE void adj_index(quat_t<Type>& q, int idx, quat_t<Type>& adj_q, int adj_idx, const Type& adj_value)
 {
@@ -507,6 +518,7 @@ adj_indexref(quat_t<Type>* q, int idx, quat_t<Type>& adj_q, int adj_idx, const T
 {
     // nop
 }
+#endif  // WP_NO_BACKWARD
 
 
 template <typename Type> inline CUDA_CALLABLE void add_inplace(quat_t<Type>& q, int idx, Type value)
@@ -546,6 +558,7 @@ inline CUDA_CALLABLE void add_inplace(quat_t<Type>& q, slice_t slice, const vec_
 }
 
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 inline CUDA_CALLABLE void
 adj_add_inplace(quat_t<Type>& q, int idx, Type value, quat_t<Type>& adj_q, int adj_idx, Type& adj_value)
@@ -590,6 +603,7 @@ inline CUDA_CALLABLE void adj_add_inplace(
 
     assert(ii == SliceLength);
 }
+#endif  // WP_NO_BACKWARD
 
 
 template <typename Type> inline CUDA_CALLABLE void sub_inplace(quat_t<Type>& q, int idx, Type value)
@@ -629,6 +643,7 @@ inline CUDA_CALLABLE void sub_inplace(quat_t<Type>& q, slice_t slice, const vec_
 }
 
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 inline CUDA_CALLABLE void
 adj_sub_inplace(quat_t<Type>& q, int idx, Type value, quat_t<Type>& adj_q, int adj_idx, Type& adj_value)
@@ -673,6 +688,7 @@ inline CUDA_CALLABLE void adj_sub_inplace(
 
     assert(ii == SliceLength);
 }
+#endif  // WP_NO_BACKWARD
 
 
 template <typename Type> inline CUDA_CALLABLE void assign_inplace(quat_t<Type>& q, int idx, Type value)
@@ -712,6 +728,7 @@ inline CUDA_CALLABLE void assign_inplace(quat_t<Type>& q, slice_t slice, const v
 }
 
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 inline CUDA_CALLABLE void
 adj_assign_inplace(quat_t<Type>& q, int idx, Type value, quat_t<Type>& adj_q, int& adj_idx, Type& adj_value)
@@ -846,6 +863,7 @@ inline CUDA_CALLABLE void adj_assign_copy(
 
     assert(ii == SliceLength);
 }
+#endif  // WP_NO_BACKWARD
 
 
 template <typename Type> CUDA_CALLABLE inline quat_t<Type> lerp(const quat_t<Type>& a, const quat_t<Type>& b, Type t)
@@ -853,6 +871,7 @@ template <typename Type> CUDA_CALLABLE inline quat_t<Type> lerp(const quat_t<Typ
     return a * (Type(1) - t) + b * t;
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 CUDA_CALLABLE inline void adj_lerp(
     const quat_t<Type>& a,
@@ -1445,8 +1464,10 @@ inline CUDA_CALLABLE void adj_quat_slerp(
     adj_q1.z += dot(q_s_q1_z, adj_ret);
     adj_q1.w += dot(q_s_q1_w, adj_ret);
 }
+#endif  // WP_NO_BACKWARD
 
 #ifndef WP_NO_MAT  // adjoints for quat_to_matrix/quat_from_matrix
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 inline CUDA_CALLABLE void adj_quat_to_matrix(const quat_t<Type>& q, quat_t<Type>& adj_q, mat_t<3, 3, Type>& adj_ret)
 {
@@ -1624,6 +1645,7 @@ adj_quat_from_matrix(const mat_t<Rows, Cols, Type>& m, mat_t<Rows, Cols, Type>& 
     adj_m.data[2][1] += dot(dq_dm21, adj_q);
     adj_m.data[2][2] += dot(dq_dm22, adj_q);
 }
+#endif  // WP_NO_BACKWARD
 #endif  // WP_NO_MAT
 
 template <typename Type = float32> inline CUDA_CALLABLE quat_t<Type> quat_identity()
@@ -1633,10 +1655,12 @@ template <typename Type = float32> inline CUDA_CALLABLE quat_t<Type> quat_identi
 
 template <typename Type> CUDA_CALLABLE inline int len(const quat_t<Type>& x) { return 4; }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 CUDA_CALLABLE inline void adj_len(const quat_t<Type>& x, quat_t<Type>& adj_x, const int& adj_ret)
 {
 }
+#endif  // WP_NO_BACKWARD
 
 template <typename Type>
 inline CUDA_CALLABLE void expect_near(const quat_t<Type>& actual, const quat_t<Type>& expected, const Type& tolerance)
@@ -1657,6 +1681,7 @@ inline CUDA_CALLABLE void expect_near(const quat_t<Type>& actual, const quat_t<T
     }
 }
 
+#ifndef WP_NO_BACKWARD
 template <typename Type>
 inline CUDA_CALLABLE void adj_expect_near(
     const quat_t<Type>& actual,
@@ -1669,6 +1694,7 @@ inline CUDA_CALLABLE void adj_expect_near(
 {
     // nop
 }
+#endif  // WP_NO_BACKWARD
 
 template <typename Type> inline CUDA_CALLABLE void print(quat_t<Type> i)
 {

@@ -2320,6 +2320,16 @@ class ModuleBuilder:
         warp._src.codegen.scan_source_for_guards(source, self.required_guards)
         compile_guards = warp._src.codegen.compute_compile_guards(self.required_guards)
 
+        # When backward mode is disabled for the module AND no kernel
+        # overrides it, define WP_NO_BACKWARD so that native headers can
+        # skip parsing adjoint function definitions.
+        module_backward = self.options.get("enable_backward", True)
+        any_kernel_backward = any(
+            (self.options | k.options).get("enable_backward", True) for k in self.kernels
+        )
+        if not module_backward and not any_kernel_backward:
+            compile_guards = "#define WP_NO_BACKWARD\n" + compile_guards
+
         if device == "cpu":
             source = (
                 warp._src.codegen.cpu_module_header.format(

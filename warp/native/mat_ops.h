@@ -169,10 +169,12 @@ template <unsigned Rows, typename Type> inline CUDA_CALLABLE mat_t<Rows, Rows, T
     return m;
 }
 
+#ifndef WP_NO_BACKWARD
 template <unsigned Rows, typename Type> inline CUDA_CALLABLE void adj_identity(const mat_t<Rows, Rows, Type>& adj_ret)
 {
     // nop
 }
+#endif // WP_NO_BACKWARD
 
 template <unsigned Rows, unsigned Cols, typename Type>
 inline CUDA_CALLABLE bool operator==(const mat_t<Rows, Cols, Type>& a, const mat_t<Rows, Cols, Type>& b)
@@ -543,6 +545,7 @@ inline CUDA_CALLABLE Type* index(mat_t<Rows, Cols, Type>& m, int row, int col)
     return &m.data[row][col];
 }
 
+#ifndef WP_NO_BACKWARD
 template <unsigned Rows, unsigned Cols, typename Type>
 inline CUDA_CALLABLE void adj_index(
     const mat_t<Rows, Cols, Type>& m,
@@ -568,6 +571,7 @@ inline CUDA_CALLABLE void adj_index(
 {
     // nop
 }
+#endif // WP_NO_BACKWARD
 
 template <unsigned Rows, unsigned Cols, typename Type>
 inline CUDA_CALLABLE Type* indexref(mat_t<Rows, Cols, Type>* m, int row, int col)
@@ -586,6 +590,7 @@ inline CUDA_CALLABLE Type* indexref(mat_t<Rows, Cols, Type>* m, int row, int col
     return &(m->data)[row][col];
 }
 
+#ifndef WP_NO_BACKWARD
 template <unsigned Rows, unsigned Cols, typename Type>
 inline CUDA_CALLABLE void adj_indexref(
     mat_t<Rows, Cols, Type>* m,
@@ -599,6 +604,7 @@ inline CUDA_CALLABLE void adj_indexref(
 {
     // nop
 }
+#endif // WP_NO_BACKWARD
 
 
 template <unsigned Rows, unsigned Cols, typename Type>
@@ -789,6 +795,7 @@ inline CUDA_CALLABLE void add_inplace(
 }
 
 
+#ifndef WP_NO_BACKWARD
 template <unsigned Rows, unsigned Cols, typename Type>
 inline CUDA_CALLABLE void adj_add_inplace(
     mat_t<Rows, Cols, Type>& m,
@@ -1020,6 +1027,7 @@ inline CUDA_CALLABLE void adj_add_inplace(
 
     assert(ii == RowSliceLength);
 }
+#endif // WP_NO_BACKWARD
 
 
 template <unsigned Rows, unsigned Cols, typename Type>
@@ -1210,6 +1218,7 @@ inline CUDA_CALLABLE void sub_inplace(
 }
 
 
+#ifndef WP_NO_BACKWARD
 template <unsigned Rows, unsigned Cols, typename Type>
 inline CUDA_CALLABLE void adj_sub_inplace(
     mat_t<Rows, Cols, Type>& m,
@@ -1441,6 +1450,7 @@ inline CUDA_CALLABLE void adj_sub_inplace(
 
     assert(ii == RowSliceLength);
 }
+#endif // WP_NO_BACKWARD
 
 
 template <unsigned Rows, unsigned Cols, typename Type>
@@ -1631,6 +1641,7 @@ inline CUDA_CALLABLE void bit_and_inplace(
 }
 
 
+#ifndef WP_NO_BACKWARD
 template <unsigned Rows, unsigned Cols, typename Type>
 inline CUDA_CALLABLE void adj_bit_and_inplace(
     mat_t<Rows, Cols, Type>& m,
@@ -1715,6 +1726,7 @@ inline CUDA_CALLABLE void adj_bit_and_inplace(
 )
 {
 }
+#endif // WP_NO_BACKWARD
 
 
 template <unsigned Rows, unsigned Cols, typename Type>
@@ -1905,6 +1917,7 @@ inline CUDA_CALLABLE void bit_or_inplace(
 }
 
 
+#ifndef WP_NO_BACKWARD
 template <unsigned Rows, unsigned Cols, typename Type>
 inline CUDA_CALLABLE void adj_bit_or_inplace(
     mat_t<Rows, Cols, Type>& m,
@@ -1989,6 +2002,7 @@ inline CUDA_CALLABLE void adj_bit_or_inplace(
 )
 {
 }
+#endif // WP_NO_BACKWARD
 
 
 template <unsigned Rows, unsigned Cols, typename Type>
@@ -2179,6 +2193,7 @@ inline CUDA_CALLABLE void bit_xor_inplace(
 }
 
 
+#ifndef WP_NO_BACKWARD
 template <unsigned Rows, unsigned Cols, typename Type>
 inline CUDA_CALLABLE void adj_bit_xor_inplace(
     mat_t<Rows, Cols, Type>& m,
@@ -2263,6 +2278,7 @@ inline CUDA_CALLABLE void adj_bit_xor_inplace(
 )
 {
 }
+#endif // WP_NO_BACKWARD
 
 
 template <unsigned Rows, unsigned Cols, typename Type>
@@ -2453,6 +2469,7 @@ inline CUDA_CALLABLE void assign_inplace(
 }
 
 
+#ifndef WP_NO_BACKWARD
 template <unsigned Rows, unsigned Cols, typename Type>
 inline CUDA_CALLABLE void adj_assign_inplace(
     mat_t<Rows, Cols, Type>& m,
@@ -2684,6 +2701,7 @@ inline CUDA_CALLABLE void adj_assign_inplace(
 
     assert(ii == RowSliceLength);
 }
+#endif // WP_NO_BACKWARD
 
 
 template <unsigned Rows, unsigned Cols, typename Type>
@@ -2776,6 +2794,7 @@ inline CUDA_CALLABLE mat_t<Rows, Cols, Type> assign_copy(
 }
 
 
+#ifndef WP_NO_BACKWARD
 template <unsigned Rows, unsigned Cols, typename Type>
 inline CUDA_CALLABLE void adj_assign_copy(
     mat_t<Rows, Cols, Type>& m,
@@ -3084,6 +3103,7 @@ inline CUDA_CALLABLE void adj_assign_copy(
 
     assert(ii == RowSliceLength);
 }
+#endif // WP_NO_BACKWARD
 
 
 template <unsigned Rows, unsigned Cols, typename Type>
@@ -3907,6 +3927,7 @@ inline CUDA_CALLABLE vec_t<3, Type> transform_vector(const mat_t<4, 4, Type>& m,
     return vec_t<3, Type>(out[0], out[1], out[2]);
 }
 
+#ifndef WP_NO_BACKWARD
 template <unsigned Rows, unsigned Cols, typename Type>
 inline CUDA_CALLABLE void adj_extract(
     const mat_t<Rows, Cols, Type>& m,
@@ -5163,6 +5184,7 @@ CUDA_CALLABLE inline void adj_lerp(
     adj_b += adj_ret * t;
     adj_t += tensordot(b, adj_ret) - tensordot(a, adj_ret);
 }
+#endif // WP_NO_BACKWARD
 
 // for integral types we do not accumulate gradients
 template <unsigned Rows, unsigned Cols>
@@ -5314,6 +5336,7 @@ using mat22d = mat_t<2, 2, double>;
 using mat33d = mat_t<3, 3, double>;
 using mat44d = mat_t<4, 4, double>;
 
+#ifndef WP_NO_BACKWARD
 inline CUDA_CALLABLE void adj_mat22(vec2 c0, vec2 c1, vec2& a0, vec2& a1, const mat22& adj_ret)
 {
     a0 += adj_ret.get_col(0);
@@ -5445,12 +5468,14 @@ inline CUDA_CALLABLE void adj_mat44(
     a32 += adj_ret.data[3][2];
     a33 += adj_ret.data[3][3];
 }
+#endif // WP_NO_BACKWARD
 
 template <unsigned Rows, unsigned Cols, typename Type> CUDA_CALLABLE inline int len(const mat_t<Rows, Cols, Type>& x)
 {
     return Rows;
 }
 
+#ifndef WP_NO_BACKWARD
 template <unsigned Rows, unsigned Cols, typename Type>
 CUDA_CALLABLE inline void adj_len(const mat_t<Rows, Cols, Type>& x, mat_t<Rows, Cols, Type>& adj_x, const int& adj_ret)
 {
@@ -5490,6 +5515,7 @@ inline CUDA_CALLABLE void adj_expect_near(
 {
     // nop
 }
+#endif // WP_NO_BACKWARD
 
 template <unsigned Rows, unsigned Cols, typename Type> inline CUDA_CALLABLE void print(const mat_t<Rows, Cols, Type>& m)
 {
