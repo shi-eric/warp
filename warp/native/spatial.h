@@ -1070,60 +1070,6 @@ CUDA_CALLABLE inline void adj_len(const transform_t<Type>& t, transform_t<Type>&
 {
 }
 
-template <typename Type> using spatial_matrix_t = mat_t<6, 6, Type>;
-
-template <typename Type>
-inline CUDA_CALLABLE spatial_matrix_t<Type> spatial_adjoint(const mat_t<3, 3, Type>& R, const mat_t<3, 3, Type>& S)
-{
-    spatial_matrix_t<Type> adT;
-
-    // T = [Rah,   0]
-    //     [S  R]
-
-    // diagonal blocks
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            adT.data[i][j] = R.data[i][j];
-            adT.data[i + 3][j + 3] = R.data[i][j];
-        }
-    }
-
-    // lower off diagonal
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            adT.data[i + 3][j] = S.data[i][j];
-        }
-    }
-
-    return adT;
-}
-
-template <typename Type>
-inline CUDA_CALLABLE void adj_spatial_adjoint(
-    const mat_t<3, 3, Type>& R,
-    const mat_t<3, 3, Type>& S,
-    mat_t<3, 3, Type>& adj_R,
-    mat_t<3, 3, Type>& adj_S,
-    const spatial_matrix_t<Type>& adj_ret
-)
-{
-    // diagonal blocks
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            adj_R.data[i][j] += adj_ret.data[i][j];
-            adj_R.data[i][j] += adj_ret.data[i + 3][j + 3];
-        }
-    }
-
-    // lower off diagonal
-    for (int i = 0; i < 3; ++i) {
-        for (int j = 0; j < 3; ++j) {
-            adj_S.data[i][j] += adj_ret.data[i + 3][j];
-        }
-    }
-}
-
-
 CUDA_CALLABLE inline int row_index(int stride, int i, int j) { return i * stride + j; }
 
 // builds spatial Jacobian J which is an (joint_count*6)x(dof_count) matrix
@@ -1234,6 +1180,60 @@ CUDA_CALLABLE inline void adj_spatial_jacobian(
     }
 }
 
+#ifndef WP_NO_MAT  // spatial_matrix_t, spatial_adjoint, spatial_mass use mat_ops.h
+template <typename Type> using spatial_matrix_t = mat_t<6, 6, Type>;
+
+template <typename Type>
+inline CUDA_CALLABLE spatial_matrix_t<Type> spatial_adjoint(const mat_t<3, 3, Type>& R, const mat_t<3, 3, Type>& S)
+{
+    spatial_matrix_t<Type> adT;
+
+    // T = [Rah,   0]
+    //     [S  R]
+
+    // diagonal blocks
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            adT.data[i][j] = R.data[i][j];
+            adT.data[i + 3][j + 3] = R.data[i][j];
+        }
+    }
+
+    // lower off diagonal
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            adT.data[i + 3][j] = S.data[i][j];
+        }
+    }
+
+    return adT;
+}
+
+template <typename Type>
+inline CUDA_CALLABLE void adj_spatial_adjoint(
+    const mat_t<3, 3, Type>& R,
+    const mat_t<3, 3, Type>& S,
+    mat_t<3, 3, Type>& adj_R,
+    mat_t<3, 3, Type>& adj_S,
+    const spatial_matrix_t<Type>& adj_ret
+)
+{
+    // diagonal blocks
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            adj_R.data[i][j] += adj_ret.data[i][j];
+            adj_R.data[i][j] += adj_ret.data[i + 3][j + 3];
+        }
+    }
+
+    // lower off diagonal
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            adj_S.data[i][j] += adj_ret.data[i + 3][j];
+        }
+    }
+}
+
 
 template <typename Type>
 CUDA_CALLABLE inline void
@@ -1289,6 +1289,7 @@ using spatial_matrix = spatial_matrix_t<float>;
 using spatial_matrixh = spatial_matrix_t<half>;
 using spatial_matrixf = spatial_matrix_t<float>;
 using spatial_matrixd = spatial_matrix_t<double>;
+#endif  // WP_NO_MAT
 
 template <typename Type> inline CUDA_CALLABLE void print(transform_t<Type> t)
 {

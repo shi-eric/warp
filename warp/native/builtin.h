@@ -1889,7 +1889,7 @@ inline CUDA_CALLABLE void adj_printf(const char* fmt, ...) { }
 #include "vec.h"
 #endif
 #ifndef WP_NO_MAT
-#include "mat.h"
+#include "mat_ops.h"
 #endif
 #ifndef WP_NO_QUAT
 #include "quat.h"

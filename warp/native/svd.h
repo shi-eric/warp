@@ -30,7 +30,7 @@
 
 #include "builtin.h"
 
-#include "mat.h"
+#include "mat_ops.h"
 
 namespace wp {
 

@@ -345,6 +345,7 @@ inline CUDA_CALLABLE quat_t<Type> quat_slerp(const quat_t<Type>& q0, const quat_
     return mul(q0, quat_from_axis_angle(axis, t * angle));
 }
 
+#ifndef WP_NO_MAT  // quat_to_matrix/quat_from_matrix call matrix_from_cols from mat_ops.h
 template <typename Type> inline CUDA_CALLABLE mat_t<3, 3, Type> quat_to_matrix(const quat_t<Type>& q)
 {
     vec_t<3, Type> c1 = quat_rotate(q, vec_t<3, Type>(1.0, 0.0, 0.0));
@@ -409,6 +410,7 @@ inline CUDA_CALLABLE quat_t<Type> quat_from_matrix(const mat_t<Rows, Cols, Type>
 
     return normalize(quat_t<Type>(x, y, z, w));
 }
+#endif  // WP_NO_MAT
 
 template <typename Type> inline CUDA_CALLABLE Type extract(const quat_t<Type>& a, int idx)
 {
@@ -1444,6 +1446,7 @@ inline CUDA_CALLABLE void adj_quat_slerp(
     adj_q1.w += dot(q_s_q1_w, adj_ret);
 }
 
+#ifndef WP_NO_MAT  // adjoints for quat_to_matrix/quat_from_matrix
 template <typename Type>
 inline CUDA_CALLABLE void adj_quat_to_matrix(const quat_t<Type>& q, quat_t<Type>& adj_q, mat_t<3, 3, Type>& adj_ret)
 {
@@ -1621,6 +1624,7 @@ adj_quat_from_matrix(const mat_t<Rows, Cols, Type>& m, mat_t<Rows, Cols, Type>& 
     adj_m.data[2][1] += dot(dq_dm21, adj_q);
     adj_m.data[2][2] += dot(dq_dm22, adj_q);
 }
+#endif  // WP_NO_MAT
 
 template <typename Type = float32> inline CUDA_CALLABLE quat_t<Type> quat_identity()
 {

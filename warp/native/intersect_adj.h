@@ -4,6 +4,7 @@
 #pragma once
 
 #include "builtin.h"
+#include "mat_ops.h"
 
 namespace wp {
 

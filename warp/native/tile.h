@@ -7,7 +7,7 @@
 
 #include "rand.h"
 #include "tile_storage.h"
-#include "mat.h"
+#include "mat_ops.h"
 
 #ifdef __clang__
 // disable warnings related to C++17 extensions on CPU JIT builds
