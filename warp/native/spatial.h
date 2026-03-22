@@ -4,6 +4,7 @@
 #pragma once
 
 #include "mat.h"
+#include "crt.h"
 
 namespace wp {
 
@@ -1288,5 +1289,21 @@ using spatial_matrix = spatial_matrix_t<float>;
 using spatial_matrixh = spatial_matrix_t<half>;
 using spatial_matrixf = spatial_matrix_t<float>;
 using spatial_matrixd = spatial_matrix_t<double>;
+
+template <typename Type> inline CUDA_CALLABLE void print(transform_t<Type> t)
+{
+    printf(
+        "(%g %g %g) (%g %g %g %g)\n", float(t.p[0]), float(t.p[1]), float(t.p[2]), float(t.q.x), float(t.q.y),
+        float(t.q.z), float(t.q.w)
+    );
+}
+
+template <typename Type> inline CUDA_CALLABLE void adj_print(const transform_t<Type>& t, const transform_t<Type>& adj_t)
+{
+    printf(
+        "adj: (%g %g %g) (%g %g %g %g)\n", float(adj_t.p[0]), float(adj_t.p[1]), float(adj_t.p[2]), float(adj_t.q.x),
+        float(adj_t.q.y), float(adj_t.q.z), float(adj_t.q.w)
+    );
+}
 
 }  // namespace wp

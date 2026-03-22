@@ -1981,45 +1981,6 @@ inline CUDA_CALLABLE void print(unsigned long long i) { printf("%llu\n", i); }
 
 inline CUDA_CALLABLE void print(bool b) { printf(b ? "True\n" : "False\n"); }
 
-#ifndef WP_NO_VEC
-template <unsigned Length, typename Type> inline CUDA_CALLABLE void print(vec_t<Length, Type> v)
-{
-    for (unsigned i = 0; i < Length; ++i) {
-        printf("%g ", float(v[i]));
-    }
-    printf("\n");
-}
-#endif
-
-#ifndef WP_NO_QUAT
-template <typename Type> inline CUDA_CALLABLE void print(quat_t<Type> i)
-{
-    printf("%g %g %g %g\n", float(i.x), float(i.y), float(i.z), float(i.w));
-}
-#endif
-
-#ifndef WP_NO_MAT
-template <unsigned Rows, unsigned Cols, typename Type> inline CUDA_CALLABLE void print(const mat_t<Rows, Cols, Type>& m)
-{
-    for (unsigned i = 0; i < Rows; ++i) {
-        for (unsigned j = 0; j < Cols; ++j) {
-            printf("%g ", float(m.data[i][j]));
-        }
-        printf("\n");
-    }
-}
-#endif
-
-#ifndef WP_NO_QUAT
-template <typename Type> inline CUDA_CALLABLE void print(transform_t<Type> t)
-{
-    printf(
-        "(%g %g %g) (%g %g %g %g)\n", float(t.p[0]), float(t.p[1]), float(t.p[2]), float(t.q.x), float(t.q.y),
-        float(t.q.z), float(t.q.w)
-    );
-}
-#endif
-
 template <typename T> inline CUDA_CALLABLE void adj_print(const T& x, const T& adj_x)
 {
     printf("adj: <type without print implementation>\n");
@@ -2043,48 +2004,6 @@ inline CUDA_CALLABLE void adj_print(unsigned long x, unsigned long adj_x) { prin
 inline CUDA_CALLABLE void adj_print(unsigned long long x, unsigned long long adj_x) { printf("adj: %llu\n", adj_x); }
 
 inline CUDA_CALLABLE void adj_print(bool x, bool adj_x) { printf("adj: %s\n", (adj_x ? "True" : "False")); }
-
-#ifndef WP_NO_VEC
-template <unsigned Length, typename Type>
-inline CUDA_CALLABLE void adj_print(const vec_t<Length, Type>& v, const vec_t<Length, Type>& adj_v)
-{
-    printf("adj:");
-    for (unsigned i = 0; i < Length; i++)
-        printf(" %g", float(adj_v[i]));
-    printf("\n");
-}
-#endif
-
-#ifndef WP_NO_MAT
-template <unsigned Rows, unsigned Cols, typename Type>
-inline CUDA_CALLABLE void adj_print(const mat_t<Rows, Cols, Type>& m, const mat_t<Rows, Cols, Type>& adj_m)
-{
-    for (unsigned i = 0; i < Rows; i++) {
-        if (i == 0)
-            printf("adj:");
-        else
-            printf("    ");
-        for (unsigned j = 0; j < Cols; j++)
-            printf(" %g", float(adj_m.data[i][j]));
-        printf("\n");
-    }
-}
-#endif
-
-#ifndef WP_NO_QUAT
-template <typename Type> inline CUDA_CALLABLE void adj_print(const quat_t<Type>& q, const quat_t<Type>& adj_q)
-{
-    printf("adj: %g %g %g %g\n", float(adj_q.x), float(adj_q.y), float(adj_q.z), float(adj_q.w));
-}
-
-template <typename Type> inline CUDA_CALLABLE void adj_print(const transform_t<Type>& t, const transform_t<Type>& adj_t)
-{
-    printf(
-        "adj: (%g %g %g) (%g %g %g %g)\n", float(adj_t.p[0]), float(adj_t.p[1]), float(adj_t.p[2]), float(adj_t.q.x),
-        float(adj_t.q.y), float(adj_t.q.z), float(adj_t.q.w)
-    );
-}
-#endif
 
 inline CUDA_CALLABLE void adj_print(str t, str& adj_t) { printf("adj: %s\n", t); }
 
