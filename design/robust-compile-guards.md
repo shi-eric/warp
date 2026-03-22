@@ -22,7 +22,7 @@ doing so in a way that is robust against future changes to the builtin library.
 
 | ID  | Requirement | Priority | Notes |
 | --- | --- | --- | --- |
-| R1  | New builtins that omit a guard fail at import time, not at user compile time | Must | |
+| R1  | Invalid guard names fail at import time, not at user compile time | Must | |
 | R2  | Invalid guard names fail at import time | Must | |
 | R3  | Significant CPU cold-compile speedup | Must | |
 | R4  | Extend compile guards to CUDA (NVRTC) path | Should | |
@@ -36,8 +36,8 @@ Three layers determine which features a module needs, plus a safety-net
 fallback:
 
 1. **`compile_guard` on `add_builtin()`** -- Every builtin declares which header
-   it needs.  Required parameter with no default (`TypeError` at import if
-   omitted), validated against `VALID_COMPILE_GUARDS` (`ValueError` for typos).
+   it needs.  Optional parameter defaulting to `None` (always included),
+   validated against `VALID_COMPILE_GUARDS` (`ValueError` for invalid names).
    Concrete specializations of generic builtins inherit the parent's guard.
 
 2. **Kernel/function/struct type inspection** -- `ModuleBuilder` inspects
@@ -68,7 +68,8 @@ relying on `builtin.h`'s include ordering:
 
 - `mat.h`, `hashgrid.h`, `intersect.h`, `texture.h`, `noise.h`, `bvh.h`,
   `rand.h` → `#include "vec.h"`
-- `spatial.h`, `svd.h`, `volume.h`, `tile.h` → `#include "mat.h"` (gets
+- `spatial.h` → `#include "mat.h"` (gets `vec.h` transitively)
+- `svd.h`, `volume.h`, `tile.h` → `#include "mat_ops.h"` (gets `mat.h` and
   `vec.h` transitively)
 
 With `#pragma once` on all headers, the C++ preprocessor handles transitive
@@ -78,7 +79,7 @@ makes vec types available regardless of whether `WP_NO_VEC` is defined.
 
 ### `tile_storage.h` Extraction
 
-`tile_shared_storage_t` (~110 lines) was extracted from `tile.h` (~5300 lines)
+`tile_shared_storage_t` (~150 lines) was extracted from `tile.h` (~6000 lines)
 into a standalone `tile_storage.h`.  This is included unconditionally from
 `builtin.h` (outside the `WP_NO_TILE` guard), so every kernel gets tile shared
 storage setup.  `WP_NO_TILE` then fully excludes the heavy tile operations
@@ -87,8 +88,8 @@ storage setup.  `WP_NO_TILE` then fully excludes the heavy tile operations
 ### Key Implementation Details
 
 **Guard constants** live in `codegen.py` (not `context.py`) to avoid circular
-imports.  `COMPILE_GUARD_ALWAYS = ""` is the sentinel for always-included
-builtins; `require_guard()` skips empty strings.
+imports.  `None` is the sentinel for always-included builtins;
+`require_guard()` skips `None` values.
 
 **Mixed-group builtins** -- The "Geometry" and "Random" groups in `builtins.py`
 contain builtins with different guards (e.g., `mesh_*` -> `WP_NO_MESH`,
@@ -154,10 +155,9 @@ Newton example compile times (3 samples each):
 
 ## Testing Strategy
 
-Unit tests in `warp/tests/test_compile_guards.py` (22 tests):
+Unit tests in `warp/tests/test_compile_guards.py` (21 tests):
 
-- **Validation**: `add_builtin()` raises `TypeError` without `compile_guard`,
-  `ValueError` for invalid names.
+- **Validation**: `add_builtin()` raises `ValueError` for invalid guard names.
 - **Sweep**: Every registered builtin has a valid `compile_guard`.
 - **C++ consistency**: Every guard in `VALID_COMPILE_GUARDS` has a matching
   `#ifndef` in the native headers.
@@ -193,6 +193,10 @@ Rejected because 12+ headers re-include `builtin.h`, the scalar math section is
 tightly interdependent, and the `WP_NO_XXX` model already produces identical
 preprocessor output.
 
-**Defaulting `compile_guard` to `COMPILE_GUARD_ALWAYS`** -- Rejected because it
-silently over-includes everything, causing gradual performance regression when
-new builtins are added without thought to which header they need.
+**Required `compile_guard` parameter** -- Making `compile_guard` a required
+positional parameter (no default) so that omitting it raises `TypeError` at
+import time.  This was the original design, but relaxed to an optional
+parameter defaulting to `None` (always included) to reduce churn when adding
+new builtins.  The `test_all_builtins_have_compile_guard` sweep test mitigates
+the regression risk by catching any builtin with `compile_guard=None` that
+should have a specific guard.

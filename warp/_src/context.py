@@ -2131,7 +2131,8 @@ class ModuleBuilder:
     def require_guard(self, guard):
         """Mark a compile guard as needed by this module."""
         if guard is not None:  # None means always included
-            assert guard in warp._src.codegen.VALID_COMPILE_GUARDS, f"Unknown guard: {guard!r}"
+            if guard not in warp._src.codegen.VALID_COMPILE_GUARDS:
+                raise ValueError(f"require_guard: unknown guard {guard!r}")
             self.required_guards.add(guard)
 
     def _inspect_type_for_guards(self, t):

@@ -4145,7 +4145,7 @@ class Adjoint:
 # ---------------------------------------------------------------------------
 
 # Type generic string (from _wp_generic_type_str_) -> guard.
-# Used by _inspect_type_for_guards and the safety-net source scanner.
+# Used by _inspect_type_for_guards in context.py.
 _GENERIC_TYPE_GUARDS: dict[str, str] = {
     "vec_t": "WP_NO_VEC",
     "mat_t": "WP_NO_MAT",

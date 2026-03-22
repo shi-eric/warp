@@ -25,6 +25,11 @@
 - Deprecate `Texture.copy_from_array()`, use `Texture.copy_from()` instead.
 - Deprecate `Texture.copy_to_array()`, use `Texture.copy_to()` instead.
 
+### Performance
+
+- Add compile guards to skip unused C++ headers during kernel JIT compilation, reducing CPU cold-compile
+  time by up to 5x and CUDA compile time by up to 2.8x.
+
 ### Changed
 
 - Allow `wp.Volume.load_from_numpy()` and `wp.Volume.allocate()` to accept a 3-element sequence for
