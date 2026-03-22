@@ -1,0 +1,94 @@
+{
+  "baseline": {
+    "cpu": {
+      "fem.navier_stokes": {
+        "median": 68.0,
+        "stdev": 0.1
+      },
+      "fem.stokes": {
+        "median": 56.7,
+        "stdev": 0.6
+      },
+      "fem.deformed_geometry": {
+        "median": 51.1,
+        "stdev": 0.2
+      },
+      "fem.diffusion_3d": {
+        "median": 43.2,
+        "stdev": 0.9
+      },
+      "fem.convection_diffusion": {
+        "median": 31.9,
+        "stdev": 0.6
+      }
+    },
+    "cuda:0": {
+      "fem.navier_stokes": {
+        "median": 23.6,
+        "stdev": 0.3
+      },
+      "fem.stokes": {
+        "median": 19.1,
+        "stdev": 0.2
+      },
+      "fem.deformed_geometry": {
+        "median": 20.1,
+        "stdev": 0.6
+      },
+      "fem.diffusion_3d": {
+        "median": 15.1,
+        "stdev": 0.1
+      },
+      "fem.convection_diffusion": {
+        "median": 11.0,
+        "stdev": 0.1
+      }
+    }
+  },
+  "branch": {
+    "cpu": {
+      "fem.navier_stokes": {
+        "median": 21.1,
+        "stdev": 0.1
+      },
+      "fem.stokes": {
+        "median": 16.5,
+        "stdev": 0.7
+      },
+      "fem.deformed_geometry": {
+        "median": 15.0,
+        "stdev": 0.0
+      },
+      "fem.diffusion_3d": {
+        "median": 12.3,
+        "stdev": 0.0
+      },
+      "fem.convection_diffusion": {
+        "median": 8.5,
+        "stdev": 0.0
+      }
+    },
+    "cuda:0": {
+      "fem.navier_stokes": {
+        "median": 15.2,
+        "stdev": 0.7
+      },
+      "fem.stokes": {
+        "median": 11.6,
+        "stdev": 0.0
+      },
+      "fem.deformed_geometry": {
+        "median": 12.9,
+        "stdev": 0.1
+      },
+      "fem.diffusion_3d": {
+        "median": 9.0,
+        "stdev": 0.0
+      },
+      "fem.convection_diffusion": {
+        "median": 6.4,
+        "stdev": 0.0
+      }
+    }
+  }
+}
