@@ -31,7 +31,7 @@ doing so in a way that is robust against future changes to the builtin library.
 
 ### Guard Detection
 
-Three layers determine which features a module needs:
+Four layers determine which features a module needs:
 
 1. **`native_header` on `add_builtin()`** -- Every builtin declares which header
    it needs (e.g. `"mesh"` for mesh.h).  Optional parameter defaulting to
@@ -67,9 +67,13 @@ compilation.
 Each native header `#include`s the types it depends on directly, rather than
 relying on `builtin.h`'s include ordering:
 
-- `mat.h`, `hashgrid.h`, `intersect.h`, `texture.h`, `noise.h`, `bvh.h`,
+- `mat.h`, `hashgrid.h`, `texture.h`, `noise.h`, `bvh.h`,
   `rand.h` → `#include "vec.h"`
+- `quat.h` → `#include "mat.h"` (gets `vec.h` transitively)
 - `spatial.h` → `#include "mat.h"` (gets `vec.h` transitively)
+- `intersect.h`, `mesh.h`, `intersect_adj.h` → `#include "mat_ops.h"` (gets
+  `mat.h` and `vec.h` transitively); `intersect.h` also includes `vec.h`
+  directly
 - `svd.h`, `volume.h`, `tile.h` → `#include "mat_ops.h"` (gets `mat.h` and
   `vec.h` transitively)
 

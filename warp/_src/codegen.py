@@ -4219,12 +4219,15 @@ class Adjoint:
 # #include "builtin.h".  Builtins without a native_header (None) are always
 # included.
 #
-# Header-to-type mappings are defined once here and used by both the type
-# inspector (_inspect_type_for_headers) and the safety-net source scanner.
+# Header-to-type mappings are defined once here and used by the type
+# inspector (_inspect_type_for_headers) in context.py.
 # ---------------------------------------------------------------------------
 
 # Type generic string (from _wp_generic_type_str_) -> native header name.
-# Used by _inspect_type_for_headers in context.py.
+# Used by _inspect_type_for_headers in context.py.  Only vec/mat/quat/
+# transform types have type-based detection here; domain-specific headers
+# (mesh, bvh, volume, etc.) rely solely on the native_header annotation on
+# each add_builtin() call.
 _GENERIC_TYPE_HEADERS: dict[str, str] = {
     "vec_t": "vec",
     "mat_t": "mat",
