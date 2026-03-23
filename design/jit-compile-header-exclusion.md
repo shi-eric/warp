@@ -1,4 +1,4 @@
-# Robust Compile Guards
+# JIT Compile Header Exclusion
 
 **Status**: Implemented
 
@@ -84,6 +84,33 @@ into a standalone `tile_storage.h`.  This is included unconditionally from
 storage setup.  `WP_NO_TILE` then fully excludes the heavy tile operations
 (registers, reductions, scans, sorts, matmul, FFT).
 
+### `WP_NO_BACKWARD` Guard
+
+When `wp.config.enable_backward` is `False`, the codegen emits
+`#define WP_NO_BACKWARD` before `#include "builtin.h"`.  This skips:
+
+- All adjoint function stubs in the generated C++ (wrapped in
+  `#ifndef WP_NO_BACKWARD` in the codegen template)
+- Adjoint operator instantiations in native headers (`array.h`, `mat_ops.h`,
+  `quat.h`, `spatial.h`, `intersect_adj.h`, etc.)
+
+This is separate from the per-builtin `compile_guard` system — it is a
+module-level flag driven by configuration rather than feature detection.
+FEM workloads benefit the most since they always set `enable_backward=False`.
+
+### `mat.h` Split
+
+`mat.h` was split into two files:
+
+- **`mat.h`** -- Type definition (`mat_t<>` template, constructors, element
+  access).  Included whenever `WP_NO_MAT` is not defined.
+- **`mat_ops.h`** -- Operations (arithmetic, transpose, determinant, inverse,
+  SVD helpers).  Included by headers that need mat operations (`svd.h`,
+  `volume.h`, `tile.h`, `spatial.h`).
+
+This allows modules that only *declare* mat-typed arguments (without calling mat
+operations) to skip the heavier `mat_ops.h`.
+
 ### Key Implementation Details
 
 **Guard constants** live in `codegen.py` (not `context.py`) to avoid circular
@@ -97,60 +124,63 @@ mat-producing builtins (`identity`, `outer`, `transpose`, etc. use `WP_NO_MAT`).
 
 ## Benchmark Results
 
-Cold-compile time for a 2D array assignment kernel, median of 5+ samples:
+All benchmarks measured on L40 GPU, CUDA Toolkit 12.8, driver 570.158.01.  Each sample is a true
+cold compile (kernel cache fully wiped between samples).  Run sequentially
+with `CUDA_CACHE_DISABLE=1`.  121 example/device pairs were tested (22
+Warp FEM + 55 Newton examples, CPU and CUDA); representative subsets are
+shown below.
 
-| Configuration | Time | Speedup |
-| --- | --- | --- |
-| CPU without guards | 1.65s | baseline |
-| CPU with guards | 0.33s | **5.0x** |
-| CUDA without guards | 0.41s | baseline |
-| CUDA with guards | 0.15s | **2.8x** |
+### Isolated Kernels
 
-Isolated kernels by feature category (each in its own Warp module, 5 samples):
+Each kernel is in its own Warp module so compile guards apply independently.
+Median of 5 samples:
 
 | Kernel | CPU main | CPU branch | CPU speedup | CUDA main | CUDA branch | CUDA speedup |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Scalar only | 1.617s | 0.329s | **4.9x** | 0.410s | 0.146s | **2.8x** |
-| Vector math | 1.639s | 0.380s | **4.3x** | 0.447s | 0.192s | **2.3x** |
-| Noise + random | 1.663s | 0.432s | **3.8x** | 0.421s | 0.190s | **2.2x** |
-| Mat + quat + transform | 1.706s | 0.536s | **3.2x** | 0.492s | 0.288s | **1.7x** |
-| Volume sampling | 1.721s | 0.611s | **2.8x** | 0.775s | 0.614s | **1.3x** |
-| Mesh queries | 1.815s | 0.824s | **2.2x** | 1.025s | 0.912s | **1.1x** |
+| Scalar only | 1.639s | 0.338s | **4.9x** | 0.409s | 0.146s | **2.8x** |
+| Vector math | 1.675s | 0.387s | **4.3x** | 0.442s | 0.193s | **2.3x** |
+| Mat + quat + transform | 1.763s | 0.560s | **3.2x** | 0.484s | 0.290s | **1.7x** |
+| Volume sampling | 1.742s | 0.614s | **2.8x** | 0.773s | 0.623s | **1.2x** |
+| Mesh queries | 1.848s | 0.813s | **2.3x** | 1.026s | 0.910s | **1.1x** |
 
 ### Warp FEM Examples
 
-Compile time for FEM examples (3 samples each):
+Compile time for FEM examples, median of 3 samples.  22 examples tested;
+representative subset shown here:
 
 | Example | CPU main | CPU branch | CPU speedup | CUDA main | CUDA branch | CUDA speedup |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| fem.navier_stokes | 67.1s | 22.6s | **2.97x** | 23.7s | 15.7s | **1.51x** |
-| fem.stokes | 55.6s | 17.8s | **3.12x** | 19.2s | 12.0s | **1.60x** |
-| fem.deformed_geometry | 50.6s | 16.1s | **3.14x** | 19.9s | 13.4s | **1.49x** |
-| fem.diffusion_3d | 42.7s | 13.1s | **3.26x** | 15.2s | 9.2s | **1.65x** |
-| fem.convection_diffusion | 31.6s | 9.4s | **3.36x** | 11.0s | 6.8s | **1.62x** |
+| fem.stokes_transfer | 83.7s | 23.3s | **3.59x** | 26.4s | 15.5s | **1.70x** |
+| fem.navier_stokes | 68.3s | 21.3s | **3.20x** | 23.6s | 15.7s | **1.51x** |
+| fem.stokes | 56.4s | 16.5s | **3.41x** | 19.8s | 12.2s | **1.62x** |
+| fem.diffusion_3d | 43.1s | 12.3s | **3.50x** | 15.1s | 9.2s | **1.65x** |
+| fem.convection_diffusion | 32.0s | 8.5s | **3.75x** | 11.0s | 6.6s | **1.66x** |
+| fem.burgers | 28.8s | 7.3s | **3.94x** | 8.6s | 4.7s | **1.84x** |
+
+Across all 22 FEM examples: **2.8x–3.9x CPU**, **1.3x–1.9x CUDA**.
 
 ### Newton Physics Engine
 
-Newton is a real-world Warp consumer with 30+ compiled modules.  Aggregate
-cold-compile time for all Newton modules (3 samples):
-
-| | CPU main | CPU branch | Speedup | CUDA main | CUDA branch | Speedup |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| All Newton modules | 58.9s | 22.1s | **2.7x** | 163.6s | 86.9s | **1.9x** |
-
-Newton example compile times (3 samples each):
+Newton is a real-world Warp consumer with 30+ compiled modules.  55 Newton
+examples tested across 9 categories (basic, cable, cloth, contacts, diffsim,
+IK, MPM, robot, softbody); representative subset shown here, median of 3
+samples:
 
 | Example | CPU main | CPU branch | CPU speedup | CUDA main | CUDA branch | CUDA speedup |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| robot_allegro_hand | 96.3s | 47.5s | **2.03x** | 87.9s | 77.7s | **1.13x** |
-| robot_h1 | 90.7s | 45.4s | **2.00x** | 88.6s | 78.2s | **1.13x** |
-| robot_g1 | 87.8s | 44.5s | **1.97x** | 95.3s | 85.8s | **1.11x** |
-| robot_ur10 | 73.0s | 33.6s | **2.17x** | 51.1s | 43.1s | **1.19x** |
-| basic_shapes | 36.8s | 23.1s | **1.59x** | 52.7s | 49.4s | **1.07x** |
-| cloth_hanging | 27.8s | 18.1s | **1.54x** | 46.8s | 43.3s | **1.08x** |
-| softbody_hanging | 27.6s | 17.9s | **1.54x** | 37.4s | 34.4s | **1.09x** |
-| mpm_granular | — | — | — | 36.5s | 28.2s | **1.29x** |
-| diffsim_ball | 13.6s | 7.8s | **1.74x** | 10.6s | 9.8s | **1.08x** |
+| robot_anymal_d | 91.3s | 45.5s | **2.01x** | 91.1s | 80.6s | **1.13x** |
+| robot_ur10 | 75.0s | 33.2s | **2.26x** | 55.0s | 45.9s | **1.20x** |
+| selection_articulations | 85.5s | 37.0s | **2.31x** | 108.7s | 99.4s | **1.09x** |
+| cloth_hanging | 28.4s | 18.3s | **1.55x** | 47.8s | 44.5s | **1.07x** |
+| mpm_granular | — | — | — | 37.0s | 27.6s | **1.34x** |
+| diffsim_ball | 13.9s | 8.1s | **1.73x** | 10.8s | 9.9s | **1.09x** |
+
+Across all 55 Newton examples: **1.5x–2.3x CPU**, **1.0x–1.4x CUDA**.  Newton
+CUDA improvements are smaller because NVRTC compile time dominates — the
+CPU-side header exclusion is less impactful when most time is spent in the GPU
+compiler.  MPM examples benefit most on CUDA since they use fewer Warp features.
+
+No regressions detected across any of the 121 example/device pairs.
 
 ## Testing Strategy
 

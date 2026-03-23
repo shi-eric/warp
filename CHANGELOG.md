@@ -25,11 +25,6 @@
 - Deprecate `Texture.copy_from_array()`, use `Texture.copy_from()` instead.
 - Deprecate `Texture.copy_to_array()`, use `Texture.copy_to()` instead.
 
-### Performance
-
-- Add compile guards to skip unused C++ headers during kernel JIT compilation, reducing CPU cold-compile
-  time by up to 5x and CUDA compile time by up to 2.8x.
-
 ### Changed
 
 - Centralize module option resolution so the hasher and compiler always see identical values, fixing unnecessary
@@ -41,6 +36,8 @@
 - Include the Warp version in kernel cache paths when `WARP_CACHE_PATH` is set or a path is passed to
   `init_kernel_cache()`, matching the default cache-path behavior. This prevents stale artifacts from a previous Warp
   version from interfering after an upgrade ([GH-1260](https://github.com/NVIDIA/warp/issues/1260)).
+- Reduce kernel cold-compile time by up to 5x on CPU and 2.8x on CUDA by excluding unused C++ headers
+  from JIT compilation ([GH-1017](https://github.com/NVIDIA/warp/issues/1017)).
 
 ### Fixed
 
