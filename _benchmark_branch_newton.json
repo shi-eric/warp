@@ -1,0 +1,914 @@
+{
+  "newton_cpu": {
+    "newton.basic_pendulum": {
+      "median": 23.67,
+      "stdev": 0.46,
+      "cv": 1.9,
+      "samples": [
+        23.67,
+        24.3,
+        23.4
+      ],
+      "status": "ok"
+    },
+    "newton.basic_urdf": {
+      "median": 23.89,
+      "stdev": 0.27,
+      "cv": 1.1,
+      "samples": [
+        23.43,
+        23.89,
+        23.9
+      ],
+      "status": "ok"
+    },
+    "newton.basic_joints": {
+      "median": 24.02,
+      "stdev": 0.72,
+      "cv": 3.0,
+      "samples": [
+        23.87,
+        25.19,
+        24.02
+      ],
+      "status": "ok"
+    },
+    "newton.basic_shapes": {
+      "median": 23.45,
+      "stdev": 0.2,
+      "cv": 0.8,
+      "samples": [
+        23.45,
+        23.67,
+        23.28
+      ],
+      "status": "ok"
+    },
+    "newton.basic_conveyor": {
+      "median": 28.23,
+      "stdev": 0.02,
+      "cv": 0.1,
+      "samples": [
+        28.23,
+        28.24,
+        28.21
+      ],
+      "status": "ok"
+    },
+    "newton.basic_heightfield": {
+      "median": 21.94,
+      "stdev": 0.29,
+      "cv": 1.3,
+      "samples": [
+        21.94,
+        22.09,
+        21.53
+      ],
+      "status": "ok"
+    },
+    "newton.cable_twist": {
+      "median": 23.59,
+      "stdev": 0.62,
+      "cv": 2.6,
+      "samples": [
+        24.35,
+        23.59,
+        23.12
+      ],
+      "status": "ok"
+    },
+    "newton.cable_y_junction": {
+      "median": 22.83,
+      "stdev": 0.12,
+      "cv": 0.5,
+      "samples": [
+        23.0,
+        22.83,
+        22.78
+      ],
+      "status": "ok"
+    },
+    "newton.cable_bundle_hysteresis": {
+      "median": 24.17,
+      "stdev": 0.59,
+      "cv": 2.5,
+      "samples": [
+        24.17,
+        24.55,
+        23.4
+      ],
+      "status": "ok"
+    },
+    "newton.cable_pile": {
+      "median": 22.97,
+      "stdev": 0.57,
+      "cv": 2.5,
+      "samples": [
+        22.97,
+        22.94,
+        23.95
+      ],
+      "status": "ok"
+    },
+    "newton.cloth_bending": {
+      "median": 18.96,
+      "stdev": 0.13,
+      "cv": 0.7,
+      "samples": [
+        19.03,
+        18.96,
+        18.77
+      ],
+      "status": "ok"
+    },
+    "newton.cloth_hanging": {
+      "median": 18.28,
+      "stdev": 0.06,
+      "cv": 0.3,
+      "samples": [
+        18.2,
+        18.28,
+        18.31
+      ],
+      "status": "ok"
+    },
+    "newton.diffsim_ball": {
+      "median": 8.08,
+      "stdev": 0.26,
+      "cv": 3.2,
+      "samples": [
+        8.08,
+        7.81,
+        8.32
+      ],
+      "status": "ok"
+    },
+    "newton.diffsim_cloth": {
+      "median": 4.51,
+      "stdev": 0.02,
+      "cv": 0.5,
+      "samples": [
+        4.51,
+        4.5,
+        4.54
+      ],
+      "status": "ok"
+    },
+    "newton.diffsim_drone": {
+      "median": 7.98,
+      "stdev": 0.19,
+      "cv": 2.3,
+      "samples": [
+        7.91,
+        8.26,
+        7.98
+      ],
+      "status": "ok"
+    },
+    "newton.diffsim_spring_cage": {
+      "median": 4.49,
+      "stdev": 0.02,
+      "cv": 0.3,
+      "samples": [
+        4.5,
+        4.47,
+        4.49
+      ],
+      "status": "ok"
+    },
+    "newton.diffsim_soft_body": {
+      "median": 9.75,
+      "stdev": 0.65,
+      "cv": 6.5,
+      "samples": [
+        9.7,
+        10.85,
+        9.75
+      ],
+      "status": "ok"
+    },
+    "newton.ik_franka": {
+      "median": 16.33,
+      "stdev": 0.12,
+      "cv": 0.7,
+      "samples": [
+        16.36,
+        16.33,
+        16.14
+      ],
+      "status": "ok"
+    },
+    "newton.ik_h1": {
+      "median": 16.5,
+      "stdev": 0.51,
+      "cv": 3.1,
+      "samples": [
+        15.68,
+        16.5,
+        16.62
+      ],
+      "status": "ok"
+    },
+    "newton.ik_cube_stacking": {
+      "median": -1,
+      "stdev": -1,
+      "samples": [],
+      "status": "failed"
+    },
+    "newton.robot_cartpole": {
+      "median": 33.65,
+      "stdev": 0.38,
+      "cv": 1.1,
+      "samples": [
+        33.65,
+        33.33,
+        34.08
+      ],
+      "status": "ok"
+    },
+    "newton.robot_anymal_d": {
+      "median": 45.49,
+      "stdev": 0.09,
+      "cv": 0.2,
+      "samples": [
+        45.36,
+        45.54,
+        45.49
+      ],
+      "status": "ok"
+    },
+    "newton.robot_ur10": {
+      "median": 33.19,
+      "stdev": 0.05,
+      "cv": 0.2,
+      "samples": [
+        33.15,
+        33.25,
+        33.19
+      ],
+      "status": "ok"
+    },
+    "newton.selection_articulations": {
+      "median": 37.01,
+      "stdev": 0.65,
+      "cv": 1.7,
+      "samples": [
+        38.05,
+        36.86,
+        37.01
+      ],
+      "status": "ok"
+    },
+    "newton.selection_cartpole": {
+      "median": 35.61,
+      "stdev": 0.27,
+      "cv": 0.7,
+      "samples": [
+        35.66,
+        35.18,
+        35.61
+      ],
+      "status": "ok"
+    },
+    "newton.selection_materials": {
+      "median": 38.89,
+      "stdev": 1.18,
+      "cv": 3.0,
+      "samples": [
+        38.8,
+        40.88,
+        38.89
+      ],
+      "status": "ok"
+    },
+    "newton.selection_multiple": {
+      "median": 35.13,
+      "stdev": 0.31,
+      "cv": 0.9,
+      "samples": [
+        34.8,
+        35.42,
+        35.13
+      ],
+      "status": "ok"
+    },
+    "newton.sensor_contact": {
+      "median": 38.81,
+      "stdev": 0.68,
+      "cv": 1.7,
+      "samples": [
+        38.11,
+        38.81,
+        39.47
+      ],
+      "status": "ok"
+    },
+    "newton.sensor_imu": {
+      "median": 33.38,
+      "stdev": 0.3,
+      "cv": 0.9,
+      "samples": [
+        33.38,
+        33.3,
+        33.85
+      ],
+      "status": "ok"
+    }
+  },
+  "newton_cuda:0": {
+    "newton.basic_pendulum": {
+      "median": 40.27,
+      "stdev": 0.61,
+      "cv": 1.5,
+      "samples": [
+        40.27,
+        40.07,
+        41.2
+      ],
+      "status": "ok"
+    },
+    "newton.basic_urdf": {
+      "median": 45.44,
+      "stdev": 1.49,
+      "cv": 3.3,
+      "samples": [
+        46.88,
+        45.44,
+        43.9
+      ],
+      "status": "ok"
+    },
+    "newton.basic_joints": {
+      "median": 41.8,
+      "stdev": 0.58,
+      "cv": 1.4,
+      "samples": [
+        41.8,
+        42.41,
+        41.26
+      ],
+      "status": "ok"
+    },
+    "newton.basic_shapes": {
+      "median": 51.29,
+      "stdev": 0.54,
+      "cv": 1.0,
+      "samples": [
+        52.17,
+        51.29,
+        51.18
+      ],
+      "status": "ok"
+    },
+    "newton.basic_conveyor": {
+      "median": 62.0,
+      "stdev": 1.34,
+      "cv": 2.1,
+      "samples": [
+        62.0,
+        61.52,
+        64.04
+      ],
+      "status": "ok"
+    },
+    "newton.basic_heightfield": {
+      "median": 39.62,
+      "stdev": 0.14,
+      "cv": 0.4,
+      "samples": [
+        39.42,
+        39.69,
+        39.62
+      ],
+      "status": "ok"
+    },
+    "newton.cable_twist": {
+      "median": 49.33,
+      "stdev": 1.35,
+      "cv": 2.8,
+      "samples": [
+        47.38,
+        49.33,
+        49.97
+      ],
+      "status": "ok"
+    },
+    "newton.cable_y_junction": {
+      "median": 48.34,
+      "stdev": 0.12,
+      "cv": 0.3,
+      "samples": [
+        48.34,
+        48.46,
+        48.21
+      ],
+      "status": "ok"
+    },
+    "newton.cable_bundle_hysteresis": {
+      "median": 48.75,
+      "stdev": 0.52,
+      "cv": 1.1,
+      "samples": [
+        48.31,
+        48.75,
+        49.34
+      ],
+      "status": "ok"
+    },
+    "newton.cable_pile": {
+      "median": 48.79,
+      "stdev": 0.72,
+      "cv": 1.5,
+      "samples": [
+        47.81,
+        49.21,
+        48.79
+      ],
+      "status": "ok"
+    },
+    "newton.cloth_bending": {
+      "median": 46.71,
+      "stdev": 0.29,
+      "cv": 0.6,
+      "samples": [
+        46.71,
+        46.29,
+        46.85
+      ],
+      "status": "ok"
+    },
+    "newton.cloth_hanging": {
+      "median": 44.52,
+      "stdev": 0.28,
+      "cv": 0.6,
+      "samples": [
+        44.16,
+        44.71,
+        44.52
+      ],
+      "status": "ok"
+    },
+    "newton.cloth_style3d": {
+      "median": 46.73,
+      "stdev": 0.78,
+      "cv": 1.7,
+      "samples": [
+        46.36,
+        47.87,
+        46.73
+      ],
+      "status": "ok"
+    },
+    "newton.cloth_twist": {
+      "median": 34.65,
+      "stdev": 0.67,
+      "cv": 1.9,
+      "samples": [
+        35.68,
+        34.43,
+        34.65
+      ],
+      "status": "ok"
+    },
+    "newton.cloth_rollers": {
+      "median": 25.03,
+      "stdev": 0.17,
+      "cv": 0.7,
+      "samples": [
+        25.03,
+        25.3,
+        24.99
+      ],
+      "status": "ok"
+    },
+    "newton.cloth_poker_cards": {
+      "median": 66.8,
+      "stdev": 0.12,
+      "cv": 0.2,
+      "samples": [
+        66.94,
+        66.7,
+        66.8
+      ],
+      "status": "ok"
+    },
+    "newton.cloth_franka": {
+      "median": 88.84,
+      "stdev": 0.89,
+      "cv": 1.0,
+      "samples": [
+        90.29,
+        88.67,
+        88.84
+      ],
+      "status": "ok"
+    },
+    "newton.cloth_h1": {
+      "median": 77.12,
+      "stdev": 0.65,
+      "cv": 0.8,
+      "samples": [
+        77.22,
+        77.12,
+        76.05
+      ],
+      "status": "ok"
+    },
+    "newton.brick_stacking": {
+      "median": 148.17,
+      "stdev": 1.3,
+      "cv": 0.9,
+      "samples": [
+        149.86,
+        147.3,
+        148.17
+      ],
+      "status": "ok"
+    },
+    "newton.nut_bolt_sdf": {
+      "median": 93.12,
+      "stdev": 0.83,
+      "cv": 0.9,
+      "samples": [
+        92.6,
+        94.22,
+        93.12
+      ],
+      "status": "ok"
+    },
+    "newton.nut_bolt_hydro": {
+      "median": 98.27,
+      "stdev": 1.44,
+      "cv": 1.5,
+      "samples": [
+        100.61,
+        98.27,
+        97.98
+      ],
+      "status": "ok"
+    },
+    "newton.pyramid": {
+      "median": 41.47,
+      "stdev": 0.68,
+      "cv": 1.6,
+      "samples": [
+        42.38,
+        41.04,
+        41.47
+      ],
+      "status": "ok"
+    },
+    "newton.diffsim_ball": {
+      "median": 9.93,
+      "stdev": 0.05,
+      "cv": 0.6,
+      "samples": [
+        9.93,
+        9.96,
+        9.85
+      ],
+      "status": "ok"
+    },
+    "newton.diffsim_cloth": {
+      "median": 4.74,
+      "stdev": 0.16,
+      "cv": 3.4,
+      "samples": [
+        4.74,
+        4.68,
+        4.99
+      ],
+      "status": "ok"
+    },
+    "newton.diffsim_drone": {
+      "median": 11.74,
+      "stdev": 0.4,
+      "cv": 3.3,
+      "samples": [
+        11.74,
+        12.35,
+        11.61
+      ],
+      "status": "ok"
+    },
+    "newton.diffsim_spring_cage": {
+      "median": 4.7,
+      "stdev": 0.02,
+      "cv": 0.5,
+      "samples": [
+        4.66,
+        4.7,
+        4.7
+      ],
+      "status": "ok"
+    },
+    "newton.diffsim_soft_body": {
+      "median": 11.73,
+      "stdev": 0.12,
+      "cv": 1.0,
+      "samples": [
+        11.73,
+        11.63,
+        11.87
+      ],
+      "status": "ok"
+    },
+    "newton.ik_franka": {
+      "median": 63.29,
+      "stdev": 0.23,
+      "cv": 0.4,
+      "samples": [
+        63.29,
+        63.59,
+        63.13
+      ],
+      "status": "ok"
+    },
+    "newton.ik_h1": {
+      "median": 72.94,
+      "stdev": 0.99,
+      "cv": 1.3,
+      "samples": [
+        74.55,
+        72.94,
+        72.76
+      ],
+      "status": "ok"
+    },
+    "newton.ik_custom": {
+      "median": 43.56,
+      "stdev": 1.41,
+      "cv": 3.2,
+      "samples": [
+        43.56,
+        45.91,
+        43.39
+      ],
+      "status": "ok"
+    },
+    "newton.ik_cube_stacking": {
+      "median": 134.6,
+      "stdev": 1.04,
+      "cv": 0.8,
+      "samples": [
+        133.46,
+        135.53,
+        134.6
+      ],
+      "status": "ok"
+    },
+    "newton.mpm_granular": {
+      "median": 27.65,
+      "stdev": 0.26,
+      "cv": 1.0,
+      "samples": [
+        27.65,
+        27.38,
+        27.91
+      ],
+      "status": "ok"
+    },
+    "newton.mpm_multi_material": {
+      "median": 28.36,
+      "stdev": 0.05,
+      "cv": 0.2,
+      "samples": [
+        28.28,
+        28.38,
+        28.36
+      ],
+      "status": "ok"
+    },
+    "newton.mpm_twoway_coupling": {
+      "median": 120.59,
+      "stdev": 2.53,
+      "cv": 2.1,
+      "samples": [
+        122.13,
+        120.59,
+        117.18
+      ],
+      "status": "ok"
+    },
+    "newton.mpm_beam_twist": {
+      "median": 48.33,
+      "stdev": 0.9,
+      "cv": 1.9,
+      "samples": [
+        49.52,
+        47.76,
+        48.33
+      ],
+      "status": "ok"
+    },
+    "newton.mpm_snow_ball": {
+      "median": 33.34,
+      "stdev": 0.87,
+      "cv": 2.6,
+      "samples": [
+        33.34,
+        32.93,
+        34.6
+      ],
+      "status": "ok"
+    },
+    "newton.mpm_viscous": {
+      "median": 29.09,
+      "stdev": 0.25,
+      "cv": 0.9,
+      "samples": [
+        29.09,
+        29.34,
+        28.83
+      ],
+      "status": "ok"
+    },
+    "newton.robot_cartpole": {
+      "median": 47.59,
+      "stdev": 1.16,
+      "cv": 2.4,
+      "samples": [
+        47.15,
+        47.59,
+        49.35
+      ],
+      "status": "ok"
+    },
+    "newton.robot_anymal_d": {
+      "median": 80.62,
+      "stdev": 0.66,
+      "cv": 0.8,
+      "samples": [
+        80.63,
+        80.62,
+        79.48
+      ],
+      "status": "ok"
+    },
+    "newton.robot_ur10": {
+      "median": 45.85,
+      "stdev": 0.25,
+      "cv": 0.5,
+      "samples": [
+        45.85,
+        45.93,
+        45.47
+      ],
+      "status": "ok"
+    },
+    "newton.robot_allegro_hand": {
+      "median": 83.14,
+      "stdev": 1.12,
+      "cv": 1.4,
+      "samples": [
+        81.52,
+        83.14,
+        83.67
+      ],
+      "status": "ok"
+    },
+    "newton.robot_g1": {
+      "median": 119.83,
+      "stdev": 2.34,
+      "cv": 1.9,
+      "samples": [
+        122.5,
+        119.83,
+        117.84
+      ],
+      "status": "ok"
+    },
+    "newton.robot_h1": {
+      "median": 81.89,
+      "stdev": 0.51,
+      "cv": 0.6,
+      "samples": [
+        82.16,
+        81.17,
+        81.89
+      ],
+      "status": "ok"
+    },
+    "newton.robot_panda_hydro": {
+      "median": 155.28,
+      "stdev": 4.19,
+      "cv": 2.7,
+      "samples": [
+        155.28,
+        153.8,
+        161.68
+      ],
+      "status": "ok"
+    },
+    "newton.selection_articulations": {
+      "median": 99.39,
+      "stdev": 1.36,
+      "cv": 1.4,
+      "samples": [
+        97.41,
+        99.39,
+        100.02
+      ],
+      "status": "ok"
+    },
+    "newton.selection_cartpole": {
+      "median": 53.05,
+      "stdev": 0.62,
+      "cv": 1.2,
+      "samples": [
+        52.96,
+        53.05,
+        54.08
+      ],
+      "status": "ok"
+    },
+    "newton.selection_materials": {
+      "median": 57.07,
+      "stdev": 0.2,
+      "cv": 0.4,
+      "samples": [
+        57.25,
+        56.84,
+        57.07
+      ],
+      "status": "ok"
+    },
+    "newton.selection_multiple": {
+      "median": 90.79,
+      "stdev": 0.86,
+      "cv": 0.9,
+      "samples": [
+        92.18,
+        90.79,
+        90.6
+      ],
+      "status": "ok"
+    },
+    "newton.sensor_contact": {
+      "median": 73.11,
+      "stdev": 5.37,
+      "cv": 7.1,
+      "samples": [
+        73.11,
+        72.27,
+        81.97
+      ],
+      "status": "ok"
+    },
+    "newton.sensor_imu": {
+      "median": 66.38,
+      "stdev": 0.06,
+      "cv": 0.1,
+      "samples": [
+        66.38,
+        66.43,
+        66.32
+      ],
+      "status": "ok"
+    },
+    "newton.softbody_hanging": {
+      "median": 38.96,
+      "stdev": 0.22,
+      "cv": 0.6,
+      "samples": [
+        39.22,
+        38.96,
+        38.79
+      ],
+      "status": "ok"
+    },
+    "newton.softbody_franka": {
+      "median": 143.24,
+      "stdev": 5.43,
+      "cv": 3.7,
+      "samples": [
+        151.26,
+        140.9,
+        143.24
+      ],
+      "status": "ok"
+    },
+    "newton.softbody_gift": {
+      "median": 42.57,
+      "stdev": 0.11,
+      "cv": 0.3,
+      "samples": [
+        42.57,
+        42.56,
+        42.76
+      ],
+      "status": "ok"
+    },
+    "newton.softbody_dropping_to_cloth": {
+      "median": 48.12,
+      "stdev": 0.51,
+      "cv": 1.0,
+      "samples": [
+        48.12,
+        48.72,
+        47.72
+      ],
+      "status": "ok"
+    }
+  }
+}

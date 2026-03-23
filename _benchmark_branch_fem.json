@@ -1,0 +1,447 @@
+{
+  "fem_cpu": {
+    "fem.diffusion": {
+      "median": 13.57,
+      "stdev": 0.04,
+      "cv": 0.3,
+      "samples": [
+        13.55,
+        13.57,
+        13.62
+      ],
+      "status": "ok"
+    },
+    "fem.diffusion_3d": {
+      "median": 12.33,
+      "stdev": 0.07,
+      "cv": 0.6,
+      "samples": [
+        12.29,
+        12.43,
+        12.33
+      ],
+      "status": "ok"
+    },
+    "fem.deformed_geometry": {
+      "median": 15.07,
+      "stdev": 0.11,
+      "cv": 0.7,
+      "samples": [
+        15.07,
+        15.02,
+        15.23
+      ],
+      "status": "ok"
+    },
+    "fem.stokes": {
+      "median": 16.53,
+      "stdev": 0.11,
+      "cv": 0.6,
+      "samples": [
+        16.53,
+        16.51,
+        16.7
+      ],
+      "status": "ok"
+    },
+    "fem.stokes_transfer": {
+      "median": 23.31,
+      "stdev": 0.73,
+      "cv": 3.1,
+      "samples": [
+        23.21,
+        23.31,
+        24.51
+      ],
+      "status": "ok"
+    },
+    "fem.mixed_elasticity": {
+      "median": -1,
+      "stdev": -1,
+      "samples": [],
+      "status": "failed"
+    },
+    "fem.magnetostatics": {
+      "median": 13.83,
+      "stdev": 0.06,
+      "cv": 0.5,
+      "samples": [
+        13.93,
+        13.81,
+        13.83
+      ],
+      "status": "ok"
+    },
+    "fem.streamlines": {
+      "median": 16.21,
+      "stdev": 0.12,
+      "cv": 0.7,
+      "samples": [
+        16.21,
+        16.09,
+        16.33
+      ],
+      "status": "ok"
+    },
+    "fem.adaptive_grid": {
+      "median": -1,
+      "stdev": -1,
+      "samples": [],
+      "status": "failed"
+    },
+    "fem.distortion_energy": {
+      "median": 15.39,
+      "stdev": 0.07,
+      "cv": 0.4,
+      "samples": [
+        15.42,
+        15.29,
+        15.39
+      ],
+      "status": "ok"
+    },
+    "fem.nonconforming_contact": {
+      "median": 22.41,
+      "stdev": 0.09,
+      "cv": 0.4,
+      "samples": [
+        22.54,
+        22.41,
+        22.38
+      ],
+      "status": "ok"
+    },
+    "fem.convection_diffusion": {
+      "median": 8.53,
+      "stdev": 0.01,
+      "cv": 0.1,
+      "samples": [
+        8.51,
+        8.53,
+        8.53
+      ],
+      "status": "ok"
+    },
+    "fem.navier_stokes": {
+      "median": 21.34,
+      "stdev": 0.63,
+      "cv": 2.9,
+      "samples": [
+        22.33,
+        21.34,
+        21.17
+      ],
+      "status": "ok"
+    },
+    "fem.burgers": {
+      "median": 7.31,
+      "stdev": 0.06,
+      "cv": 0.8,
+      "samples": [
+        7.38,
+        7.31,
+        7.27
+      ],
+      "status": "ok"
+    },
+    "fem.convection_diffusion_dg": {
+      "median": 21.0,
+      "stdev": 0.07,
+      "cv": 0.3,
+      "samples": [
+        20.97,
+        21.1,
+        21.0
+      ],
+      "status": "ok"
+    },
+    "fem.taylor_green": {
+      "median": 25.38,
+      "stdev": 0.45,
+      "cv": 1.8,
+      "samples": [
+        25.08,
+        25.97,
+        25.38
+      ],
+      "status": "ok"
+    },
+    "fem.shallow_water": {
+      "median": 7.86,
+      "stdev": 0.04,
+      "cv": 0.4,
+      "samples": [
+        7.9,
+        7.86,
+        7.83
+      ],
+      "status": "ok"
+    },
+    "fem.kelvin_helmholtz": {
+      "median": 8.42,
+      "stdev": 0.19,
+      "cv": 2.3,
+      "samples": [
+        8.74,
+        8.42,
+        8.4
+      ],
+      "status": "ok"
+    },
+    "fem.elastic_shape_optimization": {
+      "median": 28.04,
+      "stdev": 0.23,
+      "cv": 0.8,
+      "samples": [
+        28.21,
+        27.75,
+        28.04
+      ],
+      "status": "ok"
+    },
+    "fem.darcy_ls_optimization": {
+      "median": 28.91,
+      "stdev": 0.48,
+      "cv": 1.7,
+      "samples": [
+        29.33,
+        28.37,
+        28.91
+      ],
+      "status": "ok"
+    }
+  },
+  "fem_cuda:0": {
+    "fem.diffusion": {
+      "median": 9.89,
+      "stdev": 0.53,
+      "cv": 5.3,
+      "samples": [
+        10.56,
+        9.51,
+        9.89
+      ],
+      "status": "ok"
+    },
+    "fem.diffusion_3d": {
+      "median": 9.15,
+      "stdev": 0.2,
+      "cv": 2.2,
+      "samples": [
+        9.15,
+        9.08,
+        9.46
+      ],
+      "status": "ok"
+    },
+    "fem.deformed_geometry": {
+      "median": 14.19,
+      "stdev": 1.17,
+      "cv": 8.0,
+      "samples": [
+        15.96,
+        14.19,
+        13.75
+      ],
+      "status": "ok"
+    },
+    "fem.stokes": {
+      "median": 12.22,
+      "stdev": 0.97,
+      "cv": 7.6,
+      "samples": [
+        12.22,
+        13.85,
+        12.13
+      ],
+      "status": "ok"
+    },
+    "fem.stokes_transfer": {
+      "median": 15.53,
+      "stdev": 0.13,
+      "cv": 0.8,
+      "samples": [
+        15.49,
+        15.53,
+        15.73
+      ],
+      "status": "ok"
+    },
+    "fem.mixed_elasticity": {
+      "median": 20.94,
+      "stdev": 0.17,
+      "cv": 0.8,
+      "samples": [
+        21.22,
+        20.94,
+        20.9
+      ],
+      "status": "ok"
+    },
+    "fem.magnetostatics": {
+      "median": 11.26,
+      "stdev": 0.1,
+      "cv": 0.8,
+      "samples": [
+        11.26,
+        11.28,
+        11.1
+      ],
+      "status": "ok"
+    },
+    "fem.streamlines": {
+      "median": 11.96,
+      "stdev": 0.18,
+      "cv": 1.5,
+      "samples": [
+        11.96,
+        12.12,
+        11.76
+      ],
+      "status": "ok"
+    },
+    "fem.adaptive_grid": {
+      "median": 24.47,
+      "stdev": 0.3,
+      "cv": 1.2,
+      "samples": [
+        24.91,
+        24.33,
+        24.47
+      ],
+      "status": "ok"
+    },
+    "fem.distortion_energy": {
+      "median": 12.09,
+      "stdev": 0.14,
+      "cv": 1.2,
+      "samples": [
+        12.27,
+        12.09,
+        11.99
+      ],
+      "status": "ok"
+    },
+    "fem.nonconforming_contact": {
+      "median": 17.35,
+      "stdev": 0.29,
+      "cv": 1.6,
+      "samples": [
+        17.77,
+        17.35,
+        17.23
+      ],
+      "status": "ok"
+    },
+    "fem.convection_diffusion": {
+      "median": 6.61,
+      "stdev": 0.01,
+      "cv": 0.2,
+      "samples": [
+        6.62,
+        6.59,
+        6.61
+      ],
+      "status": "ok"
+    },
+    "fem.navier_stokes": {
+      "median": 15.68,
+      "stdev": 0.05,
+      "cv": 0.3,
+      "samples": [
+        15.68,
+        15.75,
+        15.67
+      ],
+      "status": "ok"
+    },
+    "fem.burgers": {
+      "median": 4.67,
+      "stdev": 0.04,
+      "cv": 0.8,
+      "samples": [
+        4.67,
+        4.62,
+        4.7
+      ],
+      "status": "ok"
+    },
+    "fem.convection_diffusion_dg": {
+      "median": 17.6,
+      "stdev": 0.06,
+      "cv": 0.4,
+      "samples": [
+        17.57,
+        17.69,
+        17.6
+      ],
+      "status": "ok"
+    },
+    "fem.taylor_green": {
+      "median": 18.0,
+      "stdev": 0.59,
+      "cv": 3.2,
+      "samples": [
+        18.0,
+        17.79,
+        18.9
+      ],
+      "status": "ok"
+    },
+    "fem.shallow_water": {
+      "median": 4.73,
+      "stdev": 0.02,
+      "cv": 0.4,
+      "samples": [
+        4.73,
+        4.76,
+        4.72
+      ],
+      "status": "ok"
+    },
+    "fem.kelvin_helmholtz": {
+      "median": 5.38,
+      "stdev": 0.17,
+      "cv": 3.1,
+      "samples": [
+        5.37,
+        5.38,
+        5.67
+      ],
+      "status": "ok"
+    },
+    "fem.apic_fluid": {
+      "median": 14.41,
+      "stdev": 0.17,
+      "cv": 1.1,
+      "samples": [
+        14.67,
+        14.41,
+        14.35
+      ],
+      "status": "ok"
+    },
+    "fem.elastic_shape_optimization": {
+      "median": 22.93,
+      "stdev": 0.5,
+      "cv": 2.2,
+      "samples": [
+        23.69,
+        22.93,
+        22.74
+      ],
+      "status": "ok"
+    },
+    "fem.darcy_ls_optimization": {
+      "median": 18.55,
+      "stdev": 1.35,
+      "cv": 7.0,
+      "samples": [
+        20.78,
+        18.35,
+        18.55
+      ],
+      "status": "ok"
+    }
+  }
+}
