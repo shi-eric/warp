@@ -22,10 +22,10 @@ doing so in a way that is robust against future changes to the builtin library.
 
 | ID  | Requirement | Priority | Status |
 | --- | --- | --- | --- |
-| R1  | Invalid guard names fail at import time, not at user compile time | Must | Done — `add_builtin()` raises `ValueError` for invalid `compile_guard` values |
+| R1  | Invalid header names fail at import time, not at user compile time | Must | Done — `add_builtin()` raises `ValueError` for invalid `native_header` values |
 | R2  | Significant CPU cold-compile speedup | Must | Done — up to 5x on CPU, 2.8x on CUDA |
 | R3  | Extend compile guards to CUDA (NVRTC) path | Should | Done — both `cpu_module_header` and `cuda_module_header` emit guards |
-| R4  | Minimize manual tables | Should | Partial — small tables remain (`VALID_COMPILE_GUARDS`, `_GENERIC_TYPE_GUARDS`, `_SOURCE_GUARD_PATTERNS`) but they are co-located in `codegen.py` and covered by sweep tests |
+| R4  | Minimize manual tables | Should | Partial — small tables remain (`VALID_NATIVE_HEADERS`, `_GENERIC_TYPE_HEADERS`) but they are co-located in `codegen.py` and covered by sweep tests |
 
 ## Design
 
@@ -33,32 +33,34 @@ doing so in a way that is robust against future changes to the builtin library.
 
 Three layers determine which features a module needs:
 
-1. **`compile_guard` on `add_builtin()`** -- Every builtin declares which header
-   it needs.  Optional parameter defaulting to `None` (always included),
-   validated against `VALID_COMPILE_GUARDS` (`ValueError` for invalid names).
-   Concrete specializations of generic builtins inherit the parent's guard.
+1. **`native_header` on `add_builtin()`** -- Every builtin declares which header
+   it needs (e.g. `"mesh"` for mesh.h).  Optional parameter defaulting to
+   `None` (always included), validated against `VALID_NATIVE_HEADERS`
+   (`ValueError` for invalid names).  Concrete specializations of generic
+   builtins inherit the parent's header.
 
 2. **Kernel/function/struct type inspection** -- `ModuleBuilder` inspects
    argument types, return types, and struct field types for vec/mat/quat/
-   transform/float16/float64, adding the corresponding guards to
-   `required_guards`.
+   transform/float16/float64, adding the corresponding headers to
+   `required_headers`.
 
 3. **Builtin resolution in `Adjoint.add_call()`** -- When the codegen resolves a
-   builtin call, `func.compile_guard` is added to `required_guards`.  This is
+   builtin call, `func.native_header` is added to `required_headers`.  This is
    transitive across `@wp.func` call chains.
 
 4. **Variable creation in `Adjoint.add_var()`** -- When codegen creates a new
-   variable (local, temporary, or constant), `_inspect_type_for_guards()` is
+   variable (local, temporary, or constant), `_inspect_type_for_headers()` is
    called on its type.  This catches types created inside `@wp.func` bodies
    (e.g., custom matrix sizes from FEM geometry) that are not visible in
    function signatures.
 
 ### Guard Emission
 
-Guard emission inverts the collected set: features NOT in `required_guards` get
-`#define WP_NO_XXX`.  Both `cpu_module_header` and `cuda_module_header` accept a
-`{compile_guards}` placeholder, so the optimization applies to both CPU (Clang)
-and CUDA (NVRTC) compilation.
+Guard emission inverts the collected set: headers NOT in `required_headers` get
+`#define WP_NO_XXX` (e.g. header `"mesh"` becomes `#define WP_NO_MESH`).  Both
+`cpu_module_header` and `cuda_module_header` accept a `{compile_guards}`
+placeholder, so the optimization applies to both CPU (Clang) and CUDA (NVRTC)
+compilation.
 
 ### Self-Sufficient Native Headers
 
@@ -94,7 +96,7 @@ When `wp.config.enable_backward` is `False`, the codegen emits
 - Adjoint operator instantiations in native headers (`array.h`, `mat_ops.h`,
   `quat.h`, `spatial.h`, `intersect_adj.h`, etc.)
 
-This is separate from the per-builtin `compile_guard` system — it is a
+This is separate from the per-builtin `native_header` system — it is a
 module-level flag driven by configuration rather than feature detection.
 FEM workloads benefit the most since they always set `enable_backward=False`.
 
@@ -113,14 +115,14 @@ operations) to skip the heavier `mat_ops.h`.
 
 ### Key Implementation Details
 
-**Guard constants** live in `codegen.py` (not `context.py`) to avoid circular
+**Header constants** live in `codegen.py` (not `context.py`) to avoid circular
 imports.  `None` is the sentinel for always-included builtins;
-`require_guard()` skips `None` values.
+`require_header()` skips `None` values.
 
 **Mixed-group builtins** -- The "Geometry" and "Random" groups in `builtins.py`
-contain builtins with different guards (e.g., `mesh_*` -> `WP_NO_MESH`,
-`bvh_*` -> `WP_NO_BVH`).  Similarly, "Vector Math" contains both vec-only and
-mat-producing builtins (`identity`, `outer`, `transpose`, etc. use `WP_NO_MAT`).
+contain builtins with different headers (e.g., `mesh_*` -> `"mesh"`,
+`bvh_*` -> `"bvh"`).  Similarly, "Vector Math" contains both vec-only and
+mat-producing builtins (`identity`, `outer`, `transpose`, etc. use `"mat"`).
 
 ## Benchmark Results
 
@@ -186,15 +188,15 @@ No regressions detected across any of the 121 example/device pairs.
 
 Unit tests in `warp/tests/test_compile_guards.py` (19 tests):
 
-- **Validation**: `add_builtin()` raises `ValueError` for invalid guard names.
-- **Sweep**: Every registered builtin has a valid `compile_guard`.
-- **C++ consistency**: Every guard in `VALID_COMPILE_GUARDS` has a matching
-  `#ifndef` in the native headers.
+- **Validation**: `add_builtin()` raises `ValueError` for invalid header names.
+- **Sweep**: Every registered builtin has a valid `native_header`.
+- **C++ consistency**: Every header in `VALID_NATIVE_HEADERS` has a matching
+  `#ifndef WP_NO_XXX` in the native headers.
 - **Guard computation**: `compute_compile_guards()` tested with empty, full,
   and single-feature scenarios.
-- **`add_var()` guard tracking**: `Adjoint.add_var()` tested for vec, mat,
-  and scalar types to verify guards are collected during codegen.
-- **Type inspection**: `_inspect_type_for_guards()` tested for vec, mat, quat,
+- **`add_var()` header tracking**: `Adjoint.add_var()` tested for vec, mat,
+  and scalar types to verify headers are collected during codegen.
+- **Type inspection**: `_inspect_type_for_headers()` tested for vec, mat, quat,
   transform, float16, float64, array-of-vec, and scalar-is-noop.
 - **Return type inspection**: `build_function()` inspects function return types
   (TDD-verified: test fails without the fix, passes with it).
@@ -208,7 +210,7 @@ substrings (e.g., `"mesh_query"` implies mesh.h is needed) to determine which
 guards to emit.  Rejected because the scan table is disconnected from the
 `add_builtin()` registrations — a new builtin whose C++ identifier isn't in the
 table silently breaks user kernels.  An earlier version used a limited source
-scan as a safety net, but this was replaced by tracking guards in
+scan as a safety net, but this was replaced by tracking headers in
 `Adjoint.add_var()` which catches the same cases (types created inside
 `@wp.func` bodies) without maintaining fragile string patterns.
 
@@ -223,10 +225,10 @@ Rejected because 12+ headers re-include `builtin.h`, the scalar math section is
 tightly interdependent, and the `WP_NO_XXX` model already produces identical
 preprocessor output.
 
-**Required `compile_guard` parameter** -- Making `compile_guard` a required
+**Required `native_header` parameter** -- Making `native_header` a required
 positional parameter (no default) so that omitting it raises `TypeError` at
 import time.  This was the original design, but relaxed to an optional
 parameter defaulting to `None` (always included) to reduce churn when adding
-new builtins.  The `test_all_builtins_have_compile_guard` sweep test mitigates
-the regression risk by catching any builtin with `compile_guard=None` that
-should have a specific guard.
+new builtins.  The `test_all_builtins_have_native_header` sweep test mitigates
+the regression risk by catching any builtin with `native_header=None` that
+should have a specific header.

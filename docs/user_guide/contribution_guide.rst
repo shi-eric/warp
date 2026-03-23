@@ -196,6 +196,11 @@ Python Guidelines
 * Use `Google-style docstrings <https://google.github.io/styleguide/pyguide.html#38-comments-and-docstrings>`__.
 * Use both ``inputs`` and ``outputs`` parameters in :func:`wp.launch() <warp.launch>` in functions that are expected to be used in
   differentiable programming applications to aid in visualization and debugging tools.
+* When adding a new builtin via ``add_builtin()`` in ``builtins.py``, set the ``native_header`` parameter to
+  the name of the C++ header the builtin requires (e.g. ``native_header="mesh"`` for builtins that need
+  ``mesh.h``). The code generator uses this to exclude unused headers during JIT compilation, which
+  significantly reduces cold-compile times. Valid header names are listed in ``VALID_NATIVE_HEADERS`` in
+  ``codegen.py``. Omitting the parameter (defaulting to ``None``) means the builtin is always included.
 
 C++ Guidelines
 """"""""""""""
@@ -214,6 +219,11 @@ C++ Guidelines
   * Bad: ``init()``, ``cuda_launch_kernel()``, ``graph_coloring()``
   * Note: Symbols inside the ``wp`` namespace in header files don't need this prefix, but C symbols and ``extern "C"``
     functions exported from implementation files must use the ``wp_`` prefix
+
+* New native headers must be self-sufficient: ``#include`` the types they depend on directly
+  (e.g. ``#include "vec.h"``) rather than relying on ``builtin.h``'s include ordering.
+  Use ``#pragma once`` on all headers. This allows the JIT compiler to exclude unused headers
+  via ``WP_NO_XXX`` guards without breaking transitive dependencies.
 
 .. _linting-and-formatting:
 

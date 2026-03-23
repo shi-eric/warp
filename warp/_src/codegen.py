@@ -1407,11 +1407,11 @@ class Adjoint:
         # allocate new variable
         v = Var(name, type=type, constant=constant, relative_lineno=adj.lineno)
 
-        # Track compile guards from the variable's type so that guards
+        # Track native headers from the variable's type so that headers
         # are collected naturally during codegen rather than via a
         # post-hoc source scan.
         if type is not None and adj.builder is not None:
-            adj.builder._inspect_type_for_guards(type)
+            adj.builder._inspect_type_for_headers(type)
 
         adj.variables.append(v)
 
@@ -1604,9 +1604,9 @@ class Adjoint:
         # Resolve the exact function signature among any existing overload.
         func = adj.resolve_func(func, arg_types, kwarg_types, min_outputs)
 
-        # Collect compile guard from resolved builtin
+        # Collect native header from resolved builtin
         if func.is_builtin() and adj.builder is not None:
-            adj.builder.require_guard(func.compile_guard)
+            adj.builder.require_header(func.native_header)
 
         # Bind the positional and keyword arguments to the function's signature
         # in order to process them as Python does it.
@@ -4211,65 +4211,65 @@ class Adjoint:
 # code generation
 
 # ---------------------------------------------------------------------------
-# Compile guard system
+# Native header system
 #
-# Each add_builtin() call can declare a compile_guard indicating which C++
-# header the builtin needs.  During code generation the collected guards
-# determine which WP_NO_XXX macros to emit before #include "builtin.h".
-# Builtins without a compile_guard (None) are always included.
+# Each add_builtin() call can declare a native_header indicating which C++
+# header the builtin needs (e.g. "mesh" for mesh.h).  During code generation
+# the collected headers determine which WP_NO_XXX macros to emit before
+# #include "builtin.h".  Builtins without a native_header (None) are always
+# included.
 #
-# Guard-to-type mappings are defined once here and used by both the type
-# inspector (_inspect_type_for_guards) and the safety-net source scanner.
+# Header-to-type mappings are defined once here and used by both the type
+# inspector (_inspect_type_for_headers) and the safety-net source scanner.
 # ---------------------------------------------------------------------------
 
-# Type generic string (from _wp_generic_type_str_) -> guard.
-# Used by _inspect_type_for_guards in context.py.
-_GENERIC_TYPE_GUARDS: dict[str, str] = {
-    "vec_t": "WP_NO_VEC",
-    "mat_t": "WP_NO_MAT",
-    "quat_t": "WP_NO_QUAT",
-    "transform_t": "WP_NO_QUAT",
+# Type generic string (from _wp_generic_type_str_) -> native header name.
+# Used by _inspect_type_for_headers in context.py.
+_GENERIC_TYPE_HEADERS: dict[str, str] = {
+    "vec_t": "vec",
+    "mat_t": "mat",
+    "quat_t": "quat",
+    "transform_t": "quat",
 }
 
-# Scalar type name -> guard.  Keyed by name string (not the type object)
-# to avoid importing the types module at codegen load time.
-_SCALAR_TYPE_GUARDS: dict[str, str] = {
-    "float16": "WP_NO_FLOAT16_OPS",
-    "float64": "WP_NO_FLOAT64_OPS",
+# Scalar type name -> native header name.  Keyed by name string (not the
+# type object) to avoid importing the types module at codegen load time.
+_SCALAR_TYPE_HEADERS: dict[str, str] = {
+    "float16": "float16_ops",
+    "float64": "float64_ops",
 }
 
-# All valid compile guard strings (None means always included).
-VALID_COMPILE_GUARDS: frozenset[str | None] = frozenset(
+# All valid native header names (None means always included).
+VALID_NATIVE_HEADERS: frozenset[str | None] = frozenset(
     {
         None,
-        "WP_NO_MESH",
-        "WP_NO_BVH",
-        "WP_NO_INTERSECT",
-        "WP_NO_VEC",
-        "WP_NO_MAT",
-        "WP_NO_QUAT",
-        "WP_NO_SVD",
-        "WP_NO_HASHGRID",
-        "WP_NO_VOLUME",
-        "WP_NO_TEXTURE",
-        "WP_NO_NOISE",
-        "WP_NO_TILE",
-        "WP_NO_RAND",
-        "WP_NO_FLOAT16_OPS",
-        "WP_NO_FLOAT64_OPS",
+        "mesh",
+        "bvh",
+        "intersect",
+        "vec",
+        "mat",
+        "quat",
+        "svd",
+        "hashgrid",
+        "volume",
+        "texture",
+        "noise",
+        "tile",
+        "rand",
+        "float16_ops",
+        "float64_ops",
     }
 )
 
 
-
 def compute_compile_guards(required: set[str]) -> str:
-    """Return #define WP_NO_XXX directives for features not in *required*."""
-    all_guards = VALID_COMPILE_GUARDS - {None}
-    guards = set(all_guards - required)
+    """Return #define WP_NO_XXX directives for headers not in *required*."""
+    all_headers = VALID_NATIVE_HEADERS - {None}
+    excluded = set(all_headers - required)
 
-    if not guards:
+    if not excluded:
         return ""
-    return "\n".join(f"#define {g}" for g in sorted(guards)) + "\n"
+    return "\n".join(f"#define WP_NO_{h.upper()}" for h in sorted(excluded)) + "\n"
 
 
 cpu_module_header = """
