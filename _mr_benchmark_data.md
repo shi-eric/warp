@@ -265,6 +265,33 @@ The CUDA speedup for a given kernel correlates with feature complexity:
 | Volume/mesh queries | 1.1x–1.2x | nvdb, raycast, mesh |
 | Heavy (mesh+grad+optim) | ~1.0x | diffray |
 
+### Design decision: keep CUDA compile guards
+
+Given that multi-module CUDA speedups are ~1.0x, we considered whether
+to apply compile guards only on CPU and skip them for NVRTC.
+
+**Keep them.** The guards are backend-agnostic — the same `#ifndef
+WP_NO_X` directives are emitted regardless of whether the target is
+Clang (CPU) or NVRTC (CUDA).  There is no separate CUDA codepath to
+maintain, so removing CUDA guards would not simplify the code.
+
+Meanwhile, single-module workloads — the most common user scenario
+(someone writing a script with a few kernels) — still see 1.2x–2.1x
+CUDA speedup.  Removing guards would regress this case for zero
+benefit.
+
+PCH and compile guards are complementary, not redundant:
+
+- **PCH** amortizes header parsing across modules within a process
+  (helps multi-module workloads like FEM/Newton)
+- **Compile guards** reduce source per NVRTC call (helps single-module
+  workloads like user scripts)
+
+The only reason to remove CUDA guards would be if they caused
+CUDA-specific bugs.  The `add_builtin()` enforcement (TypeError for
+missing guard) and 22 unit tests in `test_compile_guards.py` mitigate
+this risk.
+
 ## Notes
 
 - "main" branch: commit c687bc58 (latest main as of 2026-03-25, includes PCH fix)
