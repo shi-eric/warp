@@ -37,45 +37,79 @@ Full test suite: 6622 tests pass, 0 errors, 16 skipped (matching baseline).
 
 ### Compile-time benchmarks
 
-Each kernel is compiled in its own Warp module (so guards apply independently), cold-compiled 5 times with cache cleared between samples. Measured on L40 GPU, Linux.
+All benchmarks use subprocess-per-sample isolation with `WARP_CACHE_PATH`
+wiped between samples and `CUDA_CACHE_DISABLE=1`. Measured on L40 GPU,
+Linux. Full data and methodology in `_mr_benchmark_data.md` and
+`_benchmark_methodology.md`.
+
+**Isolated kernels** (5 samples each, one module per process):
 
 | Kernel | CPU main | CPU branch | CPU speedup | CUDA main | CUDA branch | CUDA speedup |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Scalar only (trivial) | 1.639s | 0.338s | **4.9x** | 0.409s | 0.146s | **2.8x** |
-| Vector math | 1.675s | 0.387s | **4.3x** | 0.442s | 0.193s | **2.3x** |
-| Mat + quat + transform | 1.763s | 0.560s | **3.2x** | 0.484s | 0.290s | **1.7x** |
-| Volume sampling | 1.742s | 0.614s | **2.8x** | 0.773s | 0.623s | **1.2x** |
-| Mesh queries | 1.848s | 0.813s | **2.3x** | 1.026s | 0.910s | **1.1x** |
+| Scalar only (trivial) | 1.661s | 0.344s | **4.8x** | 0.510s | 0.248s | **2.1x** |
+| Vector math | 1.674s | 0.392s | **4.3x** | 0.550s | 0.308s | **1.8x** |
+| Mat + quat + transform | 1.764s | 0.559s | **3.2x** | 0.672s | 0.389s | **1.7x** |
+| Volume sampling | 1.764s | 0.626s | **2.8x** | 0.895s | 0.726s | **1.2x** |
+| Mesh queries | 1.852s | 0.822s | **2.3x** | 1.129s | 1.018s | **1.1x** |
 
-Typical real-world kernels use 2–3 feature categories, landing in the **2x–4x CPU** and **1.5x–2.5x CUDA** speedup range. No regressions on any workload.
+**Core Warp examples** (3 samples each, single-module workloads):
 
-**Warp FEM examples — compile time (3 samples each):**
+| Example | CPU speedup | CUDA speedup | Kernel features |
+| --- | ---: | ---: | --- |
+| optim.particle_repulsion | **3.8x** | **2.1x** | vec3 basic math |
+| core.graph_capture | **3.5x** | **1.8x** | vec2/vec3, noise |
+| core.wave | **3.5x** | **1.7x** | scalars |
+| core.dem | **3.1x** | **1.6x** | vec3 |
+| core.fluid | **2.8x** | **1.4x** | vec3, hash grid |
+| core.sph | **2.5x** | **1.3x** | vec3, hash grid |
+| core.mesh | **2.3x** | **1.2x** | mesh query |
 
-| Example | CPU main | CPU branch | CPU speedup | CUDA main | CUDA branch | CUDA speedup |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| fem.navier_stokes | 68.0s | 21.1s | **3.22x** | 23.6s | 15.2s | **1.55x** |
-| fem.stokes | 56.7s | 16.5s | **3.44x** | 19.1s | 11.6s | **1.65x** |
-| fem.deformed_geometry | 51.1s | 15.0s | **3.41x** | 20.1s | 12.9s | **1.56x** |
-| fem.diffusion_3d | 43.2s | 12.3s | **3.51x** | 15.1s | 9.0s | **1.68x** |
-| fem.convection_diffusion | 31.9s | 8.5s | **3.75x** | 11.0s | 6.4s | **1.72x** |
+CUDA speedup correlates with kernel simplicity — simpler kernels use
+fewer native headers, so guards exclude more source per NVRTC call.
 
-FEM examples see **3.2x–3.8x CPU** and **1.55x–1.72x CUDA** compile speedup.
+**FEM examples** (3 samples each, multi-module workloads):
+
+| Example | CPU speedup | CUDA speedup |
+| --- | ---: | ---: |
+| fem.burgers | **3.9x** | 1.05x |
+| fem.convection_diffusion | **3.7x** | 1.09x |
+| fem.stokes_transfer | **3.6x** | 1.05x |
+| fem.diffusion | **3.6x** | 1.03x |
+| fem.navier_stokes | **3.2x** | 1.02x |
+
+FEM compiles dozens of modules per process. PCH amortizes header parsing
+across modules, making CUDA baselines fast enough that per-module guard
+savings are marginal. CPU (no PCH) still benefits fully.
+
+**Newton examples** — 28 CPU, 50 CUDA examples benchmarked. CPU: **1.5x–2.3x**
+speedup. CUDA: within noise (~1.0x) for the same PCH-amortization reason.
+No regressions on any workload. See `_benchmark_comparison.md` for full tables.
 
 <details>
 <summary>Reproduce benchmarks</summary>
 
-Isolated kernel benchmark (included in this branch):
 ```bash
-uv run bench_compile_time.py --device cpu --samples 5
-uv run bench_compile_time.py --device cuda:0 --samples 5
+# From the benchmark worktree (warp-worktree-2):
+# Baseline (uses ../warp = main):
+python3 _bench_comprehensive.py --label baseline --suite fem --samples 3
+python3 _bench_comprehensive.py --label baseline --suite newton --samples 3
+
+# Branch (uses ../warp-worktree-3):
+python3 _bench_comprehensive.py --label branch --suite fem --samples 3
+python3 _bench_comprehensive.py --label branch --suite newton --samples 3
+
+# Compare:
+python3 _bench_compare.py _benchmark_baseline_all.json _benchmark_branch_all.json -o _benchmark_comparison.md
+
+# Core examples:
+python3 _run_core_benchmarks.py
+
+# Isolated kernels:
+python3 _run_kernel_benchmarks.py
 ```
 
-FEM example compile times — clear the kernel cache, then run any FEM example headless and sum the `took N ms (compiled)` lines:
-```bash
-uv run python -c "import warp as wp; wp.init(); wp.clear_kernel_cache()"
-uv run python -m warp.examples.fem.example_navier_stokes \
-    --num-frames 1 --resolution 10 --tri-mesh --headless --device cuda:0
-```
+See `_benchmark_methodology.md` for pitfalls (PCH reuse, cache isolation,
+CUDA driver cache, session survival for long runs).
 </details>
 
 ## New feature / enhancement

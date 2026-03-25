@@ -1,57 +1,57 @@
 {
   "fem_cpu": {
     "fem.diffusion": {
-      "median": 48.6,
-      "stdev": 0.1,
-      "cv": 0.2,
+      "median": 48.52,
+      "stdev": 0.61,
+      "cv": 1.3,
       "samples": [
-        48.7,
-        48.6,
-        48.5
+        48.52,
+        49.5,
+        48.38
       ],
       "status": "ok"
     },
     "fem.diffusion_3d": {
-      "median": 43.1,
-      "stdev": 0.1,
+      "median": 43.0,
+      "stdev": 0.15,
       "cv": 0.3,
       "samples": [
-        43.3,
-        43.1,
-        43.1
+        43.0,
+        43.21,
+        42.94
       ],
       "status": "ok"
     },
     "fem.deformed_geometry": {
-      "median": 51.3,
+      "median": 51.1,
       "stdev": 0.5,
       "cv": 1.0,
       "samples": [
-        52.1,
-        51.3,
+        50.94,
+        51.87,
         51.1
       ],
       "status": "ok"
     },
     "fem.stokes": {
-      "median": 56.4,
-      "stdev": 0.8,
-      "cv": 1.3,
+      "median": 56.04,
+      "stdev": 0.05,
+      "cv": 0.1,
       "samples": [
-        56.4,
-        56.3,
-        57.6
+        55.96,
+        56.04,
+        56.07
       ],
       "status": "ok"
     },
     "fem.stokes_transfer": {
-      "median": 83.7,
-      "stdev": 0.3,
-      "cv": 0.4,
+      "median": 83.73,
+      "stdev": 0.73,
+      "cv": 0.9,
       "samples": [
-        83.7,
-        83.5,
-        84.2
+        84.87,
+        83.73,
+        83.5
       ],
       "status": "ok"
     },
@@ -62,24 +62,24 @@
       "status": "failed"
     },
     "fem.magnetostatics": {
-      "median": 47.8,
-      "stdev": 0.6,
-      "cv": 1.2,
+      "median": 47.37,
+      "stdev": 0.68,
+      "cv": 1.4,
       "samples": [
-        48.6,
-        47.8,
-        47.5
+        47.34,
+        48.52,
+        47.37
       ],
       "status": "ok"
     },
     "fem.streamlines": {
-      "median": 56.3,
-      "stdev": 0.6,
-      "cv": 1.1,
+      "median": 56.42,
+      "stdev": 0.42,
+      "cv": 0.7,
       "samples": [
-        56.3,
-        56.3,
-        57.4
+        56.42,
+        56.14,
+        56.96
       ],
       "status": "ok"
     },
@@ -90,905 +90,356 @@
       "status": "failed"
     },
     "fem.distortion_energy": {
-      "median": 52.8,
-      "stdev": 0.1,
-      "cv": 0.3,
+      "median": 52.7,
+      "stdev": 0.61,
+      "cv": 1.1,
       "samples": [
-        53.0,
-        52.8,
+        53.66,
+        52.54,
         52.7
       ],
       "status": "ok"
     },
     "fem.nonconforming_contact": {
-      "median": 70.8,
-      "stdev": 0.9,
-      "cv": 1.3,
+      "median": 70.64,
+      "stdev": 0.46,
+      "cv": 0.6,
       "samples": [
-        72.3,
-        70.6,
-        70.8
+        70.64,
+        71.42,
+        70.61
       ],
       "status": "ok"
     },
     "fem.convection_diffusion": {
-      "median": 32.0,
-      "stdev": 0.1,
-      "cv": 0.2,
+      "median": 31.92,
+      "stdev": 0.12,
+      "cv": 0.4,
       "samples": [
-        32.0,
-        31.9,
-        32.1
+        32.05,
+        31.81,
+        31.92
       ],
       "status": "ok"
     },
     "fem.navier_stokes": {
-      "median": 68.3,
-      "stdev": 0.6,
-      "cv": 0.8,
+      "median": 67.81,
+      "stdev": 0.79,
+      "cv": 1.2,
       "samples": [
-        68.0,
-        69.1,
-        68.3
+        67.81,
+        67.8,
+        69.17
       ],
       "status": "ok"
     },
     "fem.burgers": {
-      "median": 28.8,
-      "stdev": 0.1,
+      "median": 28.75,
+      "stdev": 0.12,
       "cv": 0.4,
       "samples": [
-        28.9,
-        28.8,
-        28.7
+        28.57,
+        28.75,
+        28.81
       ],
       "status": "ok"
     },
     "fem.convection_diffusion_dg": {
-      "median": 64.3,
-      "stdev": 0.8,
-      "cv": 1.2,
+      "median": 64.39,
+      "stdev": 0.72,
+      "cv": 1.1,
       "samples": [
-        64.2,
-        65.6,
-        64.3
+        63.84,
+        64.39,
+        65.28
       ],
       "status": "ok"
     },
     "fem.taylor_green": {
-      "median": 82.5,
-      "stdev": 0.8,
-      "cv": 1.0,
+      "median": 82.35,
+      "stdev": 0.24,
+      "cv": 0.3,
       "samples": [
-        82.5,
-        83.9,
-        82.5
+        82.73,
+        82.35,
+        82.3
       ],
       "status": "ok"
     },
     "fem.shallow_water": {
-      "median": 30.7,
-      "stdev": 0.5,
-      "cv": 1.7,
+      "median": 30.42,
+      "stdev": 0.04,
+      "cv": 0.1,
       "samples": [
-        30.7,
-        31.5,
-        30.5
+        30.42,
+        30.49,
+        30.41
       ],
       "status": "ok"
     },
     "fem.kelvin_helmholtz": {
-      "median": 32.5,
-      "stdev": 0.1,
-      "cv": 0.4,
+      "median": 32.42,
+      "stdev": 0.7,
+      "cv": 2.1,
       "samples": [
-        32.6,
-        32.3,
-        32.5
+        33.56,
+        32.27,
+        32.42
       ],
       "status": "ok"
     },
     "fem.elastic_shape_optimization": {
-      "median": 80.6,
-      "stdev": 0.6,
+      "median": 81.21,
+      "stdev": 0.67,
       "cv": 0.8,
       "samples": [
-        80.6,
-        80.5,
-        81.7
+        80.42,
+        81.21,
+        81.75
       ],
       "status": "ok"
     },
     "fem.darcy_ls_optimization": {
-      "median": 81.1,
-      "stdev": 0.7,
-      "cv": 0.9,
+      "median": 80.9,
+      "stdev": 0.07,
+      "cv": 0.1,
       "samples": [
-        81.1,
-        80.8,
-        82.1
-      ],
-      "status": "ok"
-    }
-  },
-  "newton_cpu": {
-    "newton.basic_pendulum": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.basic_urdf": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.basic_joints": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.basic_shapes": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.basic_conveyor": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.basic_heightfield": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cable_twist": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cable_y_junction": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cable_bundle_hysteresis": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cable_pile": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cloth_bending": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cloth_hanging": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.diffsim_ball": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.diffsim_cloth": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.diffsim_drone": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.diffsim_spring_cage": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.diffsim_soft_body": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.ik_franka": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.ik_h1": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.ik_cube_stacking": {
-      "median": -1,
-      "stdev": -1,
-      "samples": [],
-      "status": "failed"
-    },
-    "newton.robot_cartpole": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.robot_anymal_d": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.robot_ur10": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.selection_articulations": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.selection_cartpole": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.selection_materials": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.selection_multiple": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.sensor_contact": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.sensor_imu": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
+        80.85,
+        80.9,
+        80.98
       ],
       "status": "ok"
     }
   },
   "fem_cuda:0": {
     "fem.diffusion": {
-      "median": 16.3,
-      "stdev": 0.7,
-      "cv": 4.3,
+      "median": 8.57,
+      "stdev": 0.03,
+      "cv": 0.4,
       "samples": [
-        17.5,
-        16.3,
-        16.2
+        8.54,
+        8.61,
+        8.57
       ],
       "status": "ok"
     },
     "fem.diffusion_3d": {
-      "median": 15.1,
-      "stdev": 0.2,
-      "cv": 1.2,
+      "median": 8.36,
+      "stdev": 0.6,
+      "cv": 6.9,
       "samples": [
-        15.0,
-        15.3,
-        15.1
+        9.33,
+        8.36,
+        8.23
       ],
       "status": "ok"
     },
     "fem.deformed_geometry": {
-      "median": 20.2,
-      "stdev": 0.5,
-      "cv": 2.7,
+      "median": 12.0,
+      "stdev": 0.1,
+      "cv": 0.9,
       "samples": [
-        20.8,
-        20.2,
-        19.8
+        11.94,
+        12.15,
+        12.0
       ],
       "status": "ok"
     },
     "fem.stokes": {
-      "median": 19.8,
-      "stdev": 1.0,
-      "cv": 5.2,
+      "median": 10.33,
+      "stdev": 0.12,
+      "cv": 1.1,
       "samples": [
-        19.8,
-        18.9,
-        21.0
+        10.33,
+        10.23,
+        10.46
       ],
       "status": "ok"
     },
     "fem.stokes_transfer": {
-      "median": 26.4,
-      "stdev": 0.3,
-      "cv": 1.2,
+      "median": 13.03,
+      "stdev": 0.03,
+      "cv": 0.2,
       "samples": [
-        26.9,
-        26.4,
-        26.3
+        13.0,
+        13.06,
+        13.03
       ],
       "status": "ok"
     },
     "fem.mixed_elasticity": {
-      "median": 30.3,
-      "stdev": 0.6,
-      "cv": 2.0,
+      "median": 18.04,
+      "stdev": 0.08,
+      "cv": 0.4,
       "samples": [
-        31.3,
-        30.1,
-        30.3
+        18.04,
+        18.14,
+        17.98
       ],
       "status": "ok"
     },
     "fem.magnetostatics": {
-      "median": 17.7,
-      "stdev": 0.8,
-      "cv": 4.3,
+      "median": 10.02,
+      "stdev": 0.02,
+      "cv": 0.2,
       "samples": [
-        17.7,
-        17.2,
-        18.7
+        10.04,
+        10.02,
+        10.0
       ],
       "status": "ok"
     },
     "fem.streamlines": {
-      "median": 19.2,
+      "median": 10.66,
       "stdev": 0.1,
-      "cv": 0.4,
+      "cv": 0.9,
       "samples": [
-        19.2,
-        19.2,
-        19.3
+        10.66,
+        10.61,
+        10.79
       ],
       "status": "ok"
     },
     "fem.adaptive_grid": {
-      "median": 32.0,
-      "stdev": 0.3,
-      "cv": 0.9,
+      "median": 21.56,
+      "stdev": 0.85,
+      "cv": 3.9,
       "samples": [
-        32.4,
-        31.8,
-        32.0
+        21.43,
+        22.96,
+        21.56
       ],
       "status": "ok"
     },
     "fem.distortion_energy": {
-      "median": 18.9,
-      "stdev": 0.3,
-      "cv": 1.6,
+      "median": 10.76,
+      "stdev": 0.16,
+      "cv": 1.4,
       "samples": [
-        19.4,
-        18.9,
-        18.8
+        10.67,
+        10.76,
+        10.97
       ],
       "status": "ok"
     },
     "fem.nonconforming_contact": {
-      "median": 26.0,
-      "stdev": 0.5,
-      "cv": 1.7,
+      "median": 14.92,
+      "stdev": 0.03,
+      "cv": 0.2,
       "samples": [
-        26.5,
-        26.0,
-        25.6
+        14.87,
+        14.92,
+        14.92
       ],
       "status": "ok"
     },
     "fem.convection_diffusion": {
-      "median": 11.0,
-      "stdev": 0.4,
-      "cv": 3.5,
+      "median": 5.94,
+      "stdev": 0.04,
+      "cv": 0.7,
       "samples": [
-        11.6,
-        11.0,
-        10.9
+        5.98,
+        5.94,
+        5.9
       ],
       "status": "ok"
     },
     "fem.navier_stokes": {
-      "median": 23.6,
-      "stdev": 0.3,
-      "cv": 1.2,
+      "median": 13.65,
+      "stdev": 0.04,
+      "cv": 0.3,
       "samples": [
-        23.9,
-        23.6,
-        23.3
+        13.65,
+        13.62,
+        13.7
       ],
       "status": "ok"
     },
     "fem.burgers": {
-      "median": 8.6,
-      "stdev": 0.1,
-      "cv": 1.1,
+      "median": 4.2,
+      "stdev": 0.01,
+      "cv": 0.3,
       "samples": [
-        8.7,
-        8.5,
-        8.6
+        4.21,
+        4.19,
+        4.2
       ],
       "status": "ok"
     },
     "fem.convection_diffusion_dg": {
-      "median": 24.9,
-      "stdev": 0.1,
-      "cv": 0.4,
+      "median": 15.58,
+      "stdev": 0.05,
+      "cv": 0.3,
       "samples": [
-        24.9,
-        25.0,
-        24.8
+        15.58,
+        15.5,
+        15.59
       ],
       "status": "ok"
     },
     "fem.taylor_green": {
-      "median": 27.4,
-      "stdev": 0.4,
-      "cv": 1.4,
+      "median": 15.48,
+      "stdev": 0.63,
+      "cv": 4.0,
       "samples": [
-        27.8,
-        27.0,
-        27.4
+        15.48,
+        16.55,
+        15.44
       ],
       "status": "ok"
     },
     "fem.shallow_water": {
-      "median": 9.0,
-      "stdev": 0.4,
-      "cv": 4.4,
+      "median": 4.27,
+      "stdev": 0.03,
+      "cv": 0.6,
       "samples": [
-        9.0,
-        8.7,
-        9.5
+        4.27,
+        4.24,
+        4.29
       ],
       "status": "ok"
     },
     "fem.kelvin_helmholtz": {
-      "median": 9.7,
-      "stdev": 0.0,
-      "cv": 0.5,
+      "median": 4.87,
+      "stdev": 0.04,
+      "cv": 0.8,
       "samples": [
-        9.8,
-        9.7,
-        9.7
+        4.93,
+        4.86,
+        4.87
       ],
       "status": "ok"
     },
     "fem.apic_fluid": {
-      "median": 21.3,
-      "stdev": 0.6,
-      "cv": 2.9,
+      "median": 12.45,
+      "stdev": 0.09,
+      "cv": 0.7,
       "samples": [
-        22.4,
-        21.3,
-        21.3
+        12.5,
+        12.33,
+        12.45
       ],
       "status": "ok"
     },
     "fem.elastic_shape_optimization": {
-      "median": 32.1,
-      "stdev": 1.2,
-      "cv": 3.7,
+      "median": 19.88,
+      "stdev": 0.18,
+      "cv": 0.9,
       "samples": [
-        32.1,
-        31.5,
-        33.8
+        19.94,
+        19.88,
+        19.6
       ],
       "status": "ok"
     },
     "fem.darcy_ls_optimization": {
-      "median": 26.5,
-      "stdev": 0.4,
-      "cv": 1.4,
+      "median": 15.95,
+      "stdev": 0.09,
+      "cv": 0.6,
       "samples": [
-        27.1,
-        26.5,
-        26.4
-      ],
-      "status": "ok"
-    }
-  },
-  "newton_cuda:0": {
-    "newton.basic_pendulum": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.basic_urdf": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.basic_joints": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.basic_shapes": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.basic_conveyor": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.basic_heightfield": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cable_twist": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cable_y_junction": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cable_bundle_hysteresis": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cable_pile": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cloth_bending": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cloth_hanging": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cloth_style3d": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cloth_twist": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cloth_rollers": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cloth_poker_cards": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cloth_franka": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.cloth_h1": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.brick_stacking": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.nut_bolt_sdf": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
-      ],
-      "status": "ok"
-    },
-    "newton.nut_bolt_hydro": {
-      "median": 0.0,
-      "stdev": 0.0,
-      "cv": 0.0,
-      "samples": [
-        0.0,
-        0.0,
-        0.0
+        15.8,
+        15.95,
+        15.95
       ],
       "status": "ok"
     }
