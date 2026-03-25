@@ -1,0 +1,418 @@
+{
+  "baseline_core_cpu": {
+    "core.fluid": {
+      "median": 2.01,
+      "stdev": 0.02,
+      "cv": 0.8,
+      "samples": [
+        2.01,
+        1.99,
+        2.02
+      ],
+      "status": "ok"
+    },
+    "core.sph": {
+      "median": 2.13,
+      "stdev": 0.01,
+      "cv": 0.3,
+      "samples": [
+        2.13,
+        2.12,
+        2.13
+      ],
+      "status": "ok"
+    },
+    "core.wave": {
+      "median": 1.87,
+      "stdev": 0.01,
+      "cv": 0.6,
+      "samples": [
+        1.87,
+        1.89,
+        1.87
+      ],
+      "status": "ok"
+    },
+    "core.dem": {
+      "median": 1.88,
+      "stdev": 0.05,
+      "cv": 2.7,
+      "samples": [
+        1.96,
+        1.87,
+        1.88
+      ],
+      "status": "ok"
+    },
+    "core.mesh": {
+      "median": 1.96,
+      "stdev": 0.03,
+      "cv": 1.6,
+      "samples": [
+        1.91,
+        1.96,
+        1.96
+      ],
+      "status": "ok"
+    },
+    "core.raycast": {
+      "median": 1.81,
+      "stdev": 0.11,
+      "cv": 6.0,
+      "samples": [
+        1.81,
+        2.0,
+        1.81
+      ],
+      "status": "ok"
+    },
+    "core.nvdb": {
+      "median": 1.9,
+      "stdev": 0.02,
+      "cv": 0.9,
+      "samples": [
+        1.9,
+        1.87,
+        1.91
+      ],
+      "status": "ok"
+    },
+    "optim.diffray": {
+      "median": -1,
+      "stdev": -1,
+      "samples": [],
+      "status": "failed"
+    },
+    "optim.particle_repulsion": {
+      "median": 1.73,
+      "stdev": 0.01,
+      "cv": 0.5,
+      "samples": [
+        1.73,
+        1.73,
+        1.75
+      ],
+      "status": "ok"
+    }
+  },
+  "baseline_core_cuda:0": {
+    "core.fluid": {
+      "median": 0.87,
+      "stdev": 0.01,
+      "cv": 0.9,
+      "samples": [
+        0.86,
+        0.88,
+        0.87
+      ],
+      "status": "ok"
+    },
+    "core.sph": {
+      "median": 1.05,
+      "stdev": 0.04,
+      "cv": 3.6,
+      "samples": [
+        1.12,
+        1.04,
+        1.05
+      ],
+      "status": "ok"
+    },
+    "core.wave": {
+      "median": 0.61,
+      "stdev": 0.01,
+      "cv": 1.1,
+      "samples": [
+        0.62,
+        0.61,
+        0.61
+      ],
+      "status": "ok"
+    },
+    "core.dem": {
+      "median": 0.73,
+      "stdev": 0.04,
+      "cv": 5.1,
+      "samples": [
+        0.78,
+        0.73,
+        0.71
+      ],
+      "status": "ok"
+    },
+    "core.mesh": {
+      "median": 0.92,
+      "stdev": 0.03,
+      "cv": 3.5,
+      "samples": [
+        0.92,
+        0.96,
+        0.9
+      ],
+      "status": "ok"
+    },
+    "core.raycast": {
+      "median": 0.71,
+      "stdev": 0.0,
+      "cv": 0.6,
+      "samples": [
+        0.71,
+        0.71,
+        0.72
+      ],
+      "status": "ok"
+    },
+    "core.marching_cubes": {
+      "median": 0.86,
+      "stdev": 0.01,
+      "cv": 0.7,
+      "samples": [
+        0.86,
+        0.87,
+        0.86
+      ],
+      "status": "ok"
+    },
+    "core.nvdb": {
+      "median": 0.7,
+      "stdev": 0.03,
+      "cv": 4.5,
+      "samples": [
+        0.69,
+        0.7,
+        0.75
+      ],
+      "status": "ok"
+    },
+    "optim.diffray": {
+      "median": 1.85,
+      "stdev": 0.01,
+      "cv": 0.5,
+      "samples": [
+        1.85,
+        1.86,
+        1.85
+      ],
+      "status": "ok"
+    },
+    "optim.particle_repulsion": {
+      "median": 0.48,
+      "stdev": 0.0,
+      "cv": 0.6,
+      "samples": [
+        0.49,
+        0.48,
+        0.48
+      ],
+      "status": "ok"
+    }
+  },
+  "branch_core_cpu": {
+    "core.fluid": {
+      "median": 0.72,
+      "stdev": 0.0,
+      "cv": 0.2,
+      "samples": [
+        0.72,
+        0.72,
+        0.72
+      ],
+      "status": "ok"
+    },
+    "core.sph": {
+      "median": 0.84,
+      "stdev": 0.01,
+      "cv": 0.8,
+      "samples": [
+        0.84,
+        0.85,
+        0.84
+      ],
+      "status": "ok"
+    },
+    "core.wave": {
+      "median": 0.53,
+      "stdev": 0.01,
+      "cv": 1.1,
+      "samples": [
+        0.53,
+        0.53,
+        0.52
+      ],
+      "status": "ok"
+    },
+    "core.dem": {
+      "median": 0.61,
+      "stdev": 0.04,
+      "cv": 7.0,
+      "samples": [
+        0.6,
+        0.68,
+        0.61
+      ],
+      "status": "ok"
+    },
+    "core.mesh": {
+      "median": 0.86,
+      "stdev": 0.03,
+      "cv": 3.9,
+      "samples": [
+        0.92,
+        0.86,
+        0.86
+      ],
+      "status": "ok"
+    },
+    "core.raycast": {
+      "median": 0.77,
+      "stdev": 0.0,
+      "cv": 0.4,
+      "samples": [
+        0.77,
+        0.77,
+        0.77
+      ],
+      "status": "ok"
+    },
+    "core.nvdb": {
+      "median": 0.71,
+      "stdev": 0.02,
+      "cv": 2.9,
+      "samples": [
+        0.75,
+        0.71,
+        0.71
+      ],
+      "status": "ok"
+    },
+    "optim.diffray": {
+      "median": -1,
+      "stdev": -1,
+      "samples": [],
+      "status": "failed"
+    },
+    "optim.particle_repulsion": {
+      "median": 0.45,
+      "stdev": 0.01,
+      "cv": 1.4,
+      "samples": [
+        0.44,
+        0.45,
+        0.45
+      ],
+      "status": "ok"
+    }
+  },
+  "branch_core_cuda:0": {
+    "core.fluid": {
+      "median": 0.63,
+      "stdev": 0.0,
+      "cv": 0.7,
+      "samples": [
+        0.63,
+        0.63,
+        0.62
+      ],
+      "status": "ok"
+    },
+    "core.sph": {
+      "median": 0.81,
+      "stdev": 0.01,
+      "cv": 1.2,
+      "samples": [
+        0.81,
+        0.83,
+        0.81
+      ],
+      "status": "ok"
+    },
+    "core.wave": {
+      "median": 0.37,
+      "stdev": 0.02,
+      "cv": 4.9,
+      "samples": [
+        0.35,
+        0.39,
+        0.37
+      ],
+      "status": "ok"
+    },
+    "core.dem": {
+      "median": 0.47,
+      "stdev": 0.02,
+      "cv": 4.8,
+      "samples": [
+        0.5,
+        0.47,
+        0.46
+      ],
+      "status": "ok"
+    },
+    "core.mesh": {
+      "median": 0.8,
+      "stdev": 0.01,
+      "cv": 1.3,
+      "samples": [
+        0.78,
+        0.8,
+        0.8
+      ],
+      "status": "ok"
+    },
+    "core.raycast": {
+      "median": 0.59,
+      "stdev": 0.0,
+      "cv": 0.4,
+      "samples": [
+        0.6,
+        0.59,
+        0.59
+      ],
+      "status": "ok"
+    },
+    "core.marching_cubes": {
+      "median": 0.66,
+      "stdev": 0.0,
+      "cv": 0.7,
+      "samples": [
+        0.66,
+        0.67,
+        0.66
+      ],
+      "status": "ok"
+    },
+    "core.nvdb": {
+      "median": 0.58,
+      "stdev": 0.04,
+      "cv": 6.7,
+      "samples": [
+        0.58,
+        0.52,
+        0.59
+      ],
+      "status": "ok"
+    },
+    "optim.diffray": {
+      "median": 1.78,
+      "stdev": 0.01,
+      "cv": 0.8,
+      "samples": [
+        1.8,
+        1.78,
+        1.78
+      ],
+      "status": "ok"
+    },
+    "optim.particle_repulsion": {
+      "median": 0.23,
+      "stdev": 0.01,
+      "cv": 4.6,
+      "samples": [
+        0.23,
+        0.25,
+        0.23
+      ],
+      "status": "ok"
+    }
+  }
+}
