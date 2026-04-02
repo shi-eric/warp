@@ -147,8 +147,8 @@ This means the implementation must handle both extremes: Jetson Thor where cross
 
 | ID  | Requirement | Priority | Notes |
 | --- | --- | --- | --- |
-| R1 | `wp.launch()` must allow cross-device array arguments when the launch device can access the array's device | Must | Core behavior change |
-| R2 | No behavior change on discrete-GPU systems where GPU cannot access CPU memory | Must | Backwards compatibility |
+| R1 | `wp.launch()` must remove the per-argument device check so cross-device array arguments are always passed through to the hardware | Must | Core behavior change, zero launch overhead |
+| R2 | Provide an opt-in verification mode (`warp.config.verify_launch`) that restores device-access checking with clear diagnostics | Must | Debuggability for users who hit CUDA illegal memory access errors |
 | R3 | Provide `wp.prefetch()` API for explicit data migration hints | Should | Performance optimization for ATS/HMM |
 | R4 | Optional automatic prefetch in `wp.launch()` for cross-device arrays on coherent systems | Could | Convenience, but needs careful defaults |
 | R5 | `wp.copy()` should skip staging buffers when direct access is available between devices | Could | Performance optimization, marked as TODO in current code |
@@ -157,6 +157,7 @@ This means the implementation must handle both extremes: Jetson Thor where cross
 - Changing the default allocator strategy (e.g., using `cudaMallocManaged` by default on Tegra). Allocator selection is a separate concern.
 - Supporting cross-device access for CUDA graph capture. Graph capture has additional constraints and should be addressed separately.
 - Automatically determining the optimal physical placement for every array. This is a performance tuning concern best left to the user via hints.
+- Proactively detecting and warning about cross-device launches at `wp.launch()` time. The hardware enforces access rules; the verification mode is available for diagnosis when needed.
 
 ## Design
 
@@ -204,7 +205,7 @@ Each phase introduces only the device attributes, native functions, and Python A
 
 | Phase | What it delivers | Attributes introduced | Native functions introduced |
 |---|---|---|---|
-| 1 | Cross-device `wp.launch()` on capable hardware, with atomic safety warning | `pageable_memory_access`, `direct_managed_mem_access_from_host`, `host_native_atomic_supported` | Three `wp_cuda_device_get_*` accessors |
+| 1 | Remove device check from `wp.launch()`, add verification mode, redesign `can_access()` | `pageable_memory_access`, `direct_managed_mem_access_from_host`, `host_native_atomic_supported` | Three `wp_cuda_device_get_*` accessors |
 | 2 | `wp.prefetch()` for explicit data placement | `pageable_memory_access_uses_host_page_tables` (to distinguish HMM from ATS for warning/no-op behavior) | `wp_cuda_mem_prefetch_async` |
 | 3 | Auto-prefetch in `wp.launch()` | `is_integrated` (to avoid pointless prefetches on shared-DRAM SoCs) | None |
 | 4 | `wp.copy()` staging-buffer optimization | None (reuses `can_access()` from Phase 1) | None |
@@ -212,9 +213,9 @@ Each phase introduces only the device attributes, native functions, and Python A
 
 ### Phase 1: Cross-Device Launch Support
 
-**Goal:** Allow `wp.launch()` to accept arrays from a different device when the hardware supports direct access. This is the minimum viable change for DGX Spark / Grace Hopper users.
+**Goal:** Remove the per-argument device check from `wp.launch()` so that cross-device array arguments are passed straight through to the hardware. On systems with hardware coherency (ATS, HMM), this means cross-device launches work with zero overhead and zero friction. On discrete GPUs where the access is illegal, the CUDA runtime produces an error. A verification mode (`warp.config.verify_launch`) is available to diagnose such errors with clear, argument-level diagnostics before the kernel runs.
 
-This phase delivers four things: (a) query three new device attributes, (b) redesign `Device.can_access()`, (c) relax the `pack_arg()` check, (d) warn about cross-device atomics on systems without hardware coherency.
+This phase delivers four things: (a) query three new device attributes, (b) redesign `Device.can_access()`, (c) remove the `pack_arg()` device check (with opt-in verification), (d) add a config flag and verification logic.
 
 #### 1a. Query Device Attributes
 
@@ -224,9 +225,9 @@ Three CUDA device attributes are needed:
 
 - **`CU_DEVICE_ATTRIBUTE_DIRECT_MANAGED_MEM_ACCESS_FROM_HOST`** -- answers "can the CPU read/write GPU device memory?" This is the attribute that determines whether a Warp `wp.array(device="cuda:0")` (backed by `cuMemAlloc` via `CudaDefaultAllocator`) can be passed to a CPU kernel. Without it, we cannot distinguish ATS systems (bidirectional access) from HMM systems (GPU-to-CPU only).
 
-- **`CU_DEVICE_ATTRIBUTE_HOST_NATIVE_ATOMIC_SUPPORTED`** -- answers "do CPU-GPU atomics work natively across the interconnect?" On ATS systems (Grace Hopper, Grace Blackwell), a GPU `atomicAdd` targeting a CPU-resident address produces correct results via hardware coherency. On HMM systems, the same operation can silently produce wrong results -- the GPU atomic hits a page backed by CPU physical memory without hardware coherency for atomic operations. Since Phase 1 allows cross-device launches on HMM systems, we need this attribute from day one to warn users about the silent-corruption risk when atomics are involved.
+- **`CU_DEVICE_ATTRIBUTE_HOST_NATIVE_ATOMIC_SUPPORTED`** -- answers "do CPU-GPU atomics work natively across the interconnect?" On ATS systems (Grace Hopper, Grace Blackwell), a GPU `atomicAdd` targeting a CPU-resident address produces correct results via hardware coherency. On HMM systems, the same operation can silently produce wrong results -- the GPU atomic hits a page backed by CPU physical memory without hardware coherency for atomic operations. Exposing this as a device property lets users and downstream tools (e.g., documentation, `wp.prefetch()` heuristics) reason about atomic safety.
 
-The first two attributes are the minimum needed because `can_access()` has exactly two cross-device branches that need gating: GPU-accessing-CPU and CPU-accessing-GPU. Each branch needs exactly one attribute. The third is needed because allowing cross-device launches without an atomic safety guard opens users to silent data corruption on HMM systems.
+The first two attributes are the minimum needed because `can_access()` has exactly two cross-device branches that need gating: GPU-accessing-CPU and CPU-accessing-GPU. Each branch needs exactly one attribute. The third is exposed as a queryable device property for users who need to know whether cross-device atomics are safe on their system.
 
 **Native layer changes (`warp/native/warp.cu`, `warp/native/warp.h`)**
 
@@ -423,15 +424,15 @@ def can_access(self, other):
 - The `is_peer_access_enabled()` call in the GPU-to-GPU branch is the module-level function at `warp/_src/context.py:6002`. It lives in the same module as `Device`, so no additional import is needed.
 - `Device.__eq__` (at `context.py:3771`) compares by CUDA context pointer when both operands are `Device` instances, so `self == other` is equivalent to `self.context == other.context` for two `Device` objects. The `self == other` check at the top and the `self.context == other.context` fallback in the GPU-to-GPU branch are not redundant — the top check catches same-alias devices efficiently; the GPU-to-GPU fallback catches the edge case of two different `Device` objects sharing a CUDA context (context sharing).
 - The TODO in the existing code mentions that access depends on the _resource_ (allocation type), not just the device pair. A fully precise check would need to know whether a specific allocation is pinned, managed, or default. This design intentionally makes a conservative device-level check: it returns `True` only when _all standard allocations_ on the other device are accessible. This avoids needing to thread allocation metadata through every call site. Phase 5 (allocator awareness) addresses the resource-level refinement.
-- `can_access()` may be called per-array-argument per-launch. The HMM/ATS branches are cheap property lookups. The GPU-to-GPU peer branch calls `is_peer_access_enabled()` which goes through ctypes into the native layer. For hot launch paths with many GPU-to-GPU peer arguments, this could add measurable overhead. If profiling shows this is a problem, the result could be cached per `(self, other)` device pair and invalidated when `set_peer_access_enabled()` is called. This is not needed initially.
+- `can_access()` is NOT called in the default launch path. It is only invoked when `warp.config.verify_launch` is `True` (diagnostic mode) or by other APIs (`wp.copy()`, `wp.prefetch()`, user code). In the verification path, the HMM/ATS branches are cheap property lookups. The GPU-to-GPU peer branch calls `is_peer_access_enabled()` which goes through ctypes into the native layer. If profiling shows this matters in verification mode, the result could be cached per `(self, other)` device pair and invalidated when `set_peer_access_enabled()` is called.
 
-#### 1c. Relax the Launch Device Check
+#### 1c. Remove the Launch Device Check
 
 Change `pack_arg()` at `context.py:6808`.
 
-**Scope:** This change only relaxes the device check for `array` arguments. Other device-bound types (textures, volumes, hash grids) have their own device checks later in `pack_arg()` (e.g., `texture1d_t` at `context.py:6886`) and remain strict (`value.device != device`). Relaxing those is out of scope for Phase 1 — textures and volumes have GPU-side handles (CUDA texture objects, device pointers to internal structures) that may not be accessible cross-device even on ATS systems.
+**Scope:** This change only removes the device check for `array` arguments. Other device-bound types (textures, volumes, hash grids) have their own device checks later in `pack_arg()` (e.g., `texture1d_t` at `context.py:6886`) and remain strict (`value.device != device`). Relaxing those is out of scope for Phase 1: textures and volumes have GPU-side handles (CUDA texture objects, device pointers to internal structures) that may not be accessible cross-device even on ATS systems.
 
-The `pack_arg()` function is called for both forward and adjoint arguments (see `pack_args()` at `context.py:7307`, which processes forward args and then adjoint args with `adjoint=True`). The relaxed check applies to both paths, so cross-device arrays work correctly in backward passes on capable hardware.
+The `pack_arg()` function is called for both forward and adjoint arguments (see `pack_args()` at `context.py:7307`, which processes forward args and then adjoint args with `adjoint=True`). The removed check applies to both paths, so cross-device arrays work in backward passes on capable hardware.
 
 Replace:
 
@@ -448,65 +449,71 @@ if value.device != device:
 With:
 
 ```python
-# check device accessibility
-if value.device != device and not device.can_access(value.device):
-    raise RuntimeError(
-        f"Error launching kernel '{kernel.key}', trying to launch on "
-        f"device='{device}', but input array for argument '{arg_name}' "
-        f"is on device={value.device} which is not accessible from "
-        f"'{device}'."
-    )
+# Verify device accessibility (opt-in diagnostic mode).
+# By default, no check is performed and the pointer is passed
+# straight through to the hardware.  On systems with hardware
+# coherency (ATS, HMM) this is correct; on discrete GPUs without
+# HMM the kernel will fault with CUDA_ERROR_ILLEGAL_ADDRESS if the
+# access is invalid.  Enable warp.config.verify_launch to get a
+# clear Python error *before* the kernel runs.
+if warp.config.verify_launch and value.device != device:
+    if not device.can_access(value.device):
+        raise RuntimeError(
+            f"Error launching kernel '{kernel.key}', trying to "
+            f"launch on device='{device}', but input array for "
+            f"argument '{arg_name}' is on device={value.device} "
+            f"which is not accessible from '{device}'. Disable "
+            f"warp.config.verify_launch to skip this check."
+        )
 ```
 
-#### 1d. Atomic Safety Warning for Cross-Device Launches
+**Design rationale:** The previous design called `can_access()` on every array argument of every launch. Even though `can_access()` is cheap (property lookups), it adds up in hot launch paths with many array arguments. Removing the check entirely by default means `pack_arg()` does strictly less work than it does today (the old `value.device != device` comparison is gone). The verification mode gates the check behind a single boolean test, which the branch predictor will eliminate after the first few calls.
 
-When `pack_arg()` allows a cross-device launch (the new `can_access()` check passes) but the launch device does not support native cross-device atomics, emit a one-time warning. This guards against silent data corruption on HMM systems where GPU atomics targeting CPU-resident pages can produce wrong results.
+#### 1d. Verification Mode Config Flag
 
-The warning is conservative: it fires for any cross-device array argument, regardless of whether the kernel actually uses atomics on that argument. This avoids the need for codegen metadata about per-argument atomic usage. Users whose kernels do not use atomics can safely ignore the warning. A future refinement could suppress the warning for kernels that provably do not use atomics, if Warp's codegen tracks this information.
-
-Add a module-level set to track which device pairs have already warned (so each pair warns at most once per session):
+Add to `warp/config.py`:
 
 ```python
-_cross_device_atomic_warnings_issued = set()
+verify_launch = False
+"""When True, wp.launch() checks that every array argument is accessible
+from the launch device before running the kernel.  When False (the
+default), array pointers are passed through to the hardware without
+validation.  Enable this to diagnose CUDA_ERROR_ILLEGAL_ADDRESS errors
+with clear, per-argument diagnostics."""
 ```
 
-In `pack_arg()`, after the device accessibility check passes and the argument is cross-device:
+**When to use:** If a user on a discrete GPU (without HMM) accidentally passes a CPU array to a CUDA kernel, the kernel will fault with `CUDA_ERROR_ILLEGAL_ADDRESS`. This error is asynchronous and can corrupt the CUDA context, requiring a process restart. The recommended workflow is:
 
-```python
-if value.device != device:
-    # Warn once per (launch_device, array_device) pair about atomic safety.
-    if device.is_cuda and not device.host_native_atomic_supported:
-        pair = (device.alias, value.device.alias)
-        if pair not in _cross_device_atomic_warnings_issued:
-            _cross_device_atomic_warnings_issued.add(pair)
-            warp._src.utils.warn(
-                f"Launching kernel '{kernel.key}' on device '{device}' "
-                f"with array argument '{arg_name}' on device "
-                f"'{value.device}'. Native cross-device atomics are not "
-                f"supported on this system. If this kernel uses atomic "
-                f"operations (e.g., wp.atomic_add) on cross-device "
-                f"arrays, results may be incorrect."
-            )
-```
-
-On ATS systems (Grace Hopper, DGX Spark), `host_native_atomic_supported` is `True` and the warning is never emitted. On HMM systems, the warning fires once per device pair. On discrete GPUs without HMM, cross-device launches are still blocked by `can_access()`, so this code path is never reached.
-
-The `device.is_cuda` guard is sufficient because the only other cross-device direction is CPU-accessing-GPU (ATS only), where `host_native_atomic_supported` is always `True` (ATS implies native atomics). There is no scenario where a CPU kernel accesses GPU memory without ATS — `can_access()` blocks it — so the CPU-as-launch-device case never reaches this warning with `host_native_atomic_supported == False`.
+1. Observe the CUDA error.
+2. Set `warp.config.verify_launch = True`.
+3. Re-run. The clear Python `RuntimeError` identifies which kernel and which argument caused the mismatch, before the kernel ever launches.
+4. Fix the code, disable verification.
 
 #### Behavior matrix after Phase 1
+
+Default mode (`verify_launch = False`): no Python-level checking. The hardware decides.
 
 | Launch device | Array device | Discrete GPU (no HMM) | HMM system | ATS system (DGX Spark) |
 |---|---|---|---|---|
 | `cuda:0` | `cuda:0` | OK (same device) | OK | OK |
-| `cuda:0` | `cpu` | **Error** (no access) | **OK** (HMM) | **OK** (ATS) |
-| `cpu` | `cuda:0` | **Error** (no access) | **Error** (no access) | **OK** (ATS, bidirectional) |
-| `cuda:0` | `cuda:1` | Error / OK (peer) | Error / OK (peer) | Error / OK (peer) |
+| `cuda:0` | `cpu` | **CUDA fault** | **OK** (HMM) | **OK** (ATS) |
+| `cpu` | `cuda:0` | **Segfault** | **Segfault** | **OK** (ATS, bidirectional) |
+| `cuda:0` | `cuda:1` | CUDA fault / OK (peer) | CUDA fault / OK (peer) | CUDA fault / OK (peer) |
 
-On a standard discrete-GPU workstation without HMM, behavior is identical to today -- the same errors are raised for the same code. The change only permits new behavior on hardware that supports it.
+Verification mode (`verify_launch = True`): `can_access()` is checked per argument.
+
+| Launch device | Array device | Discrete GPU (no HMM) | HMM system | ATS system (DGX Spark) |
+|---|---|---|---|---|
+| `cuda:0` | `cuda:0` | OK (same device) | OK | OK |
+| `cuda:0` | `cpu` | **RuntimeError** | **OK** (HMM) | **OK** (ATS) |
+| `cpu` | `cuda:0` | **RuntimeError** | **RuntimeError** | **OK** (ATS, bidirectional) |
+| `cuda:0` | `cuda:1` | RuntimeError / OK (peer) | RuntimeError / OK (peer) | RuntimeError / OK (peer) |
+
+On a standard discrete-GPU workstation without HMM, users who pass a CPU array to a CUDA kernel will get a CUDA fault instead of the current Python `RuntimeError`. This is a deliberate tradeoff: zero overhead in the launch path for all users, at the cost of a less friendly error for an incorrect program. The verification mode restores the friendly error for diagnosis.
 
 #### Stream selection for cross-device launches
 
-When an array on device A is passed to a kernel on device B, Warp must ensure proper synchronization. The current `wp.launch()` already selects a stream based on the launch device (at `context.py:7282`). The kernel launch happens on that stream, and since the memory is directly accessible (as confirmed by `can_access()`), no additional synchronization is needed for the memory access itself -- the hardware coherency or HMM page fault mechanism handles visibility.
+When an array on device A is passed to a kernel on device B, Warp must ensure proper synchronization. The current `wp.launch()` already selects a stream based on the launch device (at `context.py:7282`). The kernel launch happens on that stream, and since the pointer is passed through without checking, the hardware coherency or HMM page fault mechanism handles visibility on capable systems.
 
 However, if the array was _produced_ by a kernel on a different stream, the caller is responsible for synchronizing (e.g., via `wp.synchronize()` or stream events). This is the same requirement as for same-device multi-stream usage and does not need special handling here.
 
@@ -834,15 +841,14 @@ Add a test module `warp/tests/test_unified_memory.py` (registered in `warp/tests
 
 **Cross-device launch tests (hardware-dependent, skip on incapable systems):**
 - On systems where `cuda_device.can_access_host_memory` is `True`: allocate a CPU array, launch a CUDA kernel that reads and writes it, verify results match expected values.
-- On systems where `cuda_device.can_access_host_memory` is `False`: verify that launching with a CPU array still raises `RuntimeError`.
 - On ATS systems (`is_host_accessible` is `True`): allocate a GPU array, verify CPU can access it after launch.
 - Test with output arrays (not just inputs).
 - Test with multi-dimensional arrays with non-trivial strides.
 
-**Atomic safety warning tests (run on all hardware):**
-- On HMM systems (`can_access_host_memory` is `True` but `host_native_atomic_supported` is `False`): verify that a cross-device launch emits the atomic safety warning.
-- On ATS systems (`host_native_atomic_supported` is `True`): verify that a cross-device launch does NOT emit the warning.
-- Verify the warning fires only once per (launch_device, array_device) pair per session.
+**Verification mode tests (run on all hardware):**
+- With `warp.config.verify_launch = True` on a discrete GPU without HMM: verify that launching with a CPU array raises `RuntimeError` (not a CUDA fault).
+- With `warp.config.verify_launch = True` on an ATS/HMM system: verify that cross-device launches still succeed (no false positive).
+- With `warp.config.verify_launch = False` (default): verify that no Python-level device check occurs (cross-device arrays are passed through without error from `pack_arg()`).
 
 ### Phase 2 tests (prefetch)
 
@@ -868,6 +874,7 @@ Add a test module `warp/tests/test_unified_memory.py` (registered in `warp/tests
 |---|---|---|---|---|
 | GPU can access CPU arrays | No | Yes | Yes | No (limited) |
 | CPU can access GPU arrays | No | No | Yes | No |
-| Cross-device launch GPU->CPU array | Error | OK | OK | Error |
-| Cross-device launch CPU->GPU array | Error | Error | OK | Error |
+| Cross-device launch GPU->CPU array (default) | CUDA fault | OK | OK | CUDA fault |
+| Cross-device launch CPU->GPU array (default) | Segfault | Segfault | OK | Segfault |
+| Cross-device launch (verify mode) | RuntimeError | OK / RuntimeError | OK | RuntimeError |
 | `wp.prefetch()` effective | No-op | Yes (SW) | Yes (HW) | No-op |
