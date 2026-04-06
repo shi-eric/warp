@@ -1,0 +1,13 @@
+# metric_direction: lower_is_better
+iteration	commit	metric	delta	guard	status	description
+0	28de2483	12.5556	0.0	pass	baseline	initial state — FEM cold-compile median 12.5556s
+1	-	12.5941	+0.0385	-	discard	split vec.h into type defs and operations (no improvement — FEM modules still need all vec ops)
+2	ccdc0229	12.1040	-0.4516	pass	keep	add WP_NO_BACKWARD guard to skip int adj ops, DECLARE_ADJOINTS, adj_dot, and intersect_adj.h
+3	047c6365	11.9531	-0.1509	pass	keep	extend WP_NO_BACKWARD guards to mat_ops.h and array.h
+4	fbc2a5c8	11.8164	-0.1367	pass	keep	skip empty backward function stubs in codegen (-617 lines per module)
+5	8a2747e3	11.6233	-0.1931	pass	keep	guard struct adj code with WP_NO_BACKWARD in codegen template
+6	16ef576b	10.6545	-0.9688	pass	keep	guard adj_erf/erfc/erfinv/erfcinv with WP_NO_BACKWARD (note: system load change inflates delta)
+7	70945558	10.7787	+0.1242	pass	keep	add WP_NO_TILE_SCAN and WP_NO_TILE_SORT sub-guards (marginal — only 3 tile-using modules)
+8	57c0eeca	10.6971	-0.0816	pass	keep	add WP_NO_BACKWARD guards to quat.h and spatial.h (infra — no FEM impact)
+9	eab971b3	10.6524	-0.0447	pass	keep	split DECLARE_INTERP_FUNCS and guard adj part with WP_NO_BACKWARD
+10	a3eb048f	10.6241	-0.0283	pass	keep	guard matnn.h adjoint functions with WP_NO_BACKWARD
