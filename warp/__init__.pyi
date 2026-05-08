@@ -89,6 +89,7 @@ from warp._src.context import init as init
 from warp._src.context import is_cpu_available as is_cpu_available
 from warp._src.context import is_cubql_available as is_cubql_available
 from warp._src.context import is_cuda_available as is_cuda_available
+from warp._src.context import is_nvshmem_enabled as is_nvshmem_enabled
 from warp._src.build import clear_kernel_cache as clear_kernel_cache
 from warp._src.build import clear_lto_cache as clear_lto_cache
 from warp._src.context import print_diagnostics as print_diagnostics
@@ -299,6 +300,17 @@ element methods, and :mod:`warp.sparse` for sparse linear algebra.
 # Skipped: from warp._src.types import tile_stack as tile_stack (kernel builtin stubs preferred)
 
 # Skipped: from warp._src.context import zeros as zeros (merged stubs generated below)
+
+from warp._src.builtins import (
+    NVSHMEM_CMP_EQ as NVSHMEM_CMP_EQ,
+    NVSHMEM_CMP_GE as NVSHMEM_CMP_GE,
+    NVSHMEM_CMP_GT as NVSHMEM_CMP_GT,
+    NVSHMEM_CMP_LE as NVSHMEM_CMP_LE,
+    NVSHMEM_CMP_LT as NVSHMEM_CMP_LT,
+    NVSHMEM_CMP_NE as NVSHMEM_CMP_NE,
+    NVSHMEM_SIGNAL_ADD as NVSHMEM_SIGNAL_ADD,
+    NVSHMEM_SIGNAL_SET as NVSHMEM_SIGNAL_SET,
+)
 
 __version__ = config.version
 
@@ -1738,6 +1750,7 @@ def zeros(
     requires_grad: _builtins.bool = False,
     pinned: _builtins.bool = False,
     retain_grad: _builtins.bool = False,
+    symmetric: _builtins.bool = False,
     **kwargs,
 ) -> array:
     """Return a zero-initialized array."""
@@ -8044,5 +8057,78 @@ def cast(a: Any, dtype: Any) -> Any:
 
 
             wp.launch(compute, dim=1)"""
+    ...
+
+def nvshmem_my_pe() -> int32:
+    """Returns the PE (processing element) index of the calling thread."""
+    ...
+
+def nvshmem_n_pes() -> int32:
+    """Returns the total number of PEs (processing elements)."""
+    ...
+
+def nvshmem_float_p(dest: Array[float32], offset: int32, value: float32, pe: int32) -> None:
+    """Writes a single float ``value`` to ``dest[offset]`` on remote PE ``pe``."""
+    ...
+
+def nvshmem_float_put(dest: Array[float32], src: Array[float32], nelems: int32, pe: int32) -> None:
+    """Copies ``nelems`` floats from local ``src`` to ``dest`` on remote PE ``pe``."""
+    ...
+
+def nvshmem_quiet() -> None:
+    """Ensures completion of all outstanding NVSHMEM operations issued by the calling PE."""
+    ...
+
+def nvshmem_barrier_all() -> None:
+    """Synchronizes all PEs. All prior NVSHMEM operations are completed before any PE returns."""
+    ...
+
+def nvshmem_float_g(src: Array[float32], offset: int32, pe: int32) -> float32:
+    """Reads a single float from ``src[offset]`` on remote PE ``pe``."""
+    ...
+
+def nvshmem_float_get(dest: Array[float32], src: Array[float32], nelems: int32, pe: int32) -> None:
+    """Copies ``nelems`` floats from ``src`` on remote PE ``pe`` into local ``dest``."""
+    ...
+
+def nvshmem_int_p(dest: Array[int32], offset: int32, value: int32, pe: int32) -> None:
+    """Writes a single int32 ``value`` to ``dest[offset]`` on remote PE ``pe``."""
+    ...
+
+def nvshmem_int_g(src: Array[int32], offset: int32, pe: int32) -> int32:
+    """Reads a single int32 from ``src[offset]`` on remote PE ``pe``."""
+    ...
+
+def nvshmem_int_put(dest: Array[int32], src: Array[int32], nelems: int32, pe: int32) -> None:
+    """Copies ``nelems`` int32s from local ``src`` to ``dest`` on remote PE ``pe``."""
+    ...
+
+def nvshmem_int_get(dest: Array[int32], src: Array[int32], nelems: int32, pe: int32) -> None:
+    """Copies ``nelems`` int32s from ``src`` on remote PE ``pe`` into local ``dest``."""
+    ...
+
+def nvshmem_fence() -> None:
+    """Orders NVSHMEM operations. Ensures prior puts are visible before subsequent puts, without waiting for completion."""
+    ...
+
+def nvshmem_signal_op(sig_addr: Array[uint64], offset: int32, signal: int32, sig_op: int32, pe: int32) -> None:
+    """Signals remote PE ``pe`` by applying ``sig_op`` (NVSHMEM_SIGNAL_SET or NVSHMEM_SIGNAL_ADD) with ``signal`` value to ``sig_addr[offset]``."""
+    ...
+
+def nvshmem_signal_wait_until(sig_addr: Array[uint64], offset: int32, cmp: int32, cmp_val: int32) -> None:
+    """Blocks until ``sig_addr[offset]`` satisfies the comparison ``cmp`` against ``cmp_val``. Comparison constants: NVSHMEM_CMP_EQ, NVSHMEM_CMP_NE, NVSHMEM_CMP_GT, NVSHMEM_CMP_LE, NVSHMEM_CMP_LT, NVSHMEM_CMP_GE."""
+    ...
+
+def nvshmem_float_put_signal(
+    dest: Array[float32],
+    src: Array[float32],
+    nelems: int32,
+    sig_addr: Array[uint64],
+    sig_offset: int32,
+    signal: int32,
+    sig_op: int32,
+    pe: int32,
+) -> None:
+    """Copies ``nelems`` floats from local ``src`` to ``dest`` on remote PE ``pe``, then applies ``sig_op`` with ``signal`` value to ``sig_addr[sig_offset]`` on the same PE. The signal is guaranteed to be delivered after the data."""
     ...
 

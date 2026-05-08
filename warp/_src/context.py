@@ -2706,6 +2706,7 @@ class ModuleBuilder:
         self.ltoirs = {}  # map from lto symbol to lto binary
         self.ltoirs_decl = {}  # map from lto symbol to lto forward declaration
         self.shared_memory_bytes = {}  # map from lto symbol to shared memory requirements
+        self.uses_nvshmem = False
 
         if hasher is None:
             hasher = ModuleHasher(module._get_live_kernels(), options)
@@ -2878,6 +2879,28 @@ class ModuleBuilder:
             for fwd in self.ltoirs_decl.values():
                 source += fwd + "\n"
             source += "}\n"
+
+        # code-gen NVSHMEM forward declarations (resolved from libnvshmem_device.ltoir)
+        if self.uses_nvshmem:
+            source += "// NVSHMEM forward declarations\n"
+            source += 'extern "C" {\n'
+            source += "__device__ int nvshmem_my_pe();\n"
+            source += "__device__ int nvshmem_n_pes();\n"
+            source += "__device__ void nvshmem_float_p(float* dest, float value, int pe);\n"
+            source += "__device__ float nvshmem_float_g(const float* src, int pe);\n"
+            source += "__device__ void nvshmem_float_put(float* dest, const float* src, size_t nelems, int pe);\n"
+            source += "__device__ void nvshmem_float_get(float* dest, const float* src, size_t nelems, int pe);\n"
+            source += "__device__ void nvshmem_int32_p(int* dest, int value, int pe);\n"
+            source += "__device__ int nvshmem_int32_g(const int* src, int pe);\n"
+            source += "__device__ void nvshmem_int32_put(int* dest, const int* src, size_t nelems, int pe);\n"
+            source += "__device__ void nvshmem_int32_get(int* dest, const int* src, size_t nelems, int pe);\n"
+            source += "__device__ void nvshmem_quiet();\n"
+            source += "__device__ void nvshmem_fence();\n"
+            source += "__device__ void nvshmem_barrier_all();\n"
+            source += "__device__ void nvshmemx_signal_op(unsigned long long* sig_addr, unsigned long long signal, int sig_op, int pe);\n"
+            source += "__device__ unsigned long long nvshmem_signal_wait_until(unsigned long long* sig_addr, int cmp, unsigned long long cmp_val);\n"
+            source += "__device__ void nvshmem_float_put_signal(float* dest, const float* src, size_t nelems, unsigned long long* sig_addr, unsigned long long signal, int sig_op, int pe);\n"
+            source += "}\n\n"
 
         # code-gen structs
         tile_helper_structs = self._get_tile_helper_struct_hashes()
@@ -3159,6 +3182,9 @@ class Module:
 
         # Indicates whether the module has functions or kernels with unresolved static expressions.
         self.has_unresolved_static_expressions = False
+
+        # Indicates whether the module uses NVSHMEM builtins.
+        self.uses_nvshmem = False
 
         self.options = {
             "max_unroll": warp.config.max_unroll,
@@ -3597,12 +3623,13 @@ class Module:
         return f"{self.get_module_identifier(block_dim=block_dim)}.meta"
 
     @synchronized(_codegen_lock)
-    def _run_codegen(self, options: dict, is_cpu: bool) -> tuple[str, str, dict, list, list]:
+    def _run_codegen(self, options: dict, is_cpu: bool) -> tuple[str, str, dict, list, list, bool]:
         """Run the Python-side codegen window.
 
-        Returns ``(source, ext, meta, ltoirs, fatbins)``: the emitted C++/CUDA
-        source, its file extension, the metadata dict, and snapshots of the
-        builder's LTO-IR and fatbin collections.
+        Returns ``(source, ext, meta, ltoirs, fatbins, uses_nvshmem)``: the
+        emitted C++/CUDA source, its file extension, the metadata dict, snapshots
+        of the builder's LTO-IR and fatbin collections, and whether the source
+        uses NVSHMEM builtins.
 
         Held under ``_codegen_lock`` so concurrent ``Module._compile`` callers
         cannot interleave ``adj.build`` writes and ``codegen()`` reads on a
@@ -3622,7 +3649,14 @@ class Module:
             ext = "cu"
             source = builder.codegen("cuda")
         meta = builder.build_meta()
-        return source, ext, meta, list(builder.ltoirs.values()), list(builder.fatbins.values())
+        return (
+            source,
+            ext,
+            meta,
+            list(builder.ltoirs.values()),
+            list(builder.fatbins.values()),
+            builder.uses_nvshmem,
+        )
 
     def _compile(
         self,
@@ -3740,7 +3774,12 @@ class Module:
         # ``failed_builds`` the next ``Module.load`` on the same device
         # short-circuits with ``return None`` and subsequent unrelated
         # kernels in the same module silently fail to launch.
-        source_str, source_code_ext, meta, ltoir_values, fatbin_values = self._run_codegen(options, is_cpu)
+        source_str, source_code_ext, meta, ltoir_values, fatbin_values, uses_nvshmem = self._run_codegen(
+            options, is_cpu
+        )
+
+        if uses_nvshmem:
+            self.uses_nvshmem = True
 
         meta_path = os.path.join(output_dir, self._get_meta_name(block_dim=active_block_dim))
 
@@ -3786,6 +3825,32 @@ class Module:
                         enable_tiles_in_stack_memory=options["enable_tiles_in_stack_memory"],
                     )
             else:
+                if uses_nvshmem:
+                    try:
+                        import nvshmem  # noqa: F401, PLC0415
+                    except ImportError:
+                        raise ImportError(
+                            "nvshmem4py is required for NVSHMEM builtins. Install it with: pip install nvshmem4py-cu12"
+                        ) from None
+
+                    if not runtime.core.wp_is_nvshmem_enabled():
+                        raise RuntimeError(
+                            "Warp was not compiled with NVSHMEM support. "
+                            "Rebuild with: python build_lib.py --use-nvshmem"
+                        )
+
+                    # Load libnvshmem_device.ltoir from warp/bin/
+                    nvshmem_ltoir_path = os.path.normpath(
+                        os.path.join(os.path.dirname(__file__), "..", "bin", "libnvshmem_device.ltoir")
+                    )
+                    if not os.path.isfile(nvshmem_ltoir_path):
+                        raise FileNotFoundError(
+                            f"NVSHMEM device LTOIR not found at {nvshmem_ltoir_path}. "
+                            "Rebuild Warp with NVSHMEM_SRC set and --use-nvshmem."
+                        )
+                    with open(nvshmem_ltoir_path, "rb") as f:
+                        ltoir_values.append(f.read())
+
                 # generate PTX or CUBIN
                 with warp.ScopedTimer(
                     f"Compile CUDA (arch={options['output_arch']}{arch_suffix}, mode={mode}, block_dim={options['block_dim']})",
@@ -3996,6 +4061,14 @@ class Module:
             elif device.is_cuda:
                 cuda_module = warp._src.build.load_cuda(binary_path, device)
                 if cuda_module is not None:
+                    if self.uses_nvshmem:
+                        ret = runtime.core.wp_nvshmem_cumodule_init(cuda_module)
+                        if ret != 0:
+                            warp._src.utils.warn(
+                                f"nvshmemx_cumodule_init failed (error {ret}). "
+                                "NVSHMEM device functions will not work until NVSHMEM is initialized "
+                                "and the module is reloaded."
+                            )
                     module_exec = ModuleExec(cuda_module, module_hash, device, meta, active_block_dim, output_arch)
                     self.execs[(device.context, active_block_dim)] = module_exec
                 else:
@@ -6698,8 +6771,23 @@ class Runtime:
             self.core.wp_is_cuda_compatibility_enabled.restype = ctypes.c_int
             self.core.wp_is_mathdx_enabled.argtypes = None
             self.core.wp_is_mathdx_enabled.restype = ctypes.c_int
+            self.core.wp_is_nvshmem_enabled.argtypes = None
+            self.core.wp_is_nvshmem_enabled.restype = ctypes.c_int
             self.core.wp_is_debug_enabled.argtypes = None
             self.core.wp_is_debug_enabled.restype = ctypes.c_int
+
+            # NVSHMEM
+            self.core.wp_nvshmem_malloc.argtypes = [ctypes.c_size_t]
+            self.core.wp_nvshmem_malloc.restype = ctypes.c_uint64
+
+            self.core.wp_nvshmem_free.argtypes = [ctypes.c_uint64]
+            self.core.wp_nvshmem_free.restype = None
+
+            self.core.wp_nvshmem_cumodule_init.argtypes = [ctypes.c_uint64]
+            self.core.wp_nvshmem_cumodule_init.restype = ctypes.c_int
+
+            self.core.wp_nvshmem_cumodule_finalize.argtypes = [ctypes.c_uint64]
+            self.core.wp_nvshmem_cumodule_finalize.restype = ctypes.c_int
 
             self.core.wp_cuda_driver_version.argtypes = None
             self.core.wp_cuda_driver_version.restype = ctypes.c_int
@@ -7791,6 +7879,19 @@ def is_cuda_available() -> bool:
     return get_cuda_device_count() > 0
 
 
+def is_nvshmem_enabled() -> bool:
+    """Check whether Warp was built with NVSHMEM support.
+
+    Returns:
+        ``True`` if NVSHMEM builtins are available, ``False`` otherwise.
+
+    See Also:
+        :func:`is_cuda_available`
+    """
+    init()
+    return bool(runtime.core.wp_is_nvshmem_enabled())
+
+
 def is_device_available(device: Device) -> bool:
     """Check whether a device is available in the current environment.
 
@@ -8756,6 +8857,7 @@ def zeros(
     requires_grad: bool = False,
     pinned: bool = False,
     retain_grad: bool = False,
+    symmetric: bool = False,
     **kwargs,
 ) -> warp.array:
     """Return a zero-initialized array.
@@ -8767,6 +8869,7 @@ def zeros(
         requires_grad: Whether the array will be tracked for back propagation
         pinned: Whether the array uses pinned host memory (only applicable to CPU arrays)
         retain_grad: Whether to preserve gradients during backward instead of zeroing after read
+        symmetric: Whether to allocate from the NVSHMEM symmetric heap (only applicable to CUDA devices)
 
     Returns:
         A warp.array object representing the allocation
@@ -8779,6 +8882,7 @@ def zeros(
         requires_grad=requires_grad,
         pinned=pinned,
         retain_grad=retain_grad,
+        symmetric=symmetric,
         **kwargs,
     )
 
@@ -8880,6 +8984,7 @@ def full(
     requires_grad: bool = False,
     pinned: bool = False,
     retain_grad: bool = False,
+    symmetric: bool = False,
     **kwargs,
 ) -> warp.array:
     """Return an array with all elements initialized to the given value.
@@ -8892,6 +8997,7 @@ def full(
         requires_grad: Whether the array will be tracked for back propagation
         pinned: Whether the array uses pinned host memory (only applicable to CPU arrays)
         retain_grad: Whether to preserve gradients during backward instead of zeroing after read
+        symmetric: Whether to allocate from the NVSHMEM symmetric heap (only applicable to CUDA devices)
 
     Returns:
         A warp.array object representing the allocation
@@ -8940,6 +9046,7 @@ def full(
         requires_grad=requires_grad,
         pinned=pinned,
         retain_grad=retain_grad,
+        symmetric=symmetric,
         **kwargs,
     )
 
@@ -9011,6 +9118,7 @@ def empty(
     requires_grad: bool = False,
     pinned: bool = False,
     retain_grad: bool = False,
+    symmetric: bool = False,
     **kwargs,
 ) -> warp.array:
     """Return an uninitialized array.
@@ -9022,6 +9130,7 @@ def empty(
         requires_grad: Whether the array will be tracked for back propagation
         pinned: Whether the array uses pinned host memory (only applicable to CPU arrays)
         retain_grad: Whether to preserve gradients during backward instead of zeroing after read
+        symmetric: Whether to allocate from the NVSHMEM symmetric heap (only applicable to CUDA devices)
 
     Returns:
         A warp.array object representing the allocation
@@ -9043,6 +9152,7 @@ def empty(
         requires_grad=requires_grad,
         pinned=pinned,
         retain_grad=retain_grad,
+        symmetric=symmetric,
         **kwargs,
     )
 

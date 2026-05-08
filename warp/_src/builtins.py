@@ -16178,3 +16178,437 @@ add_builtin(
     hidden=True,
     is_differentiable=False,
 )
+
+
+# -----------------------------------------------
+# NVSHMEM builtins
+
+
+def nvshmem_my_pe_value_func(arg_types, arg_values):
+    return warp.int32
+
+
+def nvshmem_n_pes_value_func(arg_types, arg_values):
+    return warp.int32
+
+
+def nvshmem_float_p_value_func(arg_types, arg_values):
+    return None
+
+
+def nvshmem_float_put_value_func(arg_types, arg_values):
+    return None
+
+
+def nvshmem_quiet_value_func(arg_types, arg_values):
+    return None
+
+
+def nvshmem_barrier_all_value_func(arg_types, arg_values):
+    return None
+
+
+def nvshmem_float_p_dispatch_func(input_types, return_type, args):
+    dest = args["dest"]
+    offset = args["offset"]
+    value = args["value"]
+    pe = args["pe"]
+    # Emit: wp_nvshmem_float_p(&var_dest.data[var_offset], var_value, var_pe)
+    dest_ptr = Var(f"&var_{dest}.data[var_{offset}]", float, prefix=False)
+    return (dest_ptr, value, pe), ()
+
+
+def nvshmem_float_put_dispatch_func(input_types, return_type, args):
+    dest = args["dest"]
+    src = args["src"]
+    nelems = args["nelems"]
+    pe = args["pe"]
+    # Emit: wp_nvshmem_float_put(var_dest.data, var_src.data, (size_t)var_nelems, var_pe)
+    dest_data = Var(f"var_{dest}.data", float, prefix=False)
+    src_data = Var(f"var_{src}.data", float, prefix=False)
+    nelems_cast = Var(f"(size_t)var_{nelems}", int, prefix=False)
+    return (dest_data, src_data, nelems_cast, pe), ()
+
+
+add_builtin(
+    "nvshmem_my_pe",
+    input_types={},
+    value_func=nvshmem_my_pe_value_func,
+    namespace="",
+    export=False,
+    doc="Returns the PE (processing element) index of the calling thread.",
+    group="NVSHMEM",
+    is_differentiable=False,
+)
+
+add_builtin(
+    "nvshmem_n_pes",
+    input_types={},
+    value_func=nvshmem_n_pes_value_func,
+    namespace="",
+    export=False,
+    doc="Returns the total number of PEs (processing elements).",
+    group="NVSHMEM",
+    is_differentiable=False,
+)
+
+add_builtin(
+    "nvshmem_float_p",
+    input_types={"dest": array(dtype=float), "offset": int, "value": float, "pe": int},
+    value_func=nvshmem_float_p_value_func,
+    dispatch_func=nvshmem_float_p_dispatch_func,
+    namespace="",
+    export=False,
+    doc="Writes a single float ``value`` to ``dest[offset]`` on remote PE ``pe``.",
+    group="NVSHMEM",
+    is_differentiable=False,
+)
+
+add_builtin(
+    "nvshmem_float_put",
+    input_types={"dest": array(dtype=float), "src": array(dtype=float), "nelems": int, "pe": int},
+    value_func=nvshmem_float_put_value_func,
+    dispatch_func=nvshmem_float_put_dispatch_func,
+    namespace="",
+    export=False,
+    doc="Copies ``nelems`` floats from local ``src`` to ``dest`` on remote PE ``pe``.",
+    group="NVSHMEM",
+    is_differentiable=False,
+)
+
+add_builtin(
+    "nvshmem_quiet",
+    input_types={},
+    value_func=nvshmem_quiet_value_func,
+    namespace="",
+    export=False,
+    doc="Ensures completion of all outstanding NVSHMEM operations issued by the calling PE.",
+    group="NVSHMEM",
+    is_differentiable=False,
+)
+
+add_builtin(
+    "nvshmem_barrier_all",
+    input_types={},
+    value_func=nvshmem_barrier_all_value_func,
+    namespace="",
+    export=False,
+    doc="Synchronizes all PEs. All prior NVSHMEM operations are completed before any PE returns.",
+    group="NVSHMEM",
+    is_differentiable=False,
+)
+
+
+# Scalar get (float)
+def nvshmem_float_g_value_func(arg_types, arg_values):
+    return warp.float32
+
+
+def nvshmem_float_g_dispatch_func(input_types, return_type, args):
+    src = args["src"]
+    offset = args["offset"]
+    pe = args["pe"]
+    src_ptr = Var(f"&var_{src}.data[var_{offset}]", float, prefix=False)
+    return (src_ptr, pe), ()
+
+
+add_builtin(
+    "nvshmem_float_g",
+    input_types={"src": array(dtype=float), "offset": int, "pe": int},
+    value_func=nvshmem_float_g_value_func,
+    dispatch_func=nvshmem_float_g_dispatch_func,
+    namespace="",
+    export=False,
+    doc="Reads a single float from ``src[offset]`` on remote PE ``pe``.",
+    group="NVSHMEM",
+    is_differentiable=False,
+)
+
+
+# Bulk get (float)
+def nvshmem_float_get_value_func(arg_types, arg_values):
+    return None
+
+
+def nvshmem_float_get_dispatch_func(input_types, return_type, args):
+    dest = args["dest"]
+    src = args["src"]
+    nelems = args["nelems"]
+    pe = args["pe"]
+    dest_data = Var(f"var_{dest}.data", float, prefix=False)
+    src_data = Var(f"var_{src}.data", float, prefix=False)
+    nelems_cast = Var(f"(size_t)var_{nelems}", int, prefix=False)
+    return (dest_data, src_data, nelems_cast, pe), ()
+
+
+add_builtin(
+    "nvshmem_float_get",
+    input_types={"dest": array(dtype=float), "src": array(dtype=float), "nelems": int, "pe": int},
+    value_func=nvshmem_float_get_value_func,
+    dispatch_func=nvshmem_float_get_dispatch_func,
+    namespace="",
+    export=False,
+    doc="Copies ``nelems`` floats from ``src`` on remote PE ``pe`` into local ``dest``.",
+    group="NVSHMEM",
+    is_differentiable=False,
+)
+
+
+# Scalar put (int32)
+def nvshmem_int_p_value_func(arg_types, arg_values):
+    return None
+
+
+def nvshmem_int_p_dispatch_func(input_types, return_type, args):
+    dest = args["dest"]
+    offset = args["offset"]
+    value = args["value"]
+    pe = args["pe"]
+    dest_ptr = Var(f"&var_{dest}.data[var_{offset}]", int, prefix=False)
+    return (dest_ptr, value, pe), ()
+
+
+add_builtin(
+    "nvshmem_int_p",
+    input_types={"dest": array(dtype=int), "offset": int, "value": int, "pe": int},
+    value_func=nvshmem_int_p_value_func,
+    dispatch_func=nvshmem_int_p_dispatch_func,
+    namespace="",
+    native_func="nvshmem_int32_p",
+    export=False,
+    doc="Writes a single int32 ``value`` to ``dest[offset]`` on remote PE ``pe``.",
+    group="NVSHMEM",
+    is_differentiable=False,
+)
+
+
+# Scalar get (int32)
+def nvshmem_int_g_value_func(arg_types, arg_values):
+    return warp.int32
+
+
+def nvshmem_int_g_dispatch_func(input_types, return_type, args):
+    src = args["src"]
+    offset = args["offset"]
+    pe = args["pe"]
+    src_ptr = Var(f"&var_{src}.data[var_{offset}]", int, prefix=False)
+    return (src_ptr, pe), ()
+
+
+add_builtin(
+    "nvshmem_int_g",
+    input_types={"src": array(dtype=int), "offset": int, "pe": int},
+    value_func=nvshmem_int_g_value_func,
+    dispatch_func=nvshmem_int_g_dispatch_func,
+    namespace="",
+    native_func="nvshmem_int32_g",
+    export=False,
+    doc="Reads a single int32 from ``src[offset]`` on remote PE ``pe``.",
+    group="NVSHMEM",
+    is_differentiable=False,
+)
+
+
+# Bulk put (int32)
+def nvshmem_int_put_value_func(arg_types, arg_values):
+    return None
+
+
+def nvshmem_int_put_dispatch_func(input_types, return_type, args):
+    dest = args["dest"]
+    src = args["src"]
+    nelems = args["nelems"]
+    pe = args["pe"]
+    dest_data = Var(f"var_{dest}.data", int, prefix=False)
+    src_data = Var(f"var_{src}.data", int, prefix=False)
+    nelems_cast = Var(f"(size_t)var_{nelems}", int, prefix=False)
+    return (dest_data, src_data, nelems_cast, pe), ()
+
+
+add_builtin(
+    "nvshmem_int_put",
+    input_types={"dest": array(dtype=int), "src": array(dtype=int), "nelems": int, "pe": int},
+    value_func=nvshmem_int_put_value_func,
+    dispatch_func=nvshmem_int_put_dispatch_func,
+    namespace="",
+    native_func="nvshmem_int32_put",
+    export=False,
+    doc="Copies ``nelems`` int32s from local ``src`` to ``dest`` on remote PE ``pe``.",
+    group="NVSHMEM",
+    is_differentiable=False,
+)
+
+
+# Bulk get (int32)
+def nvshmem_int_get_value_func(arg_types, arg_values):
+    return None
+
+
+def nvshmem_int_get_dispatch_func(input_types, return_type, args):
+    dest = args["dest"]
+    src = args["src"]
+    nelems = args["nelems"]
+    pe = args["pe"]
+    dest_data = Var(f"var_{dest}.data", int, prefix=False)
+    src_data = Var(f"var_{src}.data", int, prefix=False)
+    nelems_cast = Var(f"(size_t)var_{nelems}", int, prefix=False)
+    return (dest_data, src_data, nelems_cast, pe), ()
+
+
+add_builtin(
+    "nvshmem_int_get",
+    input_types={"dest": array(dtype=int), "src": array(dtype=int), "nelems": int, "pe": int},
+    value_func=nvshmem_int_get_value_func,
+    dispatch_func=nvshmem_int_get_dispatch_func,
+    namespace="",
+    native_func="nvshmem_int32_get",
+    export=False,
+    doc="Copies ``nelems`` int32s from ``src`` on remote PE ``pe`` into local ``dest``.",
+    group="NVSHMEM",
+    is_differentiable=False,
+)
+
+
+# Fence (ordering, weaker than quiet)
+def nvshmem_fence_value_func(arg_types, arg_values):
+    return None
+
+
+add_builtin(
+    "nvshmem_fence",
+    input_types={},
+    value_func=nvshmem_fence_value_func,
+    namespace="",
+    export=False,
+    doc="Orders NVSHMEM operations. Ensures prior puts are visible before subsequent puts, without waiting for completion.",
+    group="NVSHMEM",
+    is_differentiable=False,
+)
+
+# NVSHMEM signal and comparison constants (used by signal_op, signal_wait_until, put_signal)
+NVSHMEM_SIGNAL_SET = constant(9)
+NVSHMEM_SIGNAL_ADD = constant(10)
+NVSHMEM_CMP_EQ = constant(0)
+NVSHMEM_CMP_NE = constant(1)
+NVSHMEM_CMP_GT = constant(2)
+NVSHMEM_CMP_LE = constant(3)
+NVSHMEM_CMP_LT = constant(4)
+NVSHMEM_CMP_GE = constant(5)
+
+
+# Signal op: signal a remote PE
+def nvshmem_signal_op_value_func(arg_types, arg_values):
+    return None
+
+
+def nvshmem_signal_op_dispatch_func(input_types, return_type, args):
+    sig_addr = args["sig_addr"]
+    offset = args["offset"]
+    signal = args["signal"]
+    sig_op = args["sig_op"]
+    pe = args["pe"]
+    addr_ptr = Var(f"&var_{sig_addr}.data[var_{offset}]", warp.uint64, prefix=False)
+    signal_cast = Var(f"(uint64_t)var_{signal}", warp.uint64, prefix=False)
+    return (addr_ptr, signal_cast, sig_op, pe), ()
+
+
+add_builtin(
+    "nvshmem_signal_op",
+    input_types={
+        "sig_addr": array(dtype=warp.uint64),
+        "offset": int,
+        "signal": int,
+        "sig_op": int,
+        "pe": int,
+    },
+    value_func=nvshmem_signal_op_value_func,
+    dispatch_func=nvshmem_signal_op_dispatch_func,
+    namespace="",
+    native_func="nvshmemx_signal_op",
+    export=False,
+    doc="Signals remote PE ``pe`` by applying ``sig_op`` (NVSHMEM_SIGNAL_SET or NVSHMEM_SIGNAL_ADD) "
+    "with ``signal`` value to ``sig_addr[offset]``.",
+    group="NVSHMEM",
+    is_differentiable=False,
+)
+
+
+# Signal wait until: wait for a signal condition
+def nvshmem_signal_wait_until_value_func(arg_types, arg_values):
+    return None
+
+
+def nvshmem_signal_wait_until_dispatch_func(input_types, return_type, args):
+    sig_addr = args["sig_addr"]
+    offset = args["offset"]
+    cmp = args["cmp"]
+    cmp_val = args["cmp_val"]
+    addr_ptr = Var(f"&var_{sig_addr}.data[var_{offset}]", warp.uint64, prefix=False)
+    cmp_val_cast = Var(f"(uint64_t)var_{cmp_val}", warp.uint64, prefix=False)
+    return (addr_ptr, cmp, cmp_val_cast), ()
+
+
+add_builtin(
+    "nvshmem_signal_wait_until",
+    input_types={
+        "sig_addr": array(dtype=warp.uint64),
+        "offset": int,
+        "cmp": int,
+        "cmp_val": int,
+    },
+    value_func=nvshmem_signal_wait_until_value_func,
+    dispatch_func=nvshmem_signal_wait_until_dispatch_func,
+    namespace="",
+    export=False,
+    doc="Blocks until ``sig_addr[offset]`` satisfies the comparison ``cmp`` against ``cmp_val``. "
+    "Comparison constants: NVSHMEM_CMP_EQ, NVSHMEM_CMP_NE, NVSHMEM_CMP_GT, NVSHMEM_CMP_LE, "
+    "NVSHMEM_CMP_LT, NVSHMEM_CMP_GE.",
+    group="NVSHMEM",
+    is_differentiable=False,
+)
+
+
+# Put with signal (float): fused data transfer + signal
+def nvshmem_float_put_signal_value_func(arg_types, arg_values):
+    return None
+
+
+def nvshmem_float_put_signal_dispatch_func(input_types, return_type, args):
+    dest = args["dest"]
+    src = args["src"]
+    nelems = args["nelems"]
+    sig_addr = args["sig_addr"]
+    sig_offset = args["sig_offset"]
+    signal = args["signal"]
+    sig_op = args["sig_op"]
+    pe = args["pe"]
+    dest_data = Var(f"var_{dest}.data", float, prefix=False)
+    src_data = Var(f"var_{src}.data", float, prefix=False)
+    nelems_cast = Var(f"(size_t)var_{nelems}", int, prefix=False)
+    sig_ptr = Var(f"&var_{sig_addr}.data[var_{sig_offset}]", warp.uint64, prefix=False)
+    signal_cast = Var(f"(uint64_t)var_{signal}", warp.uint64, prefix=False)
+    return (dest_data, src_data, nelems_cast, sig_ptr, signal_cast, sig_op, pe), ()
+
+
+add_builtin(
+    "nvshmem_float_put_signal",
+    input_types={
+        "dest": array(dtype=float),
+        "src": array(dtype=float),
+        "nelems": int,
+        "sig_addr": array(dtype=warp.uint64),
+        "sig_offset": int,
+        "signal": int,
+        "sig_op": int,
+        "pe": int,
+    },
+    value_func=nvshmem_float_put_signal_value_func,
+    dispatch_func=nvshmem_float_put_signal_dispatch_func,
+    namespace="",
+    export=False,
+    doc="Copies ``nelems`` floats from local ``src`` to ``dest`` on remote PE ``pe``, then applies "
+    "``sig_op`` with ``signal`` value to ``sig_addr[sig_offset]`` on the same PE. The signal "
+    "is guaranteed to be delivered after the data.",
+    group="NVSHMEM",
+    is_differentiable=False,
+)
