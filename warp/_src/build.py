@@ -18,7 +18,7 @@ from warp._src.types import *
 _wp_module_name_ = "warp.build"
 
 # From nvJitLink.h
-nvJitLink_input_type = {"cubin": 1, "ptx": 2, "ltoir": 3, "fatbin": 4, "object": 5, "library": 6}
+nvJitLink_input_type = {"cubin": 1, "ptx": 2, "ltoir": 3, "fatbin": 4, "object": 5, "library": 6, "any": 10}
 
 warp_home = os.path.realpath(os.path.join(os.path.dirname(__file__), ".."))
 

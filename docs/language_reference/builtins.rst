@@ -423,3 +423,28 @@ Code Generation
    :template: builtins.rst
 
    static
+
+NVSHMEM
+-------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: _generated
+   :template: builtins.rst
+
+   nvshmem_barrier_all
+   nvshmem_fence
+   nvshmem_float_g
+   nvshmem_float_get
+   nvshmem_float_p
+   nvshmem_float_put
+   nvshmem_float_put_signal
+   nvshmem_int_g
+   nvshmem_int_get
+   nvshmem_int_p
+   nvshmem_int_put
+   nvshmem_my_pe
+   nvshmem_n_pes
+   nvshmem_quiet
+   nvshmem_signal_op
+   nvshmem_signal_wait_until

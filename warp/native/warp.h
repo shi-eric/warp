@@ -38,6 +38,8 @@ WP_API int wp_is_cuda_enabled();
 WP_API int wp_is_cuda_compatibility_enabled();
 // whether Warp was compiled with MathDx support
 WP_API int wp_is_mathdx_enabled();
+// whether Warp was compiled with NVSHMEM support
+WP_API int wp_is_nvshmem_enabled();
 // whether Warp was compiled with cuBQL support
 WP_API int wp_is_cubql_enabled();
 // whether Warp was compiled with debug support

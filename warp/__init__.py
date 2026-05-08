@@ -207,6 +207,7 @@ from warp._src.context import init as init
 from warp._src.context import is_cpu_available as is_cpu_available
 from warp._src.context import is_cubql_available as is_cubql_available
 from warp._src.context import is_cuda_available as is_cuda_available
+from warp._src.context import is_nvshmem_enabled as is_nvshmem_enabled
 
 from warp._src.build import clear_kernel_cache as clear_kernel_cache
 from warp._src.build import clear_lto_cache as clear_lto_cache
@@ -459,6 +460,18 @@ from warp._src.utils import quat_between_vectors as quat_between_vectors
 # category: Constants
 
 from warp._src.constants import *
+
+# NVSHMEM signal and comparison constants
+from warp._src.builtins import (
+    NVSHMEM_CMP_EQ,
+    NVSHMEM_CMP_GE,
+    NVSHMEM_CMP_GT,
+    NVSHMEM_CMP_LE,
+    NVSHMEM_CMP_LT,
+    NVSHMEM_CMP_NE,
+    NVSHMEM_SIGNAL_ADD,
+    NVSHMEM_SIGNAL_SET,
+)
 
 
 # category: Submodules

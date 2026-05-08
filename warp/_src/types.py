@@ -3033,6 +3033,7 @@ class array(Array[DType, NDim]):
         capacity: int | None = None,
         device: warp.DeviceLike = None,
         pinned: builtins.bool = False,
+        symmetric: builtins.bool = False,
         copy: builtins.bool = True,
         deleter: Callable[[int, int], None] | None = None,
         ndim: int | None = None,
@@ -3077,6 +3078,8 @@ class array(Array[DType, NDim]):
                 then a gradient array will be allocated automatically.
             pinned: Whether to allocate pinned host memory, which allows asynchronous host–device transfers
                 (only applicable with ``device="cpu"``)
+            symmetric: Whether to allocate from the NVSHMEM symmetric heap
+                (only applicable to CUDA devices, requires NVSHMEM-enabled build)
 
         """  # noqa: RUF002
 
@@ -3089,6 +3092,7 @@ class array(Array[DType, NDim]):
         # __array_interface__ or __cuda_array_interface__, evaluated lazily and cached
         self._array_interface = None
         self.is_transposed = False
+        self.is_symmetric = symmetric
 
         # reference to other array
         self._ref = None
@@ -3561,18 +3565,37 @@ class array(Array[DType, NDim]):
                 # single element storage with zero strides
                 capacity = dtype_size
 
-        allocator = device.get_allocator(pinned=pinned)
-        # Resolve the deallocate callable before allocating so a bad descriptor/__getattr__
-        # cannot leak a freshly-allocated pointer between allocate() and self.deleter assignment.
-        deleter = allocator.deallocate
-        if capacity > 0:
-            if device.is_cuda:
-                with device.context_guard:
+        if self.is_symmetric:
+            if not device.is_cuda:
+                raise RuntimeError("Symmetric (NVSHMEM) arrays can only be allocated on CUDA devices.")
+            if not warp._src.context.runtime.core.wp_is_nvshmem_enabled():
+                raise RuntimeError("Warp was not compiled with NVSHMEM support. Rebuild with --use-nvshmem.")
+            if capacity > 0:
+                ptr = warp._src.context.runtime.core.wp_nvshmem_malloc(capacity)
+                if ptr == 0:
+                    raise RuntimeError(
+                        f"NVSHMEM symmetric allocation failed for {capacity} bytes. "
+                        "Ensure NVSHMEM is initialized and the symmetric heap is large enough."
+                    )
+            else:
+                ptr = None
+            allocator = None
+
+            def deleter(ptr, size):
+                warp._src.context.runtime.core.wp_nvshmem_free(ptr)
+        else:
+            allocator = device.get_allocator(pinned=pinned)
+            # Resolve the deallocate callable before allocating so a bad descriptor/__getattr__
+            # cannot leak a freshly-allocated pointer between allocate() and self.deleter assignment.
+            deleter = allocator.deallocate
+            if capacity > 0:
+                if device.is_cuda:
+                    with device.context_guard:
+                        ptr = allocator.allocate(capacity)
+                else:
                     ptr = allocator.allocate(capacity)
             else:
-                ptr = allocator.allocate(capacity)
-        else:
-            ptr = None
+                ptr = None
 
         self.dtype = dtype
         self.ndim = ndim
@@ -3938,7 +3961,12 @@ class array(Array[DType, NDim]):
 
     def _alloc_grad(self):
         self._grad = warp.zeros(
-            dtype=self.dtype, shape=self.shape, strides=self.strides, device=self.device, pinned=self.pinned
+            dtype=self.dtype,
+            shape=self.shape,
+            strides=self.strides,
+            device=self.device,
+            pinned=self.pinned,
+            symmetric=self.is_symmetric,
         )
 
         # trigger re-creation of C-representation

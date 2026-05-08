@@ -148,6 +148,97 @@ def validate_libmathdx_path(libmathdx_path: str) -> bool:
     return True
 
 
+def validate_nvshmem_path(nvshmem_path: str) -> bool:
+    """Validate that NVSHMEM path exists and has required directory structure.
+
+    Args:
+        nvshmem_path: Path to NVSHMEM installation to validate.
+
+    Returns:
+        True if valid, False otherwise (with error message printed).
+    """
+    if not os.path.isdir(nvshmem_path):
+        print(f"Error: NVSHMEM path does not exist or is not a directory: {nvshmem_path}")
+        return False
+
+    lib_dir = os.path.join(nvshmem_path, "lib")
+    if not os.path.isdir(lib_dir):
+        print(f"Error: NVSHMEM installation is missing 'lib' directory: {lib_dir}")
+        return False
+
+    device_bc = os.path.join(lib_dir, "libnvshmem_device.bc")
+    if not os.path.isfile(device_bc):
+        print(f"Error: NVSHMEM installation is missing 'lib/libnvshmem_device.bc': {device_bc}")
+        return False
+
+    return True
+
+
+def find_nvshmem(cuda_toolkit_major_version: int, base_path: str) -> str | None:
+    nvshmem_path = os.environ.get("NVSHMEM_HOME")
+
+    if nvshmem_path:
+        print(f"Using NVSHMEM path '{nvshmem_path}' provided through the 'NVSHMEM_HOME' environment variable")
+        return nvshmem_path
+
+    # Fetch NVSHMEM using Packman
+    packman = os.path.join(base_path, "tools", "packman", "packman")
+
+    packman_cmd = [
+        packman,
+        "pull",
+        "--verbose",
+        "--platform",
+        f"linux-{build_dll.machine_architecture()}",
+        "--include-tag",
+        f"cu{cuda_toolkit_major_version}",
+        os.path.join(base_path, "deps", "libnvshmem-deps.packman.xml"),
+    ]
+
+    retry_delays = [10, 30, 60]
+    max_attempts = 1 + len(retry_delays)
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            output = subprocess.check_output(
+                packman_cmd,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            if build_dll.verbose_cmd:
+                print(output, end="")
+            break
+        except subprocess.CalledProcessError as e:
+            if attempt < max_attempts:
+                delay = retry_delays[attempt - 1]
+                print(f"Failed to fetch NVSHMEM (attempt {attempt}/{max_attempts}). Retrying in {delay}s...")
+                time.sleep(delay)
+            else:
+                print(e.output)
+
+                nvshmem_target_dir = os.path.join(base_path, "_build", "target-deps", "libnvshmem")
+                if os.path.exists(nvshmem_target_dir) and not os.path.islink(nvshmem_target_dir):
+                    print(f"\nError: {nvshmem_target_dir} exists and is not a symbolic link.")
+                    print("Please try deleting this folder and running the script again.")
+                return None
+        except FileNotFoundError:
+            # Packman not available (e.g., no deps file yet)
+            return None
+
+    nvshmem_path = os.path.join(base_path, "_build", "target-deps", "libnvshmem")
+    if validate_nvshmem_path(nvshmem_path):
+        return nvshmem_path
+
+    # Packman may extract into an archive subdirectory; check one level down
+    if os.path.isdir(nvshmem_path):
+        for entry in os.listdir(nvshmem_path):
+            candidate = os.path.join(nvshmem_path, entry)
+            if os.path.isdir(candidate) and validate_nvshmem_path(candidate):
+                return candidate
+
+    return None
+
+
 def find_libmathdx(cuda_toolkit_major_version: int, base_path: str) -> str | None:
     libmathdx_path = os.environ.get("LIBMATHDX_HOME")
 
@@ -313,6 +404,18 @@ def main(argv: list[str] | None = None) -> int:
         help="Build with NVIDIA libmathdx (includes cuBLASDx/cuFFTDx/cuSOLVERDx) for tile operations: matrix multiplication, FFT, and linear solvers",
     )
     group_build.add_argument(
+        "--use-nvshmem",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Build with NVSHMEM support for multi-GPU/multi-node symmetric memory operations (Linux only)",
+    )
+    group_build.add_argument(
+        "--nvshmem-ltoir",
+        type=str,
+        default=None,
+        help="Path to pre-built libnvshmem_device.ltoir (see tools/build_nvshmem_device_ltoir.sh)",
+    )
+    group_build.add_argument(
         "--verify-fp",
         action=argparse.BooleanOptionalAction,
         default=False,
@@ -447,6 +550,24 @@ def main(argv: list[str] | None = None) -> int:
         if not validate_libmathdx_path(args.libmathdx_path):
             return 1
 
+    # NVSHMEM discovery (Linux only, requires CUDA)
+    args.nvshmem_path = None
+    if args.cuda and sys.platform == "linux" and args.use_nvshmem:
+        if args.cuda_path:
+            major, _ = build_dll.get_cuda_toolkit_version(args.cuda_path)
+            args.nvshmem_path = find_nvshmem(major, base_path)
+        if args.nvshmem_path:
+            if not validate_nvshmem_path(args.nvshmem_path):
+                return 1
+            print(f"Using NVSHMEM from: {args.nvshmem_path}")
+        else:
+            print("NVSHMEM not found. Building without NVSHMEM support.")
+            args.use_nvshmem = False
+    elif not args.use_nvshmem:
+        print("NVSHMEM support disabled.")
+    else:
+        args.use_nvshmem = False
+
     # setup MSVC and WinSDK paths
     if platform.system() == "Windows":
         if args.msvc_path or args.sdk_path:
@@ -504,6 +625,7 @@ def main(argv: list[str] | None = None) -> int:
             "native/volume.cpp",
             "native/texture.cpp",
             "native/mathdx.cpp",
+            "native/nvshmem.cpp",
             "native/coloring.cpp",
             "native/fastcall.cpp",
         ]
@@ -539,6 +661,24 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
 
         warp_dll_path = os.path.join(build_path, f"bin/{lib_name('warp')}")
+
+        # Copy libnvshmem_device.ltoir to warp/bin/ for runtime nvJitLink linking.
+        # The LTOIR must be pre-built. See design/nvshmem-integration.md for instructions.
+        if args.nvshmem_path:
+            ltoir_dst = os.path.join(build_path, "bin", "libnvshmem_device.ltoir")
+            ltoir_src = args.nvshmem_ltoir or os.environ.get("NVSHMEM_DEVICE_LTOIR")
+
+            if ltoir_src and os.path.isfile(ltoir_src):
+                shutil.copy(ltoir_src, ltoir_dst)
+                print(f"Copied libnvshmem_device.ltoir ({os.path.getsize(ltoir_dst)} bytes)")
+            elif os.path.isfile(ltoir_dst):
+                print(f"Using existing libnvshmem_device.ltoir ({os.path.getsize(ltoir_dst)} bytes)")
+            else:
+                print(
+                    "Warning: libnvshmem_device.ltoir not found. NVSHMEM device-side builtins will not work.\n"
+                    "  Build it with: tools/build_nvshmem_device_ltoir.sh\n"
+                    "  Then pass: --nvshmem-ltoir /path/to/libnvshmem_device.ltoir"
+                )
 
         # Build warp.dll and warp-clang.dll in parallel (only when not building LLVM from source)
         # Object files use unique names per target (derived from dll_path) to avoid conflicts

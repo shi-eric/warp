@@ -1700,6 +1700,11 @@ class Adjoint:
         func_name = compute_type_str(func.native_func, template_args)
         use_initializer_list = func.initializer_list_func(bound_args, return_type)
 
+        # Track NVSHMEM builtin usage so the module can emit forward declarations
+        # and link the NVSHMEM device bitcode.
+        if func.key.startswith("nvshmem_") and adj.builder is not None:
+            adj.builder.uses_nvshmem = True
+
         fwd_args = []
         for func_arg in func_args:
             if not isinstance(func_arg, (Reference, warp._src.context.Function)):

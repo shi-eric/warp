@@ -1,0 +1,22 @@
+<project toolsVersion="5.0">
+  <remote2 name="nvshmem-linux-x86_64-cu12">
+    <transport actions="download" protocol="https" packageLocation="developer.download.nvidia.com/compute/nvshmem/redist/libnvshmem/linux-x86_64/${name}-${version}_cuda12-archive.tar.xz" />
+  </remote2>
+  <remote2 name="nvshmem-linux-x86_64-cu13">
+    <transport actions="download" protocol="https" packageLocation="developer.download.nvidia.com/compute/nvshmem/redist/libnvshmem/linux-x86_64/${name}-${version}_cuda13-archive.tar.xz" />
+  </remote2>
+  <remote2 name="nvshmem-linux-sbsa-cu12">
+    <transport actions="download" protocol="https" packageLocation="developer.download.nvidia.com/compute/nvshmem/redist/libnvshmem/linux-sbsa/${name}-${version}_cuda12-archive.tar.xz" />
+  </remote2>
+  <remote2 name="nvshmem-linux-sbsa-cu13">
+    <transport actions="download" protocol="https" packageLocation="developer.download.nvidia.com/compute/nvshmem/redist/libnvshmem/linux-sbsa/${name}-${version}_cuda13-archive.tar.xz" />
+  </remote2>
+  <dependency name="libnvshmem-cu12" linkPath="../_build/target-deps/libnvshmem" tags="cu12">
+    <package name="libnvshmem-linux-x86_64" version="3.6.5" platforms="linux-x86_64" remotes="nvshmem-linux-x86_64-cu12"/>
+    <package name="libnvshmem-linux-sbsa" version="3.6.5" platforms="linux-aarch64" remotes="nvshmem-linux-sbsa-cu12"/>
+  </dependency>
+  <dependency name="libnvshmem-cu13" linkPath="../_build/target-deps/libnvshmem" tags="cu13">
+    <package name="libnvshmem-linux-x86_64" version="3.6.5" platforms="linux-x86_64" remotes="nvshmem-linux-x86_64-cu13"/>
+    <package name="libnvshmem-linux-sbsa" version="3.6.5" platforms="linux-aarch64" remotes="nvshmem-linux-sbsa-cu13"/>
+  </dependency>
+</project>

@@ -262,6 +262,7 @@ Runtime
    is_cpu_available
    is_cubql_available
    is_cuda_available
+   is_nvshmem_enabled
    print_diagnostics
 
 Kernel Programming
@@ -561,6 +562,14 @@ Constants
    LOG10E
    LOG2E
    NAN
+   NVSHMEM_CMP_EQ
+   NVSHMEM_CMP_GE
+   NVSHMEM_CMP_GT
+   NVSHMEM_CMP_LE
+   NVSHMEM_CMP_LT
+   NVSHMEM_CMP_NE
+   NVSHMEM_SIGNAL_ADD
+   NVSHMEM_SIGNAL_SET
    PHI
    PI
    TAU

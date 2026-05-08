@@ -4039,12 +4039,12 @@ size_t wp_cuda_compile_program(
     nvrtcResult (*get_output_data)(nvrtcProgram, char*);
     const char* output_mode;
     if (num_ltoirs > 0) {
-#if WP_ENABLE_MATHDX
+#if WP_ENABLE_MATHDX || WP_ENABLE_NVSHMEM
         get_output_size = nvrtcGetLTOIRSize;
         get_output_data = nvrtcGetLTOIR;
         output_mode = "wb";
 #else
-        fprintf(stderr, "Warp error: num_ltoirs > 0 but Warp was not built with MathDx support\n");
+        fprintf(stderr, "Warp error: num_ltoirs > 0 but Warp was not built with MathDx or NVSHMEM support\n");
         return size_t(-1);
 #endif
     } else if (use_ptx) {
@@ -4067,7 +4067,7 @@ size_t wp_cuda_compile_program(
 
             // LTOIR case - need an extra step
             if (num_ltoirs > 0) {
-#if WP_ENABLE_MATHDX
+#if WP_ENABLE_MATHDX || WP_ENABLE_NVSHMEM
                 if (ltoir_input_types == nullptr || ltoirs == nullptr || ltoir_sizes == nullptr) {
                     fprintf(
                         stderr, "Warp error: num_ltoirs > 0 but ltoir_input_types, ltoirs or ltoir_sizes are NULL\n"
@@ -4148,7 +4148,7 @@ size_t wp_cuda_compile_program(
                 }
                 check_nvjitlink(handle, nvJitLinkDestroy(&handle));
 #else
-                fprintf(stderr, "Warp error: num_ltoirs > 0 but Warp was not built with MathDx support\n");
+                fprintf(stderr, "Warp error: num_ltoirs > 0 but Warp was not built with MathDx or NVSHMEM support\n");
                 return size_t(-1);
 #endif
             }
