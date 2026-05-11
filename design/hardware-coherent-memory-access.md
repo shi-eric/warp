@@ -16,14 +16,14 @@ if value.device != device:
     )
 ```
 
-This restriction is correct on discrete-GPU systems (e.g., a workstation with a PCIe-connected NVIDIA GPU) where the GPU genuinely cannot dereference a pointer to unpinned CPU memory. However, a growing class of NVIDIA hardware uses **unified memory architectures** where the GPU _can_ directly access CPU memory (and vice versa) with full hardware coherency:
+This restriction is correct on discrete-GPU systems (e.g., a workstation with a PCIe-connected NVIDIA GPU) where the GPU genuinely cannot dereference a pointer to unpinned CPU memory. However, a growing class of NVIDIA hardware uses **unified memory architectures** where the GPU _can_ directly access CPU memory, and on some systems the CPU can also directly access GPU allocations:
 
-- **Grace Hopper (GH200)** -- Grace ARM CPU + Hopper GPU connected via NVLink Chip-to-Chip (C2C). Provides Address Translation Services (ATS) for hardware-coherent access to all system memory from the GPU.
-- **Grace Blackwell (GB200, DGX Spark)** -- Grace ARM CPU + Blackwell GPU, also NVLink C2C with ATS.
-- **Jetson Orin / Jetson Thor** -- Tegra SoCs with integrated GPU sharing the same DRAM as the CPU. These have a different (limited) unified memory model without full ATS, but the GPU can still access managed memory.
+- **Grace C2C systems (GH200, GB200, DGX Spark)** -- Grace ARM CPU + Hopper or Blackwell GPU connected via NVLink Chip-to-Chip (C2C). These systems provide bidirectional ATS: the GPU can access all system memory, and the CPU can directly access CUDA device allocations.
+- **Jetson Orin and other limited Tegra systems** -- Integrated GPUs sharing the same DRAM as the CPU, but with a limited unified memory model where ordinary system allocations are not necessarily GPU-accessible.
+- **Jetson Thor** -- Tegra Blackwell SoC with CUDA-reported ATS. On a Thor development kit tested with CUDA 13.0, the GPU can directly access ordinary system allocations (`malloc`, anonymous `mmap`, and file-backed `mmap`) and host-native atomics work, but CPU direct access to `cudaMalloc` memory is still not supported.
 - **HMM-capable discrete systems** -- Linux kernel 6.1.24+ with Heterogeneous Memory Management (HMM) enabled allows software-coherent access to all system memory from PCIe GPUs, without requiring explicit CUDA allocation APIs.
 
-On all of these systems, the strict `value.device != device` check is overly conservative and forces users into unnecessary `wp.copy()` or `.to(device)` calls that are both a performance penalty and an ergonomic burden. On ATS systems in particular, a plain `malloc`'d pointer is directly accessible from the GPU -- there is no need to copy data at all.
+On all systems where the CUDA device reports `pageable_memory_access`, the strict `value.device != device` check is overly conservative and forces users into unnecessary `wp.copy()` or `.to(device)` calls that are both a performance penalty and an ergonomic burden. On HMM and ATS systems in particular, a plain `malloc`'d pointer is directly accessible from the GPU -- there is no need to copy data at all.
 
 ### User impact
 
@@ -46,13 +46,13 @@ This is not just an inconvenience -- it defeats one of the primary benefits of u
 
 ## Background: CUDA Unified Memory Paradigms
 
-CUDA supports four distinct unified memory paradigms. The paradigm in effect is determined by querying device attributes at runtime. Understanding these paradigms is essential to this design because they dictate what memory is accessible from where, and under what conditions.
+CUDA exposes unified memory capabilities through device attributes. The sections below group the relevant attribute combinations into four capability buckets so the implementation can reason about access rules mechanically, not by assuming behavior from a product family name. Three buckets have concrete platform examples in this document; the managed-only bucket is retained as a conservative fallback for the attribute combination where managed memory is fully shared but ordinary pageable system memory is not.
 
-### Paradigm 1: Limited Unified Memory (Tegra, Windows, WSL)
+### Paradigm 1: Limited Unified Memory (Limited Tegra, Windows, WSL)
 
 **Detection:** `cudaDevAttrConcurrentManagedAccess == 0`
 
-Applies to Tegra/Jetson devices (Orin, Thor) and all Windows systems including WSL.
+Applies to Windows systems including WSL and to Tegra/Jetson devices whose CUDA attributes report limited managed access. Do not infer this from the Jetson family name alone: Jetson Thor tested with CUDA 13.0 reports `concurrentManagedAccess == 1`, `pageableMemoryAccess == 1`, and `pageableMemoryAccessUsesHostPageTables == 1`, so it does not fall into this paradigm.
 
 Characteristics:
 - Only memory explicitly allocated via `cudaMallocManaged` (or `cudaMallocFromPoolAsync` with `cudaMemAllocationTypeManaged`, or `__managed__` globals) behaves as unified memory.
@@ -61,7 +61,7 @@ Characteristics:
 - Oversubscription of GPU memory is not allowed.
 - System allocations (`malloc`, `mmap`) are NOT GPU-accessible.
 
-On Jetson specifically:
+On limited/non-I/O-coherent Tegra specifically:
 - `cudaHostRegister()` is not supported on non-I/O-coherent Tegra devices.
 - `cudaMallocHost` produces uncached memory from the GPU's perspective on non-I/O-coherent Tegra.
 - All memory physically resides in the same shared DRAM, but visibility is controlled by the CUDA driver.
@@ -73,7 +73,7 @@ On Jetson specifically:
 Characteristics:
 - Memory allocated via `cudaMallocManaged` has full unified memory support (page-granularity migration, concurrent CPU/GPU access, oversubscription).
 - System allocations (`malloc`, `mmap`) are still NOT GPU-accessible.
-- This paradigm exists on some discrete GPU + Linux configurations where HMM is not available.
+- This is an attribute-defined bucket. This document does not currently identify a specific tested platform for it, but the implementation should handle it separately because its access rules differ from both limited unified memory and HMM/ATS.
 
 ### Paradigm 3: Full Unified Memory with Software Coherency (HMM)
 
@@ -86,33 +86,49 @@ Characteristics:
 - Migration happens via page faults at page granularity (software coherence).
 - Oversubscription is allowed.
 - `cudaMallocManaged` still works but is unnecessary for basic access -- `malloc` suffices.
-- GPU `cudaMalloc` allocations are NOT CPU-accessible (unlike ATS).
+- GPU `cudaMalloc` allocations are NOT CPU-accessible (unlike bidirectional ATS).
 
-### Paradigm 4: Full Unified Memory with Hardware Coherency (ATS)
+### Paradigm 4: Full System-Memory Access with Host Page Tables (ATS)
 
 **Detection:** `cudaDevAttrPageableMemoryAccessUsesHostPageTables == 1` AND `cudaDevAttrPageableMemoryAccess == 1` AND `cudaDevAttrConcurrentManagedAccess == 1`
 
-Available on Grace Hopper, Grace Blackwell (including DGX Spark), and any future system where an NVIDIA CPU is connected to an NVIDIA GPU via NVLink C2C.
+Available on Grace Hopper, Grace Blackwell (including DGX Spark), Jetson Thor, and future systems where CUDA reports pageable memory access through host page tables. `nvidia-smi -q` reports these systems as `Addressing Mode: ATS`.
 
 Characteristics:
 - ALL system-allocated memory is GPU-accessible (same as HMM).
-- GPU `cudaMalloc` allocations ARE CPU-accessible (`cudaDevAttrDirectManagedMemAccessFromHost == 1`). This is unique to ATS.
-- Native CPU-GPU atomics work (`cudaDevAttrHostNativeAtomicSupported == 1`).
-- Coherency operates at cache-line granularity via hardware snooping -- no page faults, no bulk migration, no software-managed coherence overhead.
-- ATS subsumes all HMM capabilities. When ATS is available, HMM is automatically disabled.
+- GPU `cudaMalloc` allocations are CPU-accessible only when `cudaDevAttrDirectManagedMemAccessFromHost == 1`. This is true on Grace Hopper / Grace Blackwell systems, but false on Jetson Thor as tested with CUDA 13.0.
+- Native CPU-GPU atomics work when `cudaDevAttrHostNativeAtomicSupported == 1`. This is a separate capability bit and does not imply CPU access to `cudaMalloc` allocations.
+- Host page tables are used for system-memory access. On systems with distinct CPU and GPU memory pools (Grace Hopper / Grace Blackwell), physical placement still matters for performance. On integrated SoCs such as Jetson Thor, the CPU and GPU share a single DRAM pool.
+- ATS subsumes the system-memory access capabilities of HMM. When ATS is available, HMM is automatically disabled.
+
+#### Observed Jetson Thor Behavior
+
+The previous version of this document speculated that Jetson Thor would follow the limited Tegra model. Testing on a Jetson Thor development kit on 2026-05-11 showed otherwise:
+
+- Platform: Linux `6.8.12-tegra`, CUDA Toolkit 13.0, Driver 13.0, GPU `NVIDIA Thor`, `sm_110`.
+- `nvidia-smi -q` reports `Addressing Mode: ATS`.
+- CUDA attributes: `integrated == 1`, `unifiedAddressing == 1`, `managedMemory == 1`, `concurrentManagedAccess == 1`, `pageableMemoryAccess == 1`, `pageableMemoryAccessUsesHostPageTables == 1`, `directManagedMemAccessFromHost == 0`, `hostNativeAtomicSupported == 1`, `canUseHostPointerForRegisteredMem == 1`.
+- CUDA kernels successfully read and wrote ordinary `malloc`, anonymous `mmap`, file-backed `mmap`, `cudaMallocHost`, `cudaHostRegister`, and `cudaMallocManaged` allocations.
+- `cudaMemPrefetchAsync` succeeded for both managed memory and ordinary `malloc` memory.
+- Direct CPU load/store of a `cudaMalloc` pointer faulted, matching `directManagedMemAccessFromHost == 0`.
+- A stress test with overlapping CPU atomic increments and GPU `atomicAdd()` produced the exact expected result for ordinary `malloc`, pinned host memory, and managed memory.
+
+The implementation must therefore treat "GPU can access system memory", "CPU can access GPU allocations", and "native CPU-GPU atomics work" as three independent capabilities.
 
 ### Summary of Access Rules by Paradigm
 
-| Allocation type | Limited (Tegra/Win) | Full Managed Only | HMM (Software) | ATS (Hardware) |
-|---|---|---|---|---|
-| `malloc` / system | CPU only | CPU only | CPU + GPU | CPU + GPU |
-| `cudaMallocManaged` | Limited shared | Full shared | Full shared | Full shared |
-| `cudaMallocHost` (pinned) | CPU + GPU (zero-copy) | CPU + GPU | CPU + GPU | CPU + GPU |
-| `cudaMalloc` | GPU only | GPU only | GPU only | **CPU + GPU** |
+| Allocation type | Limited (Tegra/Win) | Full Managed Only | HMM (Software) | ATS system-memory only (Thor) | ATS bidirectional (Grace/GB) |
+|---|---|---|---|---|---|
+| `malloc` / system | CPU only | CPU only | CPU + GPU | CPU + GPU | CPU + GPU |
+| `mmap` / file-backed | CPU only | CPU only | CPU + GPU | CPU + GPU | CPU + GPU |
+| `cudaMallocManaged` | Limited shared | Full shared | Full shared | Full shared | Full shared |
+| `cudaMallocHost` (pinned) | CPU + GPU (zero-copy) | CPU + GPU | CPU + GPU | CPU + GPU | CPU + GPU |
+| `cudaHostRegister` | Device-dependent | CPU + GPU | CPU + GPU | CPU + GPU | CPU + GPU |
+| `cudaMalloc` | GPU only | GPU only | GPU only | GPU only | **CPU + GPU** |
 
 ### Performance Considerations on ATS Systems
 
-Even though all memory is accessible everywhere on ATS systems, physical placement still matters for performance. A GPU kernel repeatedly reading data physically resident in CPU LPDDR5X over NVLink C2C pays the C2C latency on every cache miss. CUDA provides two mechanisms to control placement:
+Even when all system memory is GPU-accessible on ATS systems, physical placement can still matter for performance. On systems with distinct CPU and GPU memory pools, a GPU kernel repeatedly reading data physically resident in CPU LPDDR5X over NVLink C2C pays the C2C latency on every cache miss. CUDA provides mechanisms to control placement:
 
 1. **Explicit prefetch** (`cudaMemPrefetchAsync`): Stream-ordered migration of a memory region to a specified device. Works on any allocation including system `malloc`. This is the primary tool for optimizing data placement.
 
@@ -123,7 +139,9 @@ Even though all memory is accessible everywhere on ATS systems, physical placeme
    - `cudaMemAdviseSetReadMostly` -- allows read replication across devices.
    - `cudaMemAdviseSetAccessedBy(device)` -- enables access counter migration on ATS systems; establishes direct mappings on other systems.
 
-**Important performance caveat**: On ATS systems, the CUDA documentation warns against frequent CPU writes to GPU-resident memory. ARM (Grace) caches require all memory operations to pass through the cache hierarchy, so writing to GPU-resident memory causes cache misses that pull data across C2C before writing. The recommended pattern is: write to CPU-resident memory, let the GPU read it remotely or prefetch it.
+On integrated ATS systems such as Jetson Thor, CPU and GPU memory share one DRAM pool, so prefetch may still succeed but may not provide a useful "closer" placement. Automatic prefetch should therefore remain disabled on integrated GPUs.
+
+**Important performance caveat**: On bidirectional ATS systems, the CUDA documentation warns against frequent CPU writes to GPU-resident memory. ARM (Grace) caches require all memory operations to pass through the cache hierarchy, so writing to GPU-resident memory causes cache misses that pull data across C2C before writing. The recommended pattern is: write to CPU-resident memory, let the GPU read it remotely or prefetch it.
 
 ### Comparison: DGX Spark vs. Jetson Thor
 
@@ -132,16 +150,16 @@ Both DGX Spark and Jetson Thor use Blackwell GPUs, but their memory architecture
 | Aspect | DGX Spark (Grace Blackwell) | Jetson Thor (Tegra Blackwell) |
 |---|---|---|
 | CPU-GPU interconnect | NVLink C2C (high bandwidth, coherent) | On-chip SoC fabric |
-| ATS available | Yes | No |
-| Coherency model | Hardware, cache-line granularity | Limited or software-based |
-| `malloc` GPU-accessible | Yes | No |
+| ATS available | Yes | Yes (`nvidia-smi` reports ATS) |
+| Coherency model | Host-page-table ATS with distinct CPU/GPU memory pools | Host-page-table ATS for system memory on an integrated SoC |
+| `malloc` GPU-accessible | Yes | Yes |
 | `cudaMalloc` CPU-accessible | Yes | No |
-| Native CPU-GPU atomics | Yes | No |
+| Native CPU-GPU atomics | Yes | Yes for host-visible memory |
 | Memory topology | Grace LPDDR5X + Blackwell HBM (NUMA) | Single shared DRAM pool |
-| Unified memory paradigm | Full with hardware coherency (Paradigm 4) | Limited (Paradigm 1) |
-| Best default allocator | System allocator (`malloc`) | `cudaMalloc` or `cudaMallocManaged` |
+| Unified memory paradigm | ATS bidirectional (Paradigm 4) | ATS system-memory only (Paradigm 4) |
+| Best default allocator | System allocator (`malloc`) for shared CPU/GPU data | System allocator (`malloc`) for CPU-produced GPU-readable data; `cudaMalloc` for GPU-private data |
 
-This means the implementation must handle both extremes: Jetson Thor where cross-device access is severely restricted, and DGX Spark where everything is accessible from everywhere.
+This means the implementation must query capabilities independently instead of assuming a single "ATS" behavior. Jetson Thor can launch CUDA kernels directly over CPU arrays, but CPU kernels still cannot dereference `cudaMalloc` arrays.
 
 ## Requirements
 
@@ -149,12 +167,12 @@ This means the implementation must handle both extremes: Jetson Thor where cross
 | --- | --- | --- | --- |
 | R1 | `wp.launch()` must remove the per-argument device check so cross-device array arguments are always passed through to the hardware | Must | Core behavior change, zero launch overhead |
 | R2 | Provide an opt-in verification mode (`warp.config.verify_launch`) that restores device-access checking with clear diagnostics | Must | Debuggability for users who hit CUDA illegal memory access errors |
-| R3 | Provide `wp.prefetch()` API for explicit data migration hints | Should | Performance optimization for ATS/HMM |
+| R3 | Provide `wp.prefetch()` API for explicit data migration hints | Should | Performance optimization for HMM / host-page-table ATS |
 | R4 | Optional automatic prefetch in `wp.launch()` for cross-device arrays on coherent systems | Could | Convenience, but needs careful defaults |
 | R5 | `wp.copy()` should skip staging buffers when direct access is available between devices | Could | Performance optimization, marked as TODO in current code |
 
 **Non-goals:**
-- Changing the default allocator strategy (e.g., using `cudaMallocManaged` by default on Tegra). Allocator selection is a separate concern.
+- Changing the default allocator strategy (e.g., using `cudaMallocManaged` by default on limited Tegra systems). Allocator selection is a separate concern.
 - Supporting cross-device access for CUDA graph capture. Graph capture has additional constraints and should be addressed separately.
 - Automatically determining the optimal physical placement for every array. This is a performance tuning concern best left to the user via hints.
 - Proactively detecting and warning about cross-device launches at `wp.launch()` time. The hardware enforces access rules; the verification mode is available for diagnosis when needed.
@@ -206,14 +224,14 @@ Each phase introduces only the device attributes, native functions, and Python A
 | Phase | What it delivers | Attributes introduced | Native functions introduced |
 |---|---|---|---|
 | 1 | Remove device check from `wp.launch()`, add verification mode, redesign `can_access()` | `pageable_memory_access`, `direct_managed_mem_access_from_host`, `host_native_atomic_supported` | Three `wp_cuda_device_get_*` accessors |
-| 2 | `wp.prefetch()` for explicit data placement | `pageable_memory_access_uses_host_page_tables` (to distinguish HMM from ATS for warning/no-op behavior) | `wp_cuda_mem_prefetch_async` |
+| 2 | `wp.prefetch()` for explicit data placement | `pageable_memory_access_uses_host_page_tables` (to distinguish HMM from host-page-table ATS for warning/no-op behavior) | `wp_cuda_mem_prefetch_async` |
 | 3 | Auto-prefetch in `wp.launch()` | `is_integrated` (to avoid pointless prefetches on shared-DRAM SoCs) | None |
 | 4 | `wp.copy()` staging-buffer optimization | None (reuses `can_access()` from Phase 1) | None |
 | 5 | Allocator-aware fine-grained access checks | `concurrent_managed_access` (to distinguish limited vs. full managed memory) | None |
 
 ### Phase 1: Cross-Device Launch Support
 
-**Goal:** Remove the per-argument device check from `wp.launch()` so that cross-device array arguments are passed straight through to the hardware. On systems with hardware coherency (ATS, HMM), this means cross-device launches work with zero overhead and zero friction. On discrete GPUs where the access is illegal, the CUDA runtime produces an error. A verification mode (`warp.config.verify_launch`) is available to diagnose such errors with clear, argument-level diagnostics before the kernel runs.
+**Goal:** Remove the per-argument device check from `wp.launch()` so that cross-device array arguments are passed straight through to the hardware. On systems with unified system-memory access (HMM or host-page-table ATS), this means CUDA kernels can directly consume CPU arrays with zero launch overhead and zero friction. On systems where the access is illegal, the CUDA runtime produces an error. A verification mode (`warp.config.verify_launch`) is available to diagnose such errors with clear, argument-level diagnostics before the kernel runs.
 
 This phase delivers four things: (a) query three new device attributes, (b) redesign `Device.can_access()`, (c) remove the `pack_arg()` device check (with opt-in verification), (d) add a config flag and verification logic.
 
@@ -221,11 +239,11 @@ This phase delivers four things: (a) query three new device attributes, (b) rede
 
 Three CUDA device attributes are needed:
 
-- **`CU_DEVICE_ATTRIBUTE_PAGEABLE_MEMORY_ACCESS`** -- answers "can this GPU access ordinary `malloc`'d host memory?" This is the attribute that determines whether a Warp `wp.array(device="cpu")` (backed by `malloc` via `CpuDefaultAllocator`) can be dereferenced by a CUDA kernel. Without it, we cannot distinguish a system where the GPU can read CPU pointers (HMM, ATS) from one where it cannot (discrete GPU without HMM, Tegra).
+- **`CU_DEVICE_ATTRIBUTE_PAGEABLE_MEMORY_ACCESS`** -- answers "can this GPU access ordinary `malloc`'d host memory?" This is the attribute that determines whether a Warp `wp.array(device="cpu")` (backed by `malloc` via `CpuDefaultAllocator`) can be dereferenced by a CUDA kernel. Without it, we cannot distinguish a system where the GPU can read CPU pointers (HMM, host-page-table ATS, Jetson Thor) from one where it cannot (discrete GPU without HMM, limited Tegra, Windows).
 
-- **`CU_DEVICE_ATTRIBUTE_DIRECT_MANAGED_MEM_ACCESS_FROM_HOST`** -- answers "can the CPU read/write GPU device memory?" This is the attribute that determines whether a Warp `wp.array(device="cuda:0")` (backed by `cuMemAlloc` via `CudaDefaultAllocator`) can be passed to a CPU kernel. Without it, we cannot distinguish ATS systems (bidirectional access) from HMM systems (GPU-to-CPU only).
+- **`CU_DEVICE_ATTRIBUTE_DIRECT_MANAGED_MEM_ACCESS_FROM_HOST`** -- answers "can the CPU read/write GPU device memory?" This is the attribute that determines whether a Warp `wp.array(device="cuda:0")` (backed by `cuMemAlloc` via `CudaDefaultAllocator`) can be passed to a CPU kernel. Without it, we cannot distinguish bidirectional ATS systems (Grace Hopper / Grace Blackwell) from HMM or Jetson Thor systems where GPU-to-CPU-array access works but CPU-to-`cudaMalloc` access does not.
 
-- **`CU_DEVICE_ATTRIBUTE_HOST_NATIVE_ATOMIC_SUPPORTED`** -- answers "do CPU-GPU atomics work natively across the interconnect?" On ATS systems (Grace Hopper, Grace Blackwell), a GPU `atomicAdd` targeting a CPU-resident address produces correct results via hardware coherency. On HMM systems, the same operation can silently produce wrong results -- the GPU atomic hits a page backed by CPU physical memory without hardware coherency for atomic operations. Exposing this as a device property lets users and downstream tools (e.g., documentation, `wp.prefetch()` heuristics) reason about atomic safety.
+- **`CU_DEVICE_ATTRIBUTE_HOST_NATIVE_ATOMIC_SUPPORTED`** -- answers "do CPU-GPU atomics work natively across the interconnect?" On systems where this is true (Grace Hopper, Grace Blackwell, and Jetson Thor as tested), a GPU `atomicAdd` targeting a CPU-resident address produces correct results via hardware coherency. On HMM systems, the same operation can silently produce wrong results -- the GPU atomic hits a page backed by CPU physical memory without hardware coherency for atomic operations. Exposing this as a device property lets users and downstream tools (e.g., documentation, `wp.prefetch()` heuristics) reason about atomic safety. This attribute must be treated independently from `direct_managed_mem_access_from_host`.
 
 The first two attributes are the minimum needed because `can_access()` has exactly two cross-device branches that need gating: GPU-accessing-CPU and CPU-accessing-GPU. Each branch needs exactly one attribute. The third is exposed as a queryable device property for users who need to know whether cross-device atomics are safe on their system.
 
@@ -326,8 +344,9 @@ Add derived convenience properties:
 def can_access_host_memory(self):
     """Whether this GPU can directly access all host (CPU) memory.
 
-    True on HMM and ATS systems. False on discrete GPU systems without
-    HMM and on Tegra systems with limited unified memory.
+    True on HMM and host-page-table ATS systems, including Jetson Thor.
+    False on discrete GPU systems without HMM and on limited Tegra /
+    Windows systems.
     """
     return self.pageable_memory_access
 
@@ -336,7 +355,9 @@ def is_host_accessible(self):
     """Whether ``cuMemAlloc`` (device) allocations on this device can be
     read and written by the CPU.
 
-    True only on ATS systems (Grace Hopper, Grace Blackwell / DGX Spark).
+    True only when ``cudaDevAttrDirectManagedMemAccessFromHost`` is true
+    (for example Grace Hopper and Grace Blackwell / DGX Spark). This is
+    false on Jetson Thor even though Thor reports ATS for system memory.
     """
     return self.direct_managed_mem_access_from_host
 ```
@@ -365,8 +386,9 @@ Replace with:
 def can_access(self, other):
     """Check if a kernel running on this device can access memory on ``other``.
 
-    This considers same-device access, unified memory capabilities (ATS,
-    HMM), and CUDA peer access between GPUs. The check is conservative:
+    This considers same-device access, unified memory capabilities (HMM
+    and host-page-table ATS), and CUDA peer access between GPUs. The
+    check is conservative:
     it returns ``True`` only when all standard allocations on ``other``
     are accessible from kernels on ``self``.
 
@@ -390,16 +412,17 @@ def can_access(self, other):
 
     # GPU accessing CPU memory.
     if self.is_cuda and other.is_cpu:
-        # ATS or HMM: all system memory is GPU-accessible.
+        # HMM or host-page-table ATS: all system memory is GPU-accessible.
         if self.can_access_host_memory:
             return True
-        # Without HMM/ATS, only pinned allocations are accessible, but we
-        # cannot distinguish pinned from unpinned here, so return False.
+        # Without HMM/host-page-table ATS, only pinned allocations are
+        # accessible, but we cannot distinguish pinned from unpinned
+        # here, so return False.
         return False
 
     # CPU accessing GPU memory.
     if self.is_cpu and other.is_cuda:
-        # ATS: cuMemAlloc memory is CPU-accessible.
+        # Direct managed memory access: cuMemAlloc memory is CPU-accessible.
         if other.is_host_accessible:
             return True
         return False
@@ -424,13 +447,13 @@ def can_access(self, other):
 - The `is_peer_access_enabled()` call in the GPU-to-GPU branch is the module-level function at `warp/_src/context.py:6002`. It lives in the same module as `Device`, so no additional import is needed.
 - `Device.__eq__` (at `context.py:3771`) compares by CUDA context pointer when both operands are `Device` instances, so `self == other` is equivalent to `self.context == other.context` for two `Device` objects. The `self == other` check at the top and the `self.context == other.context` fallback in the GPU-to-GPU branch are not redundant — the top check catches same-alias devices efficiently; the GPU-to-GPU fallback catches the edge case of two different `Device` objects sharing a CUDA context (context sharing).
 - The TODO in the existing code mentions that access depends on the _resource_ (allocation type), not just the device pair. A fully precise check would need to know whether a specific allocation is pinned, managed, or default. This design intentionally makes a conservative device-level check: it returns `True` only when _all standard allocations_ on the other device are accessible. This avoids needing to thread allocation metadata through every call site. Phase 5 (allocator awareness) addresses the resource-level refinement.
-- `can_access()` is NOT called in the default launch path. It is only invoked when `warp.config.verify_launch` is `True` (diagnostic mode) or by other APIs (`wp.copy()`, `wp.prefetch()`, user code). In the verification path, the HMM/ATS branches are cheap property lookups. The GPU-to-GPU peer branch calls `is_peer_access_enabled()` which goes through ctypes into the native layer. If profiling shows this matters in verification mode, the result could be cached per `(self, other)` device pair and invalidated when `set_peer_access_enabled()` is called.
+- `can_access()` is NOT called in the default launch path. It is only invoked when `warp.config.verify_launch` is `True` (diagnostic mode) or by other APIs (`wp.copy()`, `wp.prefetch()`, user code). In the verification path, the HMM / host-page-table ATS branches are cheap property lookups. The GPU-to-GPU peer branch calls `is_peer_access_enabled()` which goes through ctypes into the native layer. If profiling shows this matters in verification mode, the result could be cached per `(self, other)` device pair and invalidated when `set_peer_access_enabled()` is called.
 
 #### 1c. Remove the Launch Device Check
 
 Change `pack_arg()` at `context.py:6808`.
 
-**Scope:** This change only removes the device check for `array` arguments. Other device-bound types (textures, volumes, hash grids) have their own device checks later in `pack_arg()` (e.g., `texture1d_t` at `context.py:6886`) and remain strict (`value.device != device`). Relaxing those is out of scope for Phase 1: textures and volumes have GPU-side handles (CUDA texture objects, device pointers to internal structures) that may not be accessible cross-device even on ATS systems.
+**Scope:** This change only removes the device check for `array` arguments. Other device-bound types (textures, volumes, hash grids) have their own device checks later in `pack_arg()` (e.g., `texture1d_t` at `context.py:6886`) and remain strict (`value.device != device`). Relaxing those is out of scope for Phase 1: textures and volumes have GPU-side handles (CUDA texture objects, device pointers to internal structures) that may not be accessible cross-device even on systems with ATS system-memory access.
 
 The `pack_arg()` function is called for both forward and adjoint arguments (see `pack_args()` at `context.py:7307`, which processes forward args and then adjoint args with `adjoint=True`). The removed check applies to both paths, so cross-device arrays work in backward passes on capable hardware.
 
@@ -451,8 +474,9 @@ With:
 ```python
 # Verify device accessibility (opt-in diagnostic mode).
 # By default, no check is performed and the pointer is passed
-# straight through to the hardware.  On systems with hardware
-# coherency (ATS, HMM) this is correct; on discrete GPUs without
+# straight through to the hardware.  On systems with unified
+# system-memory access (HMM or host-page-table ATS) this is correct;
+# on discrete GPUs without
 # HMM the kernel will fault with CUDA_ERROR_ILLEGAL_ADDRESS if the
 # access is invalid.  Enable warp.config.verify_launch to get a
 # clear Python error *before* the kernel runs.
@@ -493,21 +517,21 @@ with clear, per-argument diagnostics."""
 
 Default mode (`verify_launch = False`): no Python-level checking. The hardware decides.
 
-| Launch device | Array device | Discrete GPU (no HMM) | HMM system | ATS system (DGX Spark) |
-|---|---|---|---|---|
-| `cuda:0` | `cuda:0` | OK (same device) | OK | OK |
-| `cuda:0` | `cpu` | **CUDA fault** | **OK** (HMM) | **OK** (ATS) |
-| `cpu` | `cuda:0` | **Segfault** | **Segfault** | **OK** (ATS, bidirectional) |
-| `cuda:0` | `cuda:1` | CUDA fault / OK (peer) | CUDA fault / OK (peer) | CUDA fault / OK (peer) |
+| Launch device | Array device | Discrete GPU (no HMM) | HMM system | Jetson Thor | Bidirectional ATS (DGX Spark) |
+|---|---|---|---|---|---|
+| `cuda:0` | `cuda:0` | OK (same device) | OK | OK | OK |
+| `cuda:0` | `cpu` | **CUDA fault** | **OK** (HMM) | **OK** (ATS system memory) | **OK** (ATS) |
+| `cpu` | `cuda:0` | **Segfault** | **Segfault** | **Segfault** | **OK** (direct managed access) |
+| `cuda:0` | `cuda:1` | CUDA fault / OK (peer) | CUDA fault / OK (peer) | N/A on single-GPU Thor | CUDA fault / OK (peer) |
 
 Verification mode (`verify_launch = True`): `can_access()` is checked per argument.
 
-| Launch device | Array device | Discrete GPU (no HMM) | HMM system | ATS system (DGX Spark) |
-|---|---|---|---|---|
-| `cuda:0` | `cuda:0` | OK (same device) | OK | OK |
-| `cuda:0` | `cpu` | **RuntimeError** | **OK** (HMM) | **OK** (ATS) |
-| `cpu` | `cuda:0` | **RuntimeError** | **RuntimeError** | **OK** (ATS, bidirectional) |
-| `cuda:0` | `cuda:1` | RuntimeError / OK (peer) | RuntimeError / OK (peer) | RuntimeError / OK (peer) |
+| Launch device | Array device | Discrete GPU (no HMM) | HMM system | Jetson Thor | Bidirectional ATS (DGX Spark) |
+|---|---|---|---|---|---|
+| `cuda:0` | `cuda:0` | OK (same device) | OK | OK | OK |
+| `cuda:0` | `cpu` | **RuntimeError** | **OK** (HMM) | **OK** (ATS system memory) | **OK** (ATS) |
+| `cpu` | `cuda:0` | **RuntimeError** | **RuntimeError** | **RuntimeError** | **OK** (direct managed access) |
+| `cuda:0` | `cuda:1` | RuntimeError / OK (peer) | RuntimeError / OK (peer) | N/A on single-GPU Thor | RuntimeError / OK (peer) |
 
 On a standard discrete-GPU workstation without HMM, users who pass a CPU array to a CUDA kernel will get a CUDA fault instead of the current Python `RuntimeError`. This is a deliberate tradeoff: zero overhead in the launch path for all users, at the cost of a less friendly error for an incorrect program. The verification mode restores the friendly error for diagnosis.
 
@@ -519,7 +543,7 @@ However, if the array was _produced_ by a kernel on a different stream, the call
 
 ### Phase 2: Explicit Prefetch API (`wp.prefetch()`)
 
-**Goal:** Provide a public API for users to request migration of array data to a specific device, without copying. This is a performance optimization for ATS/HMM systems where data is accessible everywhere but performance depends on physical placement.
+**Goal:** Provide a public API for users to request migration of array data to a specific device, without copying. This is a performance optimization for HMM and ATS systems where data is accessible across processors but performance can depend on physical placement.
 
 This phase introduces one additional device attribute and one new native function.
 
@@ -527,8 +551,8 @@ This phase introduces one additional device attribute and one new native functio
 
 **CUDA attribute:** `CU_DEVICE_ATTRIBUTE_PAGEABLE_MEMORY_ACCESS_USES_HOST_PAGE_TABLES`
 
-This attribute distinguishes HMM (software coherency) from ATS (hardware coherency). Both have `pageable_memory_access == 1`, but prefetch behavior differs:
-- On ATS, prefetch migrates physical pages via hardware DMA with cache-line coherency. It is efficient and predictable.
+This attribute distinguishes HMM (software coherency) from host-page-table ATS. Both have `pageable_memory_access == 1`, but prefetch behavior differs:
+- On host-page-table ATS with distinct CPU/GPU memory pools, prefetch can migrate physical pages via hardware DMA with cache-line coherency. On integrated systems such as Jetson Thor, prefetch may succeed but may not improve placement because CPU and GPU share the same DRAM.
 - On HMM, prefetch triggers software page migration with TLB shootdowns. It works but has higher overhead and different failure modes.
 
 The `wp.prefetch()` implementation needs this to provide accurate diagnostics (e.g., warning when prefetching on a system where it may cause page-fault storms) and to choose the right native API call path.
@@ -629,10 +653,10 @@ This pattern follows the existing convention in `cuda_util.cpp` (e.g., `cuMemcpy
 
 The v1 API is fully sufficient for the `wp.prefetch()` use case (migrate to a device or to the CPU). The v2 API adds NUMA node targeting which is not needed initially but is available when both toolkit and driver support it.
 
-**Disabling prefetch on older CUDA:** If Warp is compiled with CUDA 12.0 -- 12.7, only the v1 entry point is loaded. The v1 API works for `cudaMallocManaged` allocations on all systems, and also for system-allocated (`malloc`) memory on HMM/ATS systems. The Python `wp.prefetch()` wrapper should catch errors from the driver (e.g., if the pointer is not in a prefetchable region) and emit a warning rather than raising, since prefetch is a performance hint.
+**Disabling prefetch on older CUDA:** If Warp is compiled with CUDA 12.0 -- 12.7, only the v1 entry point is loaded. The v1 API works for `cudaMallocManaged` allocations on all systems, and also for system-allocated (`malloc`) memory on HMM / host-page-table ATS systems. The Python `wp.prefetch()` wrapper should catch errors from the driver (e.g., if the pointer is not in a prefetchable region) and emit a warning rather than raising, since prefetch is a performance hint.
 
 Implementation notes:
-- `cuMemPrefetchAsync` works on any pointer that falls within a unified memory region -- including plain `malloc` on ATS/HMM systems, `cuMemAllocManaged` allocations, and `cuMemAlloc` allocations on ATS systems.
+- `cuMemPrefetchAsync` works on any pointer that falls within a unified memory region -- including plain `malloc` on HMM / host-page-table ATS systems, `cuMemAllocManaged` allocations, and `cuMemAlloc` allocations on systems where device allocations are host-accessible.
 - On systems where the pointer is not in a prefetchable region, the call returns an error. The Python wrapper should catch this and either warn or silently ignore, since prefetch is a hint.
 - The prefetch is stream-ordered: it begins after all prior operations on the stream complete and finishes before any subsequent operations on the stream begin.
 
@@ -646,8 +670,8 @@ def prefetch(
 ):
     """Request asynchronous migration of ``array`` data toward ``device``.
 
-    On systems with hardware coherency (ATS) or software coherency
-    (HMM), this issues a ``cuMemPrefetchAsync`` to migrate the
+    On systems with host-page-table ATS or software coherency (HMM),
+    this issues a ``cuMemPrefetchAsync`` to migrate the
     array's physical pages closer to the specified device. The array
     remains valid and accessible from any device during and after the
     prefetch.
@@ -670,7 +694,7 @@ def prefetch(
 #### Usage example
 
 ```python
-# On DGX Spark (ATS system):
+# On DGX Spark (bidirectional ATS system):
 data = wp.array(np.random.randn(1000000), dtype=wp.float32, device="cpu")
 
 # Prefetch to GPU before a compute-heavy kernel
@@ -694,7 +718,7 @@ This phase introduces one additional device attribute.
 
 This attribute indicates whether the GPU is physically integrated into the same chip/package as the CPU (Tegra/Jetson SoCs). It is already queried in the native layer (`warp.cu:295`) but stored in a local variable `device_attribute_integrated` used only for the IPC check. This phase promotes it to a stored `DeviceInfo` field exposed to Python.
 
-The auto-prefetch heuristic needs this because prefetch on an integrated GPU is pointless -- the CPU and GPU share the same physical DRAM, so there is no "closer" location to migrate data to. Issuing a `cuMemPrefetchAsync` on Tegra either no-ops or triggers an unnecessary page-table remap. Without this attribute, the auto-prefetch code would waste time issuing useless prefetch calls on every Jetson kernel launch with cross-device arrays.
+The auto-prefetch heuristic needs this because prefetch on an integrated GPU is usually pointless -- the CPU and GPU share the same physical DRAM, so there is no "closer" location to migrate data to. Jetson Thor testing showed that `cuMemPrefetchAsync` can succeed for ordinary `malloc` memory, but that does not make automatic prefetch useful. Without this attribute, the auto-prefetch code would waste time issuing low-value prefetch calls on every integrated-GPU kernel launch with cross-device arrays.
 
 #### Config flag
 
@@ -703,7 +727,7 @@ Add to `warp/config.py`:
 ```python
 auto_prefetch = False
 """When True and launching a kernel on a device that can access memory on
-another device (e.g., GPU accessing CPU memory on an ATS system),
+another device (e.g., GPU accessing CPU memory on an HMM or ATS system),
 automatically prefetch cross-device array arguments to the launch device
 before the kernel begins. Default is False because automatic prefetch is
 not always beneficial -- for example, streaming read-once access patterns
@@ -734,7 +758,7 @@ if value.device != device and warp.config.auto_prefetch:
 
 Automatic prefetch has several cases where it hurts more than it helps:
 
-1. **Read-once data**: If a kernel reads an array once and never again, prefetching (which involves a DMA transfer) is slower than just reading it remotely over C2C.
+1. **Read-once data**: If a kernel reads an array once and never again, prefetching (which may involve a DMA transfer or page-table work) can be slower than direct access.
 2. **CPU-produced, GPU-consumed streaming data**: If the CPU is continuously writing to a buffer that the GPU reads, prefetching would fight with the CPU's writes. The CUDA documentation explicitly recommends keeping such data CPU-resident and letting the GPU read remotely.
 3. **Small arrays**: The overhead of issuing a prefetch (driver call, DMA setup) exceeds the benefit for small transfers.
 4. **Multiple kernels**: If multiple kernels on different devices access the same array, prefetching to one device may pessimize access from another.
@@ -755,7 +779,7 @@ The current `wp.copy()` implementation (at `context.py:8702`) has a TODO for thi
 # TODO: We can skip the staging if device access is enabled.
 ```
 
-On ATS systems, the GPU can directly read non-contiguous CPU memory (and vice versa), so the staging buffer is unnecessary. The fix is straightforward:
+On systems with `pageable_memory_access`, the GPU can directly read non-contiguous CPU memory, so staging is unnecessary for destination-device copy kernels that read CPU source arrays. The reverse direction is only available when `direct_managed_mem_access_from_host` is true. The fix is straightforward:
 
 ```python
 if src.device != dest.device:
@@ -774,7 +798,7 @@ This is a performance optimization and not required for correctness -- the exist
 
 ### Phase 5: Allocator-Aware Fine-Grained Access Checks (Future)
 
-**Goal:** Track the "accessibility class" of each allocation so that `can_access()` can make fine-grained decisions even on systems without full HMM/ATS.
+**Goal:** Track the "accessibility class" of each allocation so that `can_access()` can make fine-grained decisions even on systems without full HMM / host-page-table ATS.
 
 This phase introduces one additional device attribute.
 
@@ -782,7 +806,7 @@ This phase introduces one additional device attribute.
 
 **CUDA attribute:** `CU_DEVICE_ATTRIBUTE_CONCURRENT_MANAGED_ACCESS`
 
-This attribute distinguishes the "limited" unified memory paradigm (Tegra, Windows -- `concurrent_managed_access == 0`) from the "full" paradigms (`concurrent_managed_access == 1`). On limited systems, `cudaMallocManaged` allocations bulk-migrate and cannot be concurrently accessed by CPU and GPU. On full systems, managed allocations support page-granularity migration with concurrent access.
+This attribute distinguishes the "limited" unified memory paradigm (limited Tegra, Windows -- `concurrent_managed_access == 0`) from the "full" paradigms (`concurrent_managed_access == 1`). On limited systems, `cudaMallocManaged` allocations bulk-migrate and cannot be concurrently accessed by CPU and GPU. On full systems, managed allocations support page-granularity migration with concurrent access.
 
 The allocator-aware `can_access()` needs this because it must answer: "if this specific array was allocated with `cudaMallocManaged` (a Warp managed allocator), can the GPU access it concurrently with the CPU?" The answer depends on this attribute.
 
@@ -806,7 +830,7 @@ def can_access(self, other, allocation_kind=None):
     """..."""
     # ... existing logic ...
 
-    # GPU accessing CPU memory without HMM/ATS.
+    # GPU accessing CPU memory without HMM/host-page-table ATS.
     if self.is_cuda and other.is_cpu:
         if self.can_access_host_memory:
             return True
@@ -827,8 +851,8 @@ Add a test module `warp/tests/test_unified_memory.py` (registered in `warp/tests
 **Attribute query tests (run on all hardware):**
 - Verify `pageable_memory_access`, `direct_managed_mem_access_from_host`, and `host_native_atomic_supported` are `bool` for CUDA devices and `False` for CPU devices.
 - Verify `can_access_host_memory` and `is_host_accessible` return values consistent with the raw attributes.
-- If `direct_managed_mem_access_from_host` is `True`, then `pageable_memory_access` must also be `True` (ATS implies HMM-like access). This is an invariant check.
-- If `host_native_atomic_supported` is `True`, then `direct_managed_mem_access_from_host` must also be `True` (native atomics imply ATS). This is an invariant check.
+- If `direct_managed_mem_access_from_host` is `True`, then `pageable_memory_access` should also be `True` (host-visible device memory implies unified host access). This is an invariant check.
+- Do not assert that `host_native_atomic_supported` implies `direct_managed_mem_access_from_host`; Jetson Thor reports native host atomics while still rejecting direct CPU access to `cudaMalloc` memory.
 
 **`can_access()` tests (run on all hardware):**
 - `device.can_access(device)` is always `True` for every device.
@@ -836,24 +860,24 @@ Add a test module `warp/tests/test_unified_memory.py` (registered in `warp/tests
 - GPU-to-CPU and CPU-to-GPU: assert the result is consistent with the queried attributes:
   - If `pageable_memory_access` is `True`, GPU-to-CPU should be `True`.
   - If `direct_managed_mem_access_from_host` is `True`, CPU-to-GPU should be `True`.
-  - Otherwise, both should be `False`.
+  - If either attribute is `False`, only the corresponding direction should be `False`.
 - GPU-to-GPU peer: enable peer access, verify `can_access()` returns `True`. Disable, verify `False`.
 
 **Cross-device launch tests (hardware-dependent, skip on incapable systems):**
 - On systems where `cuda_device.can_access_host_memory` is `True`: allocate a CPU array, launch a CUDA kernel that reads and writes it, verify results match expected values.
-- On ATS systems (`is_host_accessible` is `True`): allocate a GPU array, verify CPU can access it after launch.
+- On systems where `is_host_accessible` is `True`: allocate a GPU array, verify CPU can access it after launch. This should skip on Jetson Thor.
 - Test with output arrays (not just inputs).
 - Test with multi-dimensional arrays with non-trivial strides.
 
 **Verification mode tests (run on all hardware):**
 - With `warp.config.verify_launch = True` on a discrete GPU without HMM: verify that launching with a CPU array raises `RuntimeError` (not a CUDA fault).
-- With `warp.config.verify_launch = True` on an ATS/HMM system: verify that cross-device launches still succeed (no false positive).
+- With `warp.config.verify_launch = True` on an HMM / host-page-table ATS system: verify that CUDA launches with CPU arrays still succeed (no false positive).
 - With `warp.config.verify_launch = False` (default): verify that no Python-level device check occurs (cross-device arrays are passed through without error from `pack_arg()`).
 
 ### Phase 2 tests (prefetch)
 
-- On ATS/HMM systems: prefetch a CPU array to GPU, launch a kernel, verify correctness.
-- On systems without HMM/ATS: calling `wp.prefetch()` should not raise (no-op or warning).
+- On HMM / host-page-table ATS systems: prefetch a CPU array to GPU, launch a kernel, verify correctness.
+- On systems without HMM / host-page-table ATS: calling `wp.prefetch()` should not raise (no-op or warning).
 - Test stream ordering: prefetch then kernel on same stream, verify results.
 - Test prefetch back to CPU: prefetch to GPU, then prefetch to CPU, verify CPU access.
 
@@ -870,11 +894,13 @@ Add a test module `warp/tests/test_unified_memory.py` (registered in `warp/tests
 
 ### Device compatibility matrix for test expectations
 
-| Test scenario | Discrete (no HMM) | Discrete (HMM) | Grace Hopper/Blackwell (ATS) | Jetson Orin/Thor |
-|---|---|---|---|---|
-| GPU can access CPU arrays | No | Yes | Yes | No (limited) |
-| CPU can access GPU arrays | No | No | Yes | No |
-| Cross-device launch GPU->CPU array (default) | CUDA fault | OK | OK | CUDA fault |
-| Cross-device launch CPU->GPU array (default) | Segfault | Segfault | OK | Segfault |
-| Cross-device launch (verify mode) | RuntimeError | OK / RuntimeError | OK | RuntimeError |
-| `wp.prefetch()` effective | No-op | Yes (SW) | Yes (HW) | No-op |
+| Test scenario | Discrete (no HMM) | Discrete (HMM) | Grace Hopper/Blackwell (bidirectional ATS) | Jetson Orin / limited Tegra | Jetson Thor |
+|---|---|---|---|---|---|
+| GPU can access CPU arrays | No | Yes | Yes | No | Yes |
+| CPU can access GPU arrays | No | No | Yes | No | No |
+| Native CPU-GPU atomics on host-visible memory | No | No | Yes | Device-dependent | Yes |
+| Cross-device launch GPU->CPU array (default) | CUDA fault | OK | OK | CUDA fault | OK |
+| Cross-device launch CPU->GPU array (default) | Segfault | Segfault | OK | Segfault | Segfault |
+| Cross-device launch GPU->CPU array (verify mode) | RuntimeError | OK | OK | RuntimeError | OK |
+| Cross-device launch CPU->GPU array (verify mode) | RuntimeError | RuntimeError | OK | RuntimeError | RuntimeError |
+| `wp.prefetch()` for CPU arrays | No-op / warning | Yes (SW) | Yes (HW) | No-op / warning | Accepted; low expected benefit on integrated DRAM |
