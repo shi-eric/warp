@@ -415,7 +415,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../api_reference/warp_autograd.html">warp.autograd</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../api_reference/warp_config.html">warp.config</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../api_reference/warp_fem.html">warp.fem</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../api_reference/warp_jax_experimental.html">warp.jax_experimental</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api_reference/warp_jax.html">warp.jax</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../api_reference/warp_optim.html">warp.optim</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../api_reference/warp_render.html">warp.render</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../api_reference/warp_sparse.html">warp.sparse</a></li>
@@ -1729,7 +1729,7 @@ b.grad = [-1. -1. -1. -1. -1. -1. -1. -1. -1. -1.]
 </pre></div>
 </div>
 <p>In-place multiplication and division are <em>not</em> supported and incorrect results will be obtained in the backward pass.
-A warning will be emitted during code generation if <code class="docutils literal notranslate"><span class="pre">wp.config.verbose</span> <span class="pre">=</span> <span class="pre">True</span></code>.</p>
+A warning will be emitted during code generation if <code class="docutils literal notranslate"><span class="pre">wp.config.log_level</span> <span class="pre">=</span> <span class="pre">wp.LOG_DEBUG</span></code>.</p>
 </section>
 <section id="vector-matrix-and-quaternion-component-assignment">
 <h3>Vector, Matrix, and Quaternion Component Assignment<a class="headerlink" href="#vector-matrix-and-quaternion-component-assignment" title="Link to this heading">#</a></h3>

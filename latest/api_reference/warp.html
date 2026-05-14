@@ -414,7 +414,7 @@
 <li class="toctree-l1"><a class="reference internal" href="warp_autograd.html">warp.autograd</a></li>
 <li class="toctree-l1"><a class="reference internal" href="warp_config.html">warp.config</a></li>
 <li class="toctree-l1"><a class="reference internal" href="warp_fem.html">warp.fem</a></li>
-<li class="toctree-l1"><a class="reference internal" href="warp_jax_experimental.html">warp.jax_experimental</a></li>
+<li class="toctree-l1"><a class="reference internal" href="warp_jax.html">warp.jax</a></li>
 <li class="toctree-l1"><a class="reference internal" href="warp_optim.html">warp.optim</a></li>
 <li class="toctree-l1"><a class="reference internal" href="warp_render.html">warp.render</a></li>
 <li class="toctree-l1"><a class="reference internal" href="warp_sparse.html">warp.sparse</a></li>
@@ -515,7 +515,7 @@ element methods, and <a class="reference internal" href="warp_sparse.html#module
 <ul class="simple">
 <li><p><a class="reference internal" href="warp_autograd.html#module-warp.autograd" title="warp.autograd"><code class="xref py py-mod docutils literal notranslate"><span class="pre">warp.autograd</span></code></a></p></li>
 <li><p><a class="reference internal" href="warp_fem.html#module-warp.fem" title="warp.fem"><code class="xref py py-mod docutils literal notranslate"><span class="pre">warp.fem</span></code></a></p></li>
-<li><p><a class="reference internal" href="warp_jax_experimental.html#module-warp.jax_experimental" title="warp.jax_experimental"><code class="xref py py-mod docutils literal notranslate"><span class="pre">warp.jax_experimental</span></code></a></p></li>
+<li><p><a class="reference internal" href="warp_jax.html#module-warp.jax" title="warp.jax"><code class="xref py py-mod docutils literal notranslate"><span class="pre">warp.jax</span></code></a></p></li>
 <li><p><a class="reference internal" href="warp_optim.html#module-warp.optim" title="warp.optim"><code class="xref py py-mod docutils literal notranslate"><span class="pre">warp.optim</span></code></a></p></li>
 <li><p><a class="reference internal" href="warp_render.html#module-warp.render" title="warp.render"><code class="xref py py-mod docutils literal notranslate"><span class="pre">warp.render</span></code></a></p></li>
 <li><p><a class="reference internal" href="warp_sparse.html#module-warp.sparse" title="warp.sparse"><code class="xref py py-mod docutils literal notranslate"><span class="pre">warp.sparse</span></code></a></p></li>
@@ -943,13 +943,7 @@ element methods, and <a class="reference internal" href="warp_sparse.html#module
 <td><p>Hash-based spatial grid for accelerated neighbor queries on point data.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="_generated/warp.HashGridQuery.html#warp.HashGridQuery" title="warp.HashGridQuery"><code class="xref py py-obj docutils literal notranslate"><span class="pre">HashGridQuery</span></code></a></p></td>
-<td><p>Object used to track state during neighbor traversal (float32).</p></td>
-</tr>
-<tr class="row-even"><td><p><a class="reference internal" href="_generated/warp.HashGridQueryD.html#warp.HashGridQueryD" title="warp.HashGridQueryD"><code class="xref py py-obj docutils literal notranslate"><span class="pre">HashGridQueryD</span></code></a></p></td>
-<td><p>Object used to track state during neighbor traversal (float64).</p></td>
-</tr>
-<tr class="row-odd"><td><p><a class="reference internal" href="_generated/warp.HashGridQueryH.html#warp.HashGridQueryH" title="warp.HashGridQueryH"><code class="xref py py-obj docutils literal notranslate"><span class="pre">HashGridQueryH</span></code></a></p></td>
-<td><p>Object used to track state during neighbor traversal (float16).</p></td>
+<td><p>Object used to track state during <a class="reference internal" href="_generated/warp.HashGrid.html#warp.HashGrid" title="warp.HashGrid"><code class="xref py py-class docutils literal notranslate"><span class="pre">warp.HashGrid</span></code></a> neighbor traversal.</p></td>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="_generated/warp.Mesh.html#warp.Mesh" title="warp.Mesh"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Mesh</span></code></a></p></td>
 <td><p>Triangle mesh for collision detection, ray casting, and spatial queries.</p></td>
@@ -1451,6 +1445,41 @@ element methods, and <a class="reference internal" href="warp_sparse.html#module
 </div>
 </section>
 </section>
+<section id="logging">
+<h2>Logging<a class="headerlink" href="#logging" title="Link to this heading">#</a></h2>
+<div class="pst-scrollable-table-container"><table class="autosummary longtable table">
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="_generated/warp.Logger.html#warp.Logger" title="warp.Logger"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Logger</span></code></a></p></td>
+<td><p>Protocol for Warp loggers.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="_generated/warp.ScopedLogLevel.html#warp.ScopedLogLevel" title="warp.ScopedLogLevel"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ScopedLogLevel</span></code></a></p></td>
+<td><p>Context manager to temporarily override <a class="reference internal" href="_generated/warp.config.log_level.html#warp.config.log_level" title="warp.config.log_level"><code class="xref py py-data docutils literal notranslate"><span class="pre">warp.config.log_level</span></code></a>.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="_generated/warp.ScopedLogger.html#warp.ScopedLogger" title="warp.ScopedLogger"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ScopedLogger</span></code></a></p></td>
+<td><p>Context manager to temporarily install a custom logger.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="_generated/warp.get_logger.html#warp.get_logger" title="warp.get_logger"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_logger</span></code></a></p></td>
+<td><p>Return the active Warp logger.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="_generated/warp.set_logger.html#warp.set_logger" title="warp.set_logger"><code class="xref py py-obj docutils literal notranslate"><span class="pre">set_logger</span></code></a></p></td>
+<td><p>Set the active Warp logger.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="_generated/warp.LOG_DEBUG.html#warp.LOG_DEBUG" title="warp.LOG_DEBUG"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LOG_DEBUG</span></code></a></p></td>
+<td><p>Log level for verbose compilation and debugging output.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="_generated/warp.LOG_ERROR.html#warp.LOG_ERROR" title="warp.LOG_ERROR"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LOG_ERROR</span></code></a></p></td>
+<td><p>Log level for error messages.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="_generated/warp.LOG_INFO.html#warp.LOG_INFO" title="warp.LOG_INFO"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LOG_INFO</span></code></a></p></td>
+<td><p>Log level for informational messages (init banner, launch info).</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="_generated/warp.LOG_WARNING.html#warp.LOG_WARNING" title="warp.LOG_WARNING"><code class="xref py py-obj docutils literal notranslate"><span class="pre">LOG_WARNING</span></code></a></p></td>
+<td><p>Log level for warnings and deprecation notices.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
 <section id="numpy-interop">
 <h2>NumPy Interop<a class="headerlink" href="#numpy-interop" title="Link to this heading">#</a></h2>
 <div class="pst-scrollable-table-container"><table class="autosummary longtable table">
@@ -1764,6 +1793,7 @@ element methods, and <a class="reference internal" href="warp_sparse.html#module
 <li class="toc-h3 nav-item toc-entry"><a class="reference internal nav-link" href="#timing-flags">Timing Flags</a></li>
 </ul>
 </li>
+<li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#logging">Logging</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#numpy-interop">NumPy Interop</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#dlpack-interop">DLPack Interop</a></li>
 <li class="toc-h2 nav-item toc-entry"><a class="reference internal nav-link" href="#jax-interop">JAX Interop</a></li>

@@ -414,7 +414,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../api_reference/warp_autograd.html">warp.autograd</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../api_reference/warp_config.html">warp.config</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../api_reference/warp_fem.html">warp.fem</a></li>
-<li class="toctree-l1"><a class="reference internal" href="../api_reference/warp_jax_experimental.html">warp.jax_experimental</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../api_reference/warp_jax.html">warp.jax</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../api_reference/warp_optim.html">warp.optim</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../api_reference/warp_render.html">warp.render</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../api_reference/warp_sparse.html">warp.sparse</a></li>
@@ -2446,6 +2446,9 @@ and <a class="reference internal" href="../language_reference/_generated/warp.ha
     <span class="n">output</span><span class="p">[</span><span class="n">tid</span><span class="p">]</span> <span class="o">=</span> <span class="nb">sum</span>
 </pre></div>
 </div>
+<p>Helper functions that take hash grid query objects should annotate the query argument with the matching grid coordinate
+precision, for example <code class="docutils literal notranslate"><span class="pre">wp.HashGridQuery[wp.float64]</span></code>. The unparameterized <code class="docutils literal notranslate"><span class="pre">wp.HashGridQuery</span></code> denotes the default
+<code class="docutils literal notranslate"><span class="pre">wp.float32</span></code> query type.</p>
 <div class="admonition note">
 <p class="admonition-title">Note</p>
 <p>The <code class="docutils literal notranslate"><span class="pre">HashGrid</span></code> query will give back all points in <em>cells</em> that fall inside the query radius.
