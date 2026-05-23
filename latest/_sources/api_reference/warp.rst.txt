@@ -320,6 +320,7 @@ Device Management
 
    Device
    ScopedDevice
+   can_access
    get_cuda_device
    get_cuda_device_count
    get_cuda_devices

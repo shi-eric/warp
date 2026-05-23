@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>NVIDIA Warp Documentation &#8212; Warp 1.14.0.dev0</title>
+    <title>NVIDIA Warp Documentation &#8212; Warp 1.15.0.dev0</title>
   
   
   
@@ -44,7 +44,7 @@
 
 
 
-    <script src="_static/documentation_options.js?v=b37a29d0"></script>
+    <script src="_static/documentation_options.js?v=cfb6835f"></script>
     <script src="_static/doctools.js?v=9bcbadda"></script>
     <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="_static/clipboard.min.js?v=a7894cd8"></script>
@@ -67,7 +67,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="1.14.0.dev0" />
+  <meta name="docsearch:version" content="1.15.0.dev0" />
 
 
   </head>
@@ -138,11 +138,11 @@
       
     
     
-    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="Warp 1.14.0.dev0 - Home"/>
-    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="Warp 1.14.0.dev0 - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="Warp 1.15.0.dev0 - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="Warp 1.15.0.dev0 - Home"/>
   
   
-    <p class="title logo__title">Warp 1.14.0.dev0</p>
+    <p class="title logo__title">Warp 1.15.0.dev0</p>
   
 </a></div>
     
@@ -277,11 +277,11 @@
       
     
     
-    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="Warp 1.14.0.dev0 - Home"/>
-    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="Warp 1.14.0.dev0 - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="Warp 1.15.0.dev0 - Home"/>
+    <img src="_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="Warp 1.15.0.dev0 - Home"/>
   
   
-    <p class="title logo__title">Warp 1.14.0.dev0</p>
+    <p class="title logo__title">Warp 1.15.0.dev0</p>
   
 </a>
 
@@ -398,6 +398,7 @@
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="deep_dive/codegen.html">Code Generation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="deep_dive/allocators.html">Allocators</a></li>
+<li class="toctree-l1"><a class="reference internal" href="deep_dive/memory_access.html">CPU/GPU cross-device memory access</a></li>
 <li class="toctree-l1"><a class="reference internal" href="deep_dive/concurrency.html">Concurrency</a></li>
 <li class="toctree-l1"><a class="reference internal" href="deep_dive/profiling.html">Profiling</a></li>
 </ul>
@@ -878,6 +879,19 @@ tile-based GPU programming. Install the optional dependencies with
 <li class="toctree-l1"><a class="reference internal" href="deep_dive/allocators.html">Allocators</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="deep_dive/allocators.html#stream-ordered-memory-pool-allocators">Stream-Ordered Memory Pool Allocators</a></li>
 <li class="toctree-l2"><a class="reference internal" href="deep_dive/allocators.html#custom-allocators">Custom Allocators</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="deep_dive/memory_access.html">CPU/GPU cross-device memory access</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="deep_dive/memory_access.html#launching-with-arrays-on-the-same-device">Launching with arrays on the same device</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deep_dive/memory_access.html#device-capability-properties">Device capability properties</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deep_dive/memory_access.html#common-cpu-gpu-memory-models">Common CPU/GPU memory models</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deep_dive/memory_access.html#launching-gpu-kernels-with-cpu-arrays">Launching GPU kernels with CPU arrays</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deep_dive/memory_access.html#accessing-gpu-data-from-cpu-code">Accessing GPU data from CPU code</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deep_dive/memory_access.html#checking-access-for-a-specific-array-with-wp-can-access">Checking access for a specific array with <code class="docutils literal notranslate"><span class="pre">wp.can_access()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="deep_dive/memory_access.html#checking-coarse-device-access-with-device-can-access">Checking coarse device access with <code class="docutils literal notranslate"><span class="pre">Device.can_access()</span></code></a></li>
+<li class="toctree-l2"><a class="reference internal" href="deep_dive/memory_access.html#checking-array-access-before-launch">Checking array access before launch</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deep_dive/memory_access.html#checking-cpu-gpu-atomic-support">Checking CPU/GPU atomic support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="deep_dive/memory_access.html#choosing-a-memory-access-pattern">Choosing a memory access pattern</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="deep_dive/concurrency.html">Concurrency</a><ul>

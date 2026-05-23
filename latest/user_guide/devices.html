@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>Devices &#8212; Warp 1.14.0.dev0</title>
+    <title>Devices &#8212; Warp 1.15.0.dev0</title>
   
   
   
@@ -44,7 +44,7 @@
 
 
 
-    <script src="../_static/documentation_options.js?v=b37a29d0"></script>
+    <script src="../_static/documentation_options.js?v=cfb6835f"></script>
     <script src="../_static/doctools.js?v=9bcbadda"></script>
     <script src="../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -68,7 +68,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="1.14.0.dev0" />
+  <meta name="docsearch:version" content="1.15.0.dev0" />
 
 
   </head>
@@ -139,11 +139,11 @@
       
     
     
-    <img src="../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="Warp 1.14.0.dev0 - Home"/>
-    <img src="../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="Warp 1.14.0.dev0 - Home"/>
+    <img src="../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="Warp 1.15.0.dev0 - Home"/>
+    <img src="../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="Warp 1.15.0.dev0 - Home"/>
   
   
-    <p class="title logo__title">Warp 1.14.0.dev0</p>
+    <p class="title logo__title">Warp 1.15.0.dev0</p>
   
 </a></div>
     
@@ -278,11 +278,11 @@
       
     
     
-    <img src="../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="Warp 1.14.0.dev0 - Home"/>
-    <img src="../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="Warp 1.14.0.dev0 - Home"/>
+    <img src="../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="Warp 1.15.0.dev0 - Home"/>
+    <img src="../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="Warp 1.15.0.dev0 - Home"/>
   
   
-    <p class="title logo__title">Warp 1.14.0.dev0</p>
+    <p class="title logo__title">Warp 1.15.0.dev0</p>
   
 </a>
 
@@ -399,6 +399,7 @@
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../deep_dive/codegen.html">Code Generation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deep_dive/allocators.html">Allocators</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../deep_dive/memory_access.html">CPU/GPU cross-device memory access</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deep_dive/concurrency.html">Concurrency</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../deep_dive/profiling.html">Profiling</a></li>
 </ul>
@@ -681,6 +682,8 @@ If the <code class="docutils literal notranslate"><span class="pre">CUcontext</s
     <span class="n">wp</span><span class="o">.</span><span class="n">launch</span><span class="p">(</span><span class="n">kernel</span><span class="p">,</span> <span class="n">dim</span><span class="o">=</span><span class="n">a</span><span class="o">.</span><span class="n">size</span><span class="p">,</span> <span class="n">inputs</span><span class="o">=</span><span class="p">[</span><span class="n">a</span><span class="p">])</span>
 </pre></div>
 </div>
+<p>For advanced systems where CPU and GPU memory may be directly accessible across
+device boundaries, see <a class="reference internal" href="../deep_dive/memory_access.html"><span class="doc">CPU/GPU cross-device memory access</span></a>.</p>
 </section>
 <section id="cuda-peer-access">
 <span id="peer-access"></span><h2>CUDA Peer Access<a class="headerlink" href="#cuda-peer-access" title="Link to this heading">#</a></h2>

@@ -9,7 +9,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <title>warp.matrix_from_cols &#8212; Warp 1.14.0.dev0</title>
+    <title>warp.matrix_from_cols &#8212; Warp 1.15.0.dev0</title>
   
   
   
@@ -44,7 +44,7 @@
 
 
 
-    <script src="../../_static/documentation_options.js?v=b37a29d0"></script>
+    <script src="../../_static/documentation_options.js?v=cfb6835f"></script>
     <script src="../../_static/doctools.js?v=9bcbadda"></script>
     <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
     <script src="../../_static/clipboard.min.js?v=a7894cd8"></script>
@@ -68,7 +68,7 @@
 
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <meta name="docsearch:language" content="en"/>
-  <meta name="docsearch:version" content="1.14.0.dev0" />
+  <meta name="docsearch:version" content="1.15.0.dev0" />
 
 
   </head>
@@ -139,11 +139,11 @@
       
     
     
-    <img src="../../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="Warp 1.14.0.dev0 - Home"/>
-    <img src="../../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="Warp 1.14.0.dev0 - Home"/>
+    <img src="../../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="Warp 1.15.0.dev0 - Home"/>
+    <img src="../../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="Warp 1.15.0.dev0 - Home"/>
   
   
-    <p class="title logo__title">Warp 1.14.0.dev0</p>
+    <p class="title logo__title">Warp 1.15.0.dev0</p>
   
 </a></div>
     
@@ -278,11 +278,11 @@
       
     
     
-    <img src="../../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="Warp 1.14.0.dev0 - Home"/>
-    <img src="../../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="Warp 1.14.0.dev0 - Home"/>
+    <img src="../../_static/nvidia-logo-horiz-rgb-blk-for-screen.svg" class="logo__image only-light" alt="Warp 1.15.0.dev0 - Home"/>
+    <img src="../../_static/nvidia-logo-horiz-rgb-wht-for-screen.svg" class="logo__image only-dark pst-js-only" alt="Warp 1.15.0.dev0 - Home"/>
   
   
-    <p class="title logo__title">Warp 1.14.0.dev0</p>
+    <p class="title logo__title">Warp 1.15.0.dev0</p>
   
 </a>
 
@@ -399,6 +399,7 @@
 <ul class="nav bd-sidenav">
 <li class="toctree-l1"><a class="reference internal" href="../../deep_dive/codegen.html">Code Generation</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../deep_dive/allocators.html">Allocators</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../deep_dive/memory_access.html">CPU/GPU cross-device memory access</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../deep_dive/concurrency.html">Concurrency</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../../deep_dive/profiling.html">Profiling</a></li>
 </ul>
@@ -495,7 +496,7 @@
 <h1>warp.matrix_from_cols<a class="headerlink" href="#warp-matrix-from-cols" title="Link to this heading">#</a></h1>
 <dl class="py function">
 <dt class="sig sig-object py" id="warp.matrix_from_cols">
-<span class="sig-prename descclassname"><span class="pre">warp.</span></span><span class="sig-name descname"><span class="pre">matrix_from_cols</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em><span class="sig-paren">)</span><a class="reference external" href="https://github.com/NVIDIA/warp/blob/main/warp/_src/types.py#L1528-L1579"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#warp.matrix_from_cols" title="Link to this definition">#</a></dt>
+<span class="sig-prename descclassname"><span class="pre">warp.</span></span><span class="sig-name descname"><span class="pre">matrix_from_cols</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em><span class="sig-paren">)</span><a class="reference external" href="https://github.com/NVIDIA/warp/blob/main/warp/_src/types.py#L1529-L1580"><span class="viewcode-link"><span class="pre">[source]</span></span></a><a class="headerlink" href="#warp.matrix_from_cols" title="Link to this definition">#</a></dt>
 <dd><p>Construct a matrix with each vector argument as a column.</p>
 <p>The resulting matrix has dimensions <code class="docutils literal notranslate"><span class="pre">(vector_length,</span> <span class="pre">num_vectors)</span></code>, where
 the i-th column of the matrix contains the elements of the i-th vector argument.</p>
