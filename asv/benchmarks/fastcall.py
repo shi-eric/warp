@@ -15,17 +15,18 @@
 
 import warp as wp
 
+_HALF_FLOAT_CONVERSION_BATCH = 200
+_HALF_BITS_TO_FLOAT_FASTCALL_BATCH = 1_500
+
 
 class HalfFloatConversion:
     """Benchmark half-float conversion via METH_FASTCALL and ctypes paths."""
 
-    # Short fastcall loops can hide scheduler noise in millisecond-scale
-    # samples. Keep those samples near 0.05-0.10 ms and compensate with more
-    # ASV repeats. The single-conversion ctypes benchmarks still use larger
-    # inner loops; only the round-trip ctypes benchmark uses a shorter loop
-    # because it performs two ctypes calls per iteration.
-    repeat = 300
-    number = 1
+    # Use fixed ASV number values instead of auto-calibration, and make the
+    # class default larger than one so new methods do not silently collect
+    # single-invocation timing samples.
+    repeat = 200
+    number = 100
     warmup_time = 0.1
     min_run_count = 10
 
@@ -38,7 +39,9 @@ class HalfFloatConversion:
 
     def time_float_to_half_bits_fastcall(self):
         fn = self.core.wp_float_to_half_bits
-        for _ in range(2_000):
+        # This benchmark is especially short; use a longer body so fixed
+        # ASV samples stay close to the default 10 ms sample target.
+        for _ in range(300):
             fn(1.0)
 
     def time_float_to_half_bits_ctypes(self):
@@ -48,7 +51,7 @@ class HalfFloatConversion:
 
     def time_half_bits_to_float_fastcall(self):
         fn = self.core.wp_half_bits_to_float
-        for _ in range(2_000):
+        for _ in range(_HALF_BITS_TO_FLOAT_FASTCALL_BATCH):
             fn(0x3C00)
 
     def time_half_bits_to_float_ctypes(self):
@@ -59,7 +62,7 @@ class HalfFloatConversion:
     def time_round_trip_fastcall(self):
         to_half = self.core.wp_float_to_half_bits
         to_float = self.core.wp_half_bits_to_float
-        for _ in range(2_000):
+        for _ in range(_HALF_FLOAT_CONVERSION_BATCH):
             to_float(to_half(1.0))
 
     def time_round_trip_ctypes(self):
@@ -69,9 +72,8 @@ class HalfFloatConversion:
             to_float(to_half(1.0))
 
 
-# Longer samples make this short benchmark less sensitive to CPU state shifts.
-HalfFloatConversion.time_float_to_half_bits_fastcall.number = 10
-HalfFloatConversion.time_float_to_half_bits_fastcall.repeat = 2_000
-HalfFloatConversion.time_half_bits_to_float_fastcall.repeat = 2_000
-HalfFloatConversion.time_round_trip_fastcall.repeat = 2_000
-HalfFloatConversion.time_round_trip_ctypes.repeat = 20_000
+HalfFloatConversion.time_float_to_half_bits_fastcall.number = 1_500
+HalfFloatConversion.time_float_to_half_bits_ctypes.number = 6
+HalfFloatConversion.time_half_bits_to_float_fastcall.number = 600
+HalfFloatConversion.time_half_bits_to_float_ctypes.number = 6
+HalfFloatConversion.time_round_trip_fastcall.number = 1_000
