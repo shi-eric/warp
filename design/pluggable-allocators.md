@@ -231,7 +231,7 @@ Future solutions must provide enough allocation provenance for
 make the same conservative decisions they make for Warp-owned allocations. At a
 minimum, Warp needs to distinguish the owning device and memory class for
 allocations that participate in cross-device launch verification, including
-default CUDA device memory, CUDA memory pools, managed memory, pinned host
+CUDA malloc memory, CUDA memory pools, managed memory, pinned host
 memory, and allocator-defined external memory.
 
 Any future mechanism must remain backward compatible with simple custom

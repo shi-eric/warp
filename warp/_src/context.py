@@ -3579,6 +3579,45 @@ class _ArrayAccessStatus(enum.Enum):
     UNKNOWN = enum.auto()
 
 
+class AllocationKind(enum.Enum):
+    """Kind of memory backing a Warp array.
+
+    For arrays allocated by Warp's built-in allocators, this tells you whether
+    the storage is regular CPU memory, pinned CPU memory, CUDA malloc memory,
+    CUDA memory-pool memory, or CUDA managed memory. Warp uses this
+    value when checking whether a device can use an array directly, for example
+    in :func:`can_access` and checked kernel launches.
+
+    For ``CUDA_MANAGED``, the value only means the array was allocated with
+    CUDA managed memory. It does not say where CUDA currently keeps the pages,
+    whether CUDA has finished moving them, or whether a specific CPU or GPU can
+    safely use the array data right now. Use :func:`can_access` for that access
+    check.
+
+    CUDA managed-memory allocations report ``CUDA_MANAGED`` whether Warp used
+    ``cudaMallocManaged()`` or a CUDA 13 managed memory pool. ``CUDA_MEMPOOL``
+    means Warp's standard CUDA memory-pool allocator, not managed memory.
+    """
+
+    HOST = "host"
+    """Default host memory."""
+
+    PINNED_HOST = "pinned_host"
+    """Pinned host memory."""
+
+    CUDA_MALLOC = "cuda_malloc"
+    """CUDA device memory allocated without Warp's memory-pool allocator."""
+
+    CUDA_MEMPOOL = "cuda_mempool"
+    """CUDA memory-pool allocation."""
+
+    CUDA_MANAGED = "cuda_managed"
+    """CUDA managed-memory allocation."""
+
+    UNKNOWN = "unknown"
+    """Memory kind that Warp cannot verify."""
+
+
 _LAUNCH_ARRAY_ACCESS_WARNING_CACHE_SIZE = 1024
 _launch_array_access_warnings_seen: collections.OrderedDict[tuple[str, str, str, str], None] = collections.OrderedDict()
 
@@ -3658,6 +3697,8 @@ def _set_alloc_tag_if_tracking(ptr):
 
 
 class CpuDefaultAllocator:
+    kind = AllocationKind.HOST
+
     def __init__(self, device):
         if not device.is_cpu:
             raise ValueError(f"CpuDefaultAllocator requires a CPU device, got '{device}'")
@@ -3674,6 +3715,8 @@ class CpuDefaultAllocator:
 
 
 class CpuPinnedAllocator:
+    kind = AllocationKind.PINNED_HOST
+
     def __init__(self, device):
         if not device.is_cpu:
             raise ValueError(f"CpuPinnedAllocator requires a CPU device, got '{device}'")
@@ -3691,6 +3734,8 @@ class CpuPinnedAllocator:
 
 
 class CudaDefaultAllocator:
+    kind = AllocationKind.CUDA_MALLOC
+
     def __init__(self, device):
         if not device.is_cuda:
             raise ValueError(f"CudaDefaultAllocator requires a CUDA device, got '{device}'")
@@ -3724,6 +3769,8 @@ class CudaDefaultAllocator:
 
 
 class CudaMempoolAllocator:
+    kind = AllocationKind.CUDA_MEMPOOL
+
     def __init__(self, device):
         if not device.is_cuda:
             raise ValueError(f"CudaMempoolAllocator requires a CUDA device, got '{device}'")
@@ -3740,6 +3787,91 @@ class CudaMempoolAllocator:
 
     def deallocate(self, ptr, size_in_bytes):
         runtime.core.wp_free_device_async(self.device.context, ptr, None)
+
+
+class ManagedAllocator:
+    """Allocator that creates CUDA managed-memory arrays.
+
+    The allocator object is not bound to one CUDA device and can be reused
+    across devices. Each allocation still happens under a specific CUDA context,
+    and that context's device must support CUDA managed memory. Warp pushes the
+    target CUDA context before invoking ``allocate()``, and the allocator records
+    that context as the owner for each pointer so it can free allocations
+    through the same CUDA context later. Direct calls to ``allocate()`` require
+    an active CUDA context.
+
+    CUDA graph-capture allocation requires a CUDA 13.0+ build and a device where
+    Warp can create a managed memory pool. CUDA 12.x builds, including CUDA 12.9,
+    fall back to ``cudaMallocManaged()``, which works outside graph capture but
+    cannot allocate while capture is active. Allocate managed arrays before
+    capture begins on those builds.
+    """
+
+    kind = AllocationKind.CUDA_MANAGED
+
+    def __init__(self):
+        self._contexts_by_ptr: dict[int, int] = {}
+        self._lock = threading.Lock()
+
+    def allocate(self, size_in_bytes):
+        init()
+
+        context = runtime.core.wp_cuda_context_get_current()
+        if not context:
+            raise RuntimeError("ManagedAllocator.allocate() requires an active CUDA context")
+
+        device = runtime.get_current_cuda_device()
+        if not device.is_cuda:
+            raise RuntimeError("ManagedAllocator requires a current CUDA device")
+        if not device.is_managed_memory_supported:
+            raise RuntimeError(f"ManagedAllocator requires CUDA managed memory support on device '{device}'")
+
+        ptr = runtime.core.wp_alloc_device_managed(context, size_in_bytes, None)
+        if not ptr:
+            reason = ""
+            native_error = runtime.core.wp_get_error_string()
+            if native_error:
+                decoded_error = native_error.decode()
+                if decoded_error:
+                    reason = f": {decoded_error}"
+            if device.is_capturing and not device.is_mempool_supported:
+                reason = (
+                    ": managed allocation during CUDA graph capture requires managed memory pool support; "
+                    "allocate before capture on this device"
+                )
+            raise RuntimeError(
+                f"Failed to allocate {size_in_bytes} bytes with ManagedAllocator on device '{device}'{reason}"
+            )
+
+        _set_alloc_tag_if_tracking(ptr)
+        with self._lock:
+            self._contexts_by_ptr[ptr] = context
+        return ptr
+
+    def deallocate(self, ptr, size_in_bytes):
+        init()
+
+        if not ptr:
+            return
+
+        with self._lock:
+            context = self._contexts_by_ptr.pop(ptr, None)
+            if context is None:
+                raise RuntimeError("ManagedAllocator cannot free a pointer whose provenance is unknown")
+
+        if not runtime.core.wp_free_device_managed(context, ptr):
+            with self._lock:
+                self._contexts_by_ptr[ptr] = context
+            raise RuntimeError(runtime.get_error_string())
+
+
+def _get_allocator_kind(allocator) -> AllocationKind:
+    if isinstance(
+        allocator,
+        (CpuDefaultAllocator, CpuPinnedAllocator, CudaDefaultAllocator, CudaMempoolAllocator, ManagedAllocator),
+    ):
+        return allocator.kind
+    return AllocationKind.UNKNOWN
 
 
 class ContextGuard:
@@ -4071,8 +4203,14 @@ class Device:
             memory physically resident on this device without migration. This does not imply that Warp arrays
             allocated on CUDA devices are CPU-accessible: Warp's built-in CUDA allocators do not create CUDA
             managed-memory allocations. ``False`` for CPU devices.
-        is_cpu_gpu_atomic_supported (bool): Indicates whether native atomic operations between CPU and GPU memory
-            are supported on this device. ``False`` for CPU devices.
+        is_cpu_gpu_atomic_supported (bool): Indicates whether the CUDA device reports native CPU/GPU atomic
+            hardware capability. This is not a guarantee that Warp ``wp.atomic_*`` operations can be used
+            concurrently from CPU and GPU kernels; current CPU-side Warp atomics are not hardware atomics.
+            ``False`` for CPU devices.
+        is_managed_memory_supported (bool): Indicates whether the CUDA device supports managed-memory allocations.
+            ``False`` for CPU devices.
+        is_concurrent_managed_access_supported (bool): Indicates whether the CUDA device supports concurrent managed
+            memory access. ``False`` for CPU devices.
         is_cubin_supported (bool): Indicates whether Warp's version of NVRTC can directly
             generate CUDA binary files (cubin) for this device's architecture. ``False`` for CPU devices.
         is_mempool_supported (bool): Indicates whether the device supports using the ``cuMemAllocAsync`` and
@@ -4122,6 +4260,8 @@ class Device:
             self.is_cpu_memory_access_from_gpu_supported = False
             self.is_gpu_memory_access_from_cpu_supported = False
             self.is_cpu_gpu_atomic_supported = False
+            self.is_managed_memory_supported = False
+            self.is_concurrent_managed_access_supported = False
             self.is_mempool_supported = False
             self.is_mempool_enabled = False
             self.is_ipc_supported = False  # TODO: Support IPC for CPU arrays
@@ -4150,6 +4290,10 @@ class Device:
                 runtime.core.wp_cuda_device_get_direct_managed_mem_access_from_host(ordinal) > 0
             )
             self.is_cpu_gpu_atomic_supported = runtime.core.wp_cuda_device_get_host_native_atomic_supported(ordinal) > 0
+            self.is_managed_memory_supported = runtime.core.wp_cuda_device_get_managed_memory(ordinal) > 0
+            self.is_concurrent_managed_access_supported = (
+                runtime.core.wp_cuda_device_get_concurrent_managed_access(ordinal) > 0
+            )
             self.is_mempool_supported = runtime.core.wp_cuda_device_is_mempool_supported(ordinal) > 0
             if platform.system() == "Linux":
                 # Use None when IPC support cannot be determined
@@ -4939,6 +5083,8 @@ class Runtime:
             self.core.wp_alloc_device_default.restype = ctypes.c_void_p
             self.core.wp_alloc_device_async.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_char_p]
             self.core.wp_alloc_device_async.restype = ctypes.c_void_p
+            self.core.wp_alloc_device_managed.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_char_p]
+            self.core.wp_alloc_device_managed.restype = ctypes.c_void_p
 
             self.core.wp_float_to_half_bits.argtypes = [ctypes.c_float]
             self.core.wp_float_to_half_bits.restype = ctypes.c_uint16
@@ -4960,6 +5106,8 @@ class Runtime:
             self.core.wp_free_device_default.restype = None
             self.core.wp_free_device_async.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
             self.core.wp_free_device_async.restype = None
+            self.core.wp_free_device_managed.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+            self.core.wp_free_device_managed.restype = ctypes.c_bool
 
             self.core.wp_alloc_tracker_enable.argtypes = [ctypes.c_int]
             self.core.wp_alloc_tracker_enable.restype = None
@@ -5732,6 +5880,10 @@ class Runtime:
             self.core.wp_cuda_device_get_direct_managed_mem_access_from_host.restype = ctypes.c_int
             self.core.wp_cuda_device_get_host_native_atomic_supported.argtypes = [ctypes.c_int]
             self.core.wp_cuda_device_get_host_native_atomic_supported.restype = ctypes.c_int
+            self.core.wp_cuda_device_get_managed_memory.argtypes = [ctypes.c_int]
+            self.core.wp_cuda_device_get_managed_memory.restype = ctypes.c_int
+            self.core.wp_cuda_device_get_concurrent_managed_access.argtypes = [ctypes.c_int]
+            self.core.wp_cuda_device_get_concurrent_managed_access.restype = ctypes.c_int
             self.core.wp_cuda_device_is_mempool_supported.argtypes = [ctypes.c_int]
             self.core.wp_cuda_device_is_mempool_supported.restype = ctypes.c_int
             self.core.wp_cuda_device_is_ipc_supported.argtypes = [ctypes.c_int]
@@ -8052,6 +8204,21 @@ def _get_array_allocator(value: warp.array) -> Allocator | None:
     return None
 
 
+def _get_array_allocation_kind(value: warp.array) -> AllocationKind:
+    """Return allocation provenance for ``value``, following views to their owner."""
+
+    while warp._src.types.is_array(value):
+        kind = getattr(value, "_allocation_kind", None)
+        ref = getattr(value, "_ref", None)
+        if kind is not None and kind != AllocationKind.UNKNOWN:
+            return kind
+        if ref is None:
+            return kind or AllocationKind.UNKNOWN
+        value = ref
+
+    return AllocationKind.UNKNOWN
+
+
 def can_access(device: DeviceLike, resource) -> bool:
     """Return whether ``device`` can directly access ``resource``.
 
@@ -8120,7 +8287,7 @@ def _classify_single_array_access_from_device(value: warp.array, device: Device)
     if device.context == value_device.context:
         return _ArrayAccessStatus.ACCESSIBLE
 
-    allocator = _get_array_allocator(value)
+    allocation_kind = _get_array_allocation_kind(value)
 
     if device.is_cuda and value_device.is_cpu:
         if value.pinned and device.is_uva:
@@ -8130,8 +8297,14 @@ def _classify_single_array_access_from_device(value: warp.array, device: Device)
         return _ArrayAccessStatus.INACCESSIBLE
 
     if device.is_cpu and value_device.is_cuda:
-        if isinstance(allocator, CudaDefaultAllocator | CudaMempoolAllocator):
-            # Warp's CUDA arrays are not CUDA managed-memory allocations.
+        if allocation_kind == AllocationKind.CUDA_MANAGED:
+            if (
+                value_device.is_concurrent_managed_access_supported
+                or value_device.is_gpu_memory_access_from_cpu_supported
+            ):
+                return _ArrayAccessStatus.ACCESSIBLE
+            return _ArrayAccessStatus.INACCESSIBLE
+        if allocation_kind in (AllocationKind.CUDA_MALLOC, AllocationKind.CUDA_MEMPOOL):
             return _ArrayAccessStatus.INACCESSIBLE
 
         # Custom and externally wrapped CUDA allocations may use allocation
@@ -8139,11 +8312,15 @@ def _classify_single_array_access_from_device(value: warp.array, device: Device)
         return _ArrayAccessStatus.UNKNOWN
 
     if device.is_cuda and value_device.is_cuda:
-        if isinstance(allocator, CudaMempoolAllocator):
+        if allocation_kind == AllocationKind.CUDA_MANAGED:
+            if device.is_managed_memory_supported and value_device.is_managed_memory_supported:
+                return _ArrayAccessStatus.ACCESSIBLE
+            return _ArrayAccessStatus.INACCESSIBLE
+        if allocation_kind == AllocationKind.CUDA_MEMPOOL:
             if is_mempool_access_enabled(value_device, device):
                 return _ArrayAccessStatus.ACCESSIBLE
             return _ArrayAccessStatus.INACCESSIBLE
-        if isinstance(allocator, CudaDefaultAllocator):
+        if allocation_kind == AllocationKind.CUDA_MALLOC:
             if is_peer_access_enabled(value_device, device):
                 return _ArrayAccessStatus.ACCESSIBLE
             return _ArrayAccessStatus.INACCESSIBLE
@@ -8155,10 +8332,24 @@ def _classify_single_array_access_from_device(value: warp.array, device: Device)
     return _ArrayAccessStatus.INACCESSIBLE
 
 
+def _format_array_allocation_kind(value: warp.array) -> str:
+    kind_names = []
+    for backing_array in _iter_array_access_backing_arrays(value):
+        kind_name = _get_array_allocation_kind(backing_array).name
+        if kind_name not in kind_names:
+            kind_names.append(kind_name)
+
+    if len(kind_names) == 1:
+        return f"allocation_kind={kind_names[0]}"
+
+    return f"allocation_kinds=[{', '.join(kind_names)}]"
+
+
 def _raise_launch_array_access_error(kernel, arg_name: str, value: warp.array, device: Device) -> None:
+    allocation_kind = _format_array_allocation_kind(value)
     raise RuntimeError(
         f"Error launching kernel '{kernel.key}', trying to launch on device='{device}', "
-        f"but input array for argument '{arg_name}' is on device={value.device}, "
+        f"but input array for argument '{arg_name}' is on device={value.device} ({allocation_kind}), "
         f"whose array allocation is not accessible or cannot be verified as accessible from "
         f"'{device}'. Move the array to '{device}', enable the required peer/coherent access, "
         f"or set warp.config.launch_array_access_mode = warp.config.LaunchArrayAccessMode.RELAXED "
@@ -8178,7 +8369,8 @@ def _warn_unknown_launch_array_access(kernel, arg_name: str, value: warp.array, 
 
     log_warning(
         f"warp.config.LaunchArrayAccessMode.CHECKED cannot verify cross-device access for kernel '{kernel.key}' "
-        f"argument '{arg_name}' from device={value.device} to launch device='{device}': the array uses "
+        f"argument '{arg_name}' from device={value.device} to launch device='{device}' "
+        f"({_format_array_allocation_kind(value)}): the array uses "
         "an unknown allocator or externally wrapped allocation. The launch will proceed but may result "
         "in errors. Use warp.config.LaunchArrayAccessMode.STRICT to reject this launch, or "
         "warp.config.LaunchArrayAccessMode.RELAXED to suppress this diagnostic.",

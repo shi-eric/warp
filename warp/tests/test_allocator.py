@@ -1,13 +1,15 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import gc
 import unittest
 from unittest import mock
 
 import numpy as np
 
 import warp as wp
-from warp._src.context import Allocator
+import warp._src.context as warp_context
+from warp._src.context import Allocator, _get_allocator_kind
 from warp.tests.unittest_utils import add_function_test, get_cuda_test_devices
 
 wp.init()
@@ -61,6 +63,18 @@ class FailAllocator:
 
     def allocate(self, size_in_bytes):
         raise RuntimeError("deliberate failure")
+
+    def deallocate(self, ptr, size_in_bytes):
+        pass
+
+
+class MisleadingKindAllocator:
+    """Test allocator whose public attributes should not affect internal kind."""
+
+    kind = wp.AllocationKind.CUDA_MANAGED
+
+    def allocate(self, size_in_bytes):
+        return 0
 
     def deallocate(self, ptr, size_in_bytes):
         pass
@@ -147,6 +161,43 @@ class TestAllocatorProtocol(unittest.TestCase):
         self.assertIsInstance(cpu.default_allocator, Allocator)
         self.assertIsInstance(cpu.pinned_allocator, Allocator)
 
+    def test_public_allocation_kind_for_cpu_arrays(self):
+        """array.allocation_kind reports verified CPU allocation provenance."""
+
+        a = wp.empty(4, dtype=wp.float32, device="cpu")
+        self.assertIs(a.allocation_kind, wp.AllocationKind.HOST)
+        self.assertIs(a[1:].allocation_kind, wp.AllocationKind.HOST)
+
+        if wp.is_cuda_available():
+            pinned = wp.empty(4, dtype=wp.float32, device="cpu", pinned=True)
+            self.assertIs(pinned.allocation_kind, wp.AllocationKind.PINNED_HOST)
+
+        data = np.empty(4, dtype=np.float32)
+        wrapped = wp.array(ptr=data.ctypes.data, dtype=wp.float32, shape=data.shape, device="cpu", copy=False)
+        self.assertIs(wrapped.allocation_kind, wp.AllocationKind.UNKNOWN)
+
+    def test_get_allocator_kind_builtin_and_custom(self):
+        """Internal allocator kinds only recognize built-in allocators."""
+        cpu = wp.get_device("cpu")
+        self.assertIs(_get_allocator_kind(cpu.default_allocator), wp.AllocationKind.HOST)
+        self.assertIs(_get_allocator_kind(cpu.pinned_allocator), wp.AllocationKind.PINNED_HOST)
+        self.assertIs(_get_allocator_kind(MisleadingKindAllocator()), wp.AllocationKind.UNKNOWN)
+
+        self.assertIs(_get_allocator_kind(wp.ManagedAllocator()), wp.AllocationKind.CUDA_MANAGED)
+
+        if wp.is_cuda_available():
+            cuda = wp.get_device("cuda:0")
+            self.assertIs(_get_allocator_kind(cuda.default_allocator), wp.AllocationKind.CUDA_MALLOC)
+            if cuda.is_mempool_supported:
+                self.assertIs(_get_allocator_kind(cuda.mempool_allocator), wp.AllocationKind.CUDA_MEMPOOL)
+
+    @unittest.skipIf(wp.get_cuda_toolkit_version() is not None, "requires the no-CUDA native stub")
+    def test_native_managed_free_no_cuda_stub_is_noop(self):
+        """The no-CUDA native managed free stub accepts all pointers as no-ops."""
+
+        self.assertTrue(warp_context.runtime.core.wp_free_device_managed(None, None))
+        self.assertTrue(warp_context.runtime.core.wp_free_device_managed(None, 1))
+
 
 def test_protocol_conformance_cuda(test, device):
     """Built-in CUDA allocators satisfy the Allocator protocol."""
@@ -154,10 +205,46 @@ def test_protocol_conformance_cuda(test, device):
     test.assertIsInstance(device.default_allocator, Allocator)
     if device.is_mempool_supported:
         test.assertIsInstance(device.mempool_allocator, Allocator)
+    test.assertIsInstance(wp.ManagedAllocator(), Allocator)
 
 
 add_function_test(
     TestAllocatorProtocol, "test_protocol_conformance_cuda", test_protocol_conformance_cuda, devices=cuda_test_devices
+)
+
+
+def test_public_allocation_kind_for_cuda_arrays(test, device):
+    """array.allocation_kind reports verified CUDA allocation provenance."""
+
+    device = wp.get_device(device)
+
+    with wp.ScopedMempool(device, False):
+        default = wp.empty(4, dtype=wp.float32, device=device)
+
+    test.assertIs(default.allocation_kind, wp.AllocationKind.CUDA_MALLOC)
+    test.assertIs(default[1:].allocation_kind, wp.AllocationKind.CUDA_MALLOC)
+
+    wrapped = wp.array(ptr=default.ptr, dtype=wp.float32, shape=default.shape, device=device, copy=False)
+    test.assertIs(wrapped.allocation_kind, wp.AllocationKind.UNKNOWN)
+
+    if device.is_mempool_supported:
+        with wp.ScopedMempool(device, True):
+            mempool = wp.empty(4, dtype=wp.float32, device=device)
+        test.assertIs(mempool.allocation_kind, wp.AllocationKind.CUDA_MEMPOOL)
+
+    if device.is_managed_memory_supported:
+        managed_allocator = wp.ManagedAllocator()
+        with wp.ScopedAllocator(device, managed_allocator):
+            managed = wp.empty(4, dtype=wp.float32, device=device)
+        test.assertIs(managed.allocation_kind, wp.AllocationKind.CUDA_MANAGED)
+        test.assertIs(managed[1:].allocation_kind, wp.AllocationKind.CUDA_MANAGED)
+
+
+add_function_test(
+    TestAllocatorProtocol,
+    "test_public_allocation_kind_for_cuda_arrays",
+    test_public_allocation_kind_for_cuda_arrays,
+    devices=cuda_test_devices,
 )
 
 
@@ -201,6 +288,40 @@ class TestCustomAllocator(unittest.TestCase):
         """set_device_allocator() raises for CPU devices."""
         with self.assertRaises(RuntimeError):
             wp.set_device_allocator("cpu", CountingAllocator(wp.get_device("cuda:0")))
+
+    def test_managed_allocator_constructs_without_current_context(self):
+        """ManagedAllocator construction does not require an active CUDA context."""
+
+        saved_context = warp_context.runtime.core.wp_cuda_context_get_current()
+
+        try:
+            warp_context.runtime.core.wp_cuda_context_set_current(None)
+            managed = wp.ManagedAllocator()
+            self.assertIsInstance(managed, Allocator)
+            self.assertIs(_get_allocator_kind(managed), wp.AllocationKind.CUDA_MANAGED)
+        finally:
+            warp_context.runtime.core.wp_cuda_context_set_current(saved_context)
+
+    def test_managed_allocator_direct_allocate_requires_current_context(self):
+        """Direct ManagedAllocator.allocate() requires an active CUDA context."""
+
+        saved_context = warp_context.runtime.core.wp_cuda_context_get_current()
+        managed = wp.ManagedAllocator()
+
+        try:
+            warp_context.runtime.core.wp_cuda_context_set_current(None)
+
+            with self.assertRaisesRegex(RuntimeError, "active CUDA context"):
+                managed.allocate(16)
+        finally:
+            warp_context.runtime.core.wp_cuda_context_set_current(saved_context)
+
+    def test_managed_allocator_deallocate_null_is_noop(self):
+        """ManagedAllocator.deallocate() treats null pointers as no-ops."""
+
+        managed = wp.ManagedAllocator()
+        managed.deallocate(None, 0)
+        managed.deallocate(0, 0)
 
 
 def test_set_cuda_allocator(test, device):
@@ -265,6 +386,113 @@ def test_scoped_allocator(test, device):
     test.assertIs(wp.get_device_allocator(device), original)
 
 
+def test_managed_allocator_allocates_on_selected_device(test, device):
+    """ManagedAllocator uses the CUDA device selected by ScopedAllocator."""
+
+    device = wp.get_device(device)
+    if not device.is_managed_memory_supported:
+        test.skipTest(f"{device} does not support CUDA managed memory")
+
+    managed = wp.ManagedAllocator()
+
+    with wp.ScopedAllocator(device, managed):
+        a = wp.zeros(8, dtype=wp.float32, device=device)
+
+    test.assertEqual(a.device, device)
+    test.assertFalse(a.pinned)
+    np.testing.assert_allclose(a.numpy(), np.zeros(8, dtype=np.float32))
+
+
+@unittest.skipUnless(wp.get_cuda_device_count() >= 2, "Multi-GPU not available")
+def test_managed_allocator_uses_current_context_for_each_allocation(test, device):
+    """One ManagedAllocator instance can allocate on multiple CUDA contexts."""
+
+    owner = wp.get_device(device)
+    if not owner.is_managed_memory_supported:
+        test.skipTest(f"{owner} does not support CUDA managed memory")
+
+    other = next((d for d in wp.get_cuda_devices() if d != owner), None)
+    if other is None:
+        test.skipTest("No peer CUDA device available")
+    if not other.is_managed_memory_supported:
+        test.skipTest(f"{other} does not support CUDA managed memory")
+
+    managed = wp.ManagedAllocator()
+    a = None
+    b = None
+    wp.set_cuda_allocator(managed)
+    try:
+        a = wp.empty(8, dtype=wp.float32, device=owner)
+        b = wp.empty(8, dtype=wp.float32, device=other)
+
+        test.assertEqual(a.device, owner)
+        test.assertEqual(b.device, other)
+        test.assertEqual(managed._contexts_by_ptr[a.ptr], owner.context)
+        test.assertEqual(managed._contexts_by_ptr[b.ptr], other.context)
+    finally:
+        wp.set_cuda_allocator(None)
+        if a is not None:
+            del a
+        if b is not None:
+            del b
+        gc.collect()
+
+    test.assertEqual(managed._contexts_by_ptr, {})
+
+
+@unittest.skipUnless(wp.get_cuda_device_count() >= 2, "Multi-GPU not available")
+def test_managed_allocator_deallocates_from_recorded_context(test, device):
+    """ManagedAllocator frees with the pointer's owner context, not the current one."""
+
+    owner = wp.get_device(device)
+    if not owner.is_managed_memory_supported:
+        test.skipTest(f"{owner} does not support CUDA managed memory")
+
+    other = next((d for d in wp.get_cuda_devices() if d != owner), None)
+    if other is None:
+        test.skipTest("No peer CUDA device available")
+
+    managed = wp.ManagedAllocator()
+    with owner.context_guard:
+        ptr = managed.allocate(16)
+
+    try:
+        with other.context_guard:
+            managed.deallocate(ptr, 16)
+            ptr = None
+    finally:
+        if ptr:
+            with owner.context_guard:
+                managed.deallocate(ptr, 16)
+
+
+def test_managed_allocator_rejects_missing_provenance(test, device):
+    """ManagedAllocator.deallocate() rejects pointers it does not own."""
+
+    device = wp.get_device(device)
+    if not device.is_managed_memory_supported:
+        test.skipTest(f"{device} does not support CUDA managed memory")
+
+    managed = wp.ManagedAllocator()
+    freed = False
+
+    with device.context_guard:
+        ptr = managed.allocate(16)
+        context = managed._contexts_by_ptr.pop(ptr)
+        try:
+            try:
+                managed.deallocate(ptr, 16)
+            except RuntimeError as e:
+                test.assertIn("provenance is unknown", str(e))
+            else:
+                freed = True
+                test.fail("ManagedAllocator.deallocate() did not reject missing pointer provenance")
+        finally:
+            if not freed:
+                managed._contexts_by_ptr[ptr] = context
+                managed.deallocate(ptr, 16)
+
+
 def test_scoped_allocator_restores_on_exception(test, device):
     """ScopedAllocator restores allocator even if body raises."""
     device = wp.get_device(device)
@@ -326,6 +554,33 @@ for fn in [
 ]:
     add_function_test(TestCustomAllocator, fn.__name__, fn, devices=cuda_test_devices)
 
+add_function_test(
+    TestCustomAllocator,
+    "test_managed_allocator_allocates_on_selected_device",
+    test_managed_allocator_allocates_on_selected_device,
+    devices=cuda_test_devices,
+)
+
+add_function_test(
+    TestCustomAllocator,
+    "test_managed_allocator_uses_current_context_for_each_allocation",
+    test_managed_allocator_uses_current_context_for_each_allocation,
+    devices=cuda_test_devices,
+)
+
+add_function_test(
+    TestCustomAllocator,
+    "test_managed_allocator_deallocates_from_recorded_context",
+    test_managed_allocator_deallocates_from_recorded_context,
+    devices=cuda_test_devices,
+)
+
+add_function_test(
+    TestCustomAllocator,
+    "test_managed_allocator_rejects_missing_provenance",
+    test_managed_allocator_rejects_missing_provenance,
+    devices=cuda_test_devices,
+)
 
 # -- RMM allocator ----------------------------------------------------------
 

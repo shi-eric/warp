@@ -37,11 +37,13 @@ the device that performs the access.
 Device capability properties
 ----------------------------
 
-Each device exposes three CPU/GPU memory access properties:
+Each device exposes CPU/GPU memory access and managed-memory properties:
 
 - :attr:`Device.is_cpu_memory_access_from_gpu_supported <warp.Device.is_cpu_memory_access_from_gpu_supported>`
 - :attr:`Device.is_gpu_memory_access_from_cpu_supported <warp.Device.is_gpu_memory_access_from_cpu_supported>`
 - :attr:`Device.is_cpu_gpu_atomic_supported <warp.Device.is_cpu_gpu_atomic_supported>`
+- :attr:`Device.is_managed_memory_supported <warp.Device.is_managed_memory_supported>`
+- :attr:`Device.is_concurrent_managed_access_supported <warp.Device.is_concurrent_managed_access_supported>`
 
 This deep dive focuses on how those capabilities affect cross-device launches,
 managed memory, atomics, and diagnostics.
@@ -78,11 +80,11 @@ advanced users commonly need to reason about:
    * - Jetson Thor-style ATS
      - Yes
      - Platform-dependent for managed memory
-     - Yes, when reported by the driver
+     - Hardware capability only; current Warp CPU/GPU atomics unsupported
    * - Host-page-table ATS with distinct CPU/GPU physical memory
      - Yes
      - Only when reported by the driver
-     - Yes, when reported by the driver
+     - Hardware capability only; current Warp CPU/GPU atomics unsupported
 
 HMM stands for Heterogeneous Memory Management; for background, see NVIDIA's
 `HMM overview <https://developer.nvidia.com/blog/simplifying-gpu-application-development-with-heterogeneous-memory-management/>`__.
@@ -136,14 +138,6 @@ CPU access to GPU-resident managed memory is a separate capability:
     if device.is_gpu_memory_access_from_cpu_supported:
         ...
 
-.. important::
-
-   ``device.is_gpu_memory_access_from_cpu_supported`` reports a hardware
-   capability for CUDA managed memory. Warp exposes the property today, but
-   standard Warp CUDA arrays are not managed-memory allocations. Until Warp
-   provides managed-memory allocation APIs, copy CUDA arrays to ``"cpu"`` before
-   CPU code reads or writes them.
-
 CUDA arrays created by standard Warp array constructors, such as
 :func:`zeros`, :func:`empty`, and :func:`ones`, are not CUDA managed-memory
 allocations. This is true whether the array comes from Warp's :ref:`mempool
@@ -155,6 +149,55 @@ those arrays, use an explicit copy before CPU code reads or writes the data:
     a = wp.zeros(1024, dtype=float, device=device)
     a_cpu = a.to("cpu")
     wp.launch(cpu_kernel, dim=a_cpu.size, inputs=[a_cpu], device="cpu")
+
+For explicit CUDA managed-memory arrays, construct a :class:`ManagedAllocator`
+and install it with the existing allocator APIs. The allocator instance is not
+bound to one CUDA device, but each allocation still happens under the target
+device's CUDA context and that device must report CUDA managed-memory support:
+
+.. code:: python
+
+    managed = wp.ManagedAllocator()
+    device = wp.get_device("cuda:0")
+
+    with wp.ScopedAllocator(device, managed):
+        a = wp.zeros(1024, dtype=float, device=device)
+
+Managed arrays remain CUDA arrays in Warp: ``a.device`` is still ``"cuda:0"``,
+and CUDA Unified Memory manages physical page migration. Their
+:attr:`allocation_kind <warp.array.allocation_kind>` is
+``wp.AllocationKind.CUDA_MANAGED``; this reports allocation provenance, not
+current physical residency. See
+:ref:`the allocator comparison <managed_memory_allocation_options>` for how
+managed memory differs from Warp's default CUDA, CUDA mempool, and pinned CPU
+allocation options.
+
+This is the opt-in Warp allocation path for CPU kernels that need to operate
+directly on CUDA-side data without maintaining a separate CPU copy. Ordinary
+Warp CUDA arrays remain non-managed allocations and still need explicit copies
+before CPU kernels read or write them.
+
+Managed arrays can be used by kernels captured in CUDA graphs. Allocating a new
+managed array while CUDA graph capture is active requires a CUDA 13.0+ Warp
+build and managed memory-pool support on the device. CUDA 12.x builds, including
+Warp's CUDA 12.9 PyPI build, allocate managed arrays through
+``cudaMallocManaged()`` outside capture only; create those arrays before capture
+begins.
+
+Use :func:`can_access` before CPU code directly reads or writes a managed array:
+
+.. code:: python
+
+    if wp.can_access("cpu", a):
+        wp.launch(cpu_kernel, dim=a.size, inputs=[a], device="cpu")
+    else:
+        a_cpu = a.to("cpu")
+        wp.launch(cpu_kernel, dim=a_cpu.size, inputs=[a_cpu], device="cpu")
+
+``wp.can_access("cpu", a)`` returns ``True`` for a managed CUDA array only when
+the owning CUDA device reports concurrent managed access or direct CPU access to
+GPU memory. On limited managed-memory systems, Warp returns ``False`` because it
+cannot prove that a direct CPU access is synchronized with GPU use.
 
 Do not assume that GPU access to CPU memory implies CPU access to GPU-resident
 memory. Some systems support the former but not the latter.
@@ -176,8 +219,9 @@ can directly access a specific Warp array:
 
 For CPU arrays passed to CUDA kernels, pinned CPU arrays are accepted on CUDA
 devices with unified virtual addressing, and unpinned CPU arrays require
-``is_cpu_memory_access_from_gpu_supported``. For CUDA arrays, default CUDA
-allocations use CUDA peer-access state, while memory pool allocations use
+``is_cpu_memory_access_from_gpu_supported``. For CUDA arrays, managed-memory
+allocations use CUDA managed-memory support on the launch device, default CUDA
+allocations use CUDA peer-access state, and memory pool allocations use
 memory-pool access state. See :ref:`mempool_access` for the distinction between
 peer access for default CUDA allocations and memory-pool access for mempool
 allocations.
@@ -211,10 +255,10 @@ where no concrete array is available:
 For GPU kernels accessing CPU arrays, this method uses
 ``is_cpu_memory_access_from_gpu_supported`` because standard Warp CPU arrays use
 unpinned CPU memory. For CPU code accessing CUDA arrays, it returns ``False`` for
-Warp CUDA arrays because the built-in CUDA allocators do not create CUDA
-managed-memory allocations. For GPU/GPU pairs, it reflects the target device's
-current built-in allocator mode: memory-pool access when memory pools are
-enabled on the target device, and peer access otherwise.
+standard Warp CUDA arrays because the built-in CUDA allocators do not create
+CUDA managed-memory allocations. For GPU/GPU pairs, it reflects the target
+device's current built-in allocator mode: memory-pool access when memory pools
+are enabled on the target device, and peer access otherwise.
 
 ``Device.can_access()`` is not authoritative for existing arrays. An array may
 have been allocated before memory-pool settings changed, may use a custom
@@ -290,68 +334,40 @@ alive, CPU updates made between replays are visible to kernels on devices that
 can access CPU memory.
 
 
-Checking CPU/GPU atomic support
--------------------------------
+Checking CPU/GPU atomic capability
+----------------------------------
 
-Direct loads and stores do not imply atomic safety. Code that uses atomics from
-both CPU and GPU code paths on the same allocation should also check
-:attr:`Device.is_cpu_gpu_atomic_supported <warp.Device.is_cpu_gpu_atomic_supported>`:
-
-.. code:: python
-
-    device = wp.get_device("cuda:0")
-
-    if not device.is_cpu_gpu_atomic_supported:
-        raise RuntimeError("This algorithm requires CPU/GPU atomic support")
-
+Direct loads and stores do not imply atomic safety. Warp exposes
 :attr:`Device.is_cpu_gpu_atomic_supported <warp.Device.is_cpu_gpu_atomic_supported>`
-answers only whether CPU/GPU atomic operations are supported for an otherwise
-accessible allocation. The allocation must still be accessible from both the CPU
-and GPU, and the program must provide any required synchronization.
+so users and diagnostics can see the CUDA hardware capability reported for a
+device. Treat this property as a hardware capability bit only. It is not a Warp
+API contract that :func:`wp.atomic_add() <warp._src.lang.atomic_add>` or the
+other ``wp.atomic_*`` functions can be used concurrently from CPU and GPU
+kernels.
 
-For example, GPU atomics into a CPU allocation require both GPU access to CPU
-memory and CPU/GPU atomic support:
+.. warning::
 
-.. code:: python
+   Current Warp CPU ``wp.atomic_*`` operations are not lowered to CPU hardware
+   atomics. They are ordinary read/modify/write updates in generated CPU code,
+   which is sufficient for Warp's serial CPU kernel execution model but not
+   safe when CPU and GPU code touch the same address concurrently. CUDA-side
+   ``wp.atomic_*`` operations are also not documented as system-scope
+   host/device atomics. Do not rely on overlapping CPU/GPU ``wp.atomic_*``
+   updates, even when
+   :attr:`Device.is_cpu_gpu_atomic_supported <warp.Device.is_cpu_gpu_atomic_supported>`
+   is ``True``.
 
-    device = wp.get_device("cuda:0")
-    counters = wp.zeros(1, dtype=wp.int32, device="cpu")
+This limitation is separate from memory accessibility. A GPU may be able to
+read or write CPU memory, and a device may report CPU/GPU atomic hardware
+support, while current Warp atomics still are not safe for overlapping CPU/GPU
+updates. If CPU and GPU work must update the same allocation today, sequence
+ownership with explicit synchronization, copy through separate buffers, or use
+custom native code that implements real CPU atomics and the required GPU
+system-scope operations.
 
-    if (
-        device.is_cpu_memory_access_from_gpu_supported
-        and device.is_cpu_gpu_atomic_supported
-    ):
-        wp.launch(update_counters, dim=n, inputs=[counters], device=device)
-        wp.synchronize_device(device)
-        print(counters.numpy()[0])
-
-The same requirements apply when CPU and GPU work overlap. If a CPU kernel and a
-GPU kernel both write the same allocation concurrently, all conflicting accesses
-must use atomic operations, and the device must report CPU/GPU atomic support.
-Atomicity prevents lost updates, but it does not provide a deterministic
-ordering for non-commutative operations or floating-point accumulation:
-
-.. code:: python
-
-    # Assume both kernels call wp.atomic_add(counters, 0, 1) once per thread.
-    counters = wp.zeros(1, dtype=wp.int32, device="cpu")
-
-    if (
-        device.is_cpu_memory_access_from_gpu_supported
-        and device.is_cpu_gpu_atomic_supported
-    ):
-        wp.launch(gpu_increment, dim=num_gpu_threads, inputs=[counters], device=device)
-        wp.launch(cpu_increment, dim=num_cpu_threads, inputs=[counters], device="cpu")
-
-        wp.synchronize_device(device)
-        assert counters.numpy()[0] == num_gpu_threads + num_cpu_threads
-
-If :attr:`Device.is_cpu_gpu_atomic_supported <warp.Device.is_cpu_gpu_atomic_supported>`
-is ``False``, do not rely on concurrent CPU/GPU atomics, even on systems where
-the GPU can directly load and store CPU memory.
-
-That does not make non-managed CUDA allocations CPU-accessible. CPU code should
-still copy arrays backed by those allocations before reading or writing them:
+The property also does not make non-managed CUDA allocations CPU-accessible. CPU
+code should still copy arrays backed by those allocations before reading or
+writing them:
 
 .. code:: python
 
@@ -374,11 +390,15 @@ allocation or access pattern to create:
   ``device.is_uva``.
 - CPU code reads or writes arrays backed by non-managed CUDA allocations: copy
   the data to ``"cpu"`` first.
+- CPU kernels read or write Warp CUDA arrays directly: allocate those arrays
+  with :class:`ManagedAllocator` and use ``wp.can_access("cpu", array)`` before
+  launching the CPU kernel.
 - CPU code accesses externally provided GPU-resident CUDA managed memory: check
   ``device.is_gpu_memory_access_from_cpu_supported``.
-- CPU and GPU both use atomics on the same allocation: make sure the allocation
-  is accessible from both the CPU and GPU, and check
-  ``device.is_cpu_gpu_atomic_supported``.
+- CPU and GPU both need to update the same allocation: do not overlap current
+  Warp ``wp.atomic_*`` operations across CPU and GPU kernels. Sequence ownership
+  with synchronization or use a custom native implementation for true
+  interprocessor atomics.
 - GPU kernels use arrays from another GPU: enable peer access for default CUDA
   allocations, or :ref:`memory-pool access <mempool_access>` for CUDA
   memory-pool allocations, then check the concrete array with

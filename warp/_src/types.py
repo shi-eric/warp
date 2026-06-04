@@ -3558,6 +3558,7 @@ class array(Array[DType, NDim]):
         self.pinned = pinned if device.is_cpu else False
         self.is_contiguous = is_contiguous
         self.deleter = deleter
+        self._allocation_kind = warp._src.context.AllocationKind.UNKNOWN
 
     def _init_new(self, dtype, shape, strides, device, pinned):
         try:
@@ -3632,6 +3633,7 @@ class array(Array[DType, NDim]):
         self.is_contiguous = is_contiguous
         self.deleter = deleter
         self._allocator = allocator
+        self._allocation_kind = warp._src.context._get_allocator_kind(allocator)
 
     def _init_annotation(self, dtype, ndim):
         self.dtype = dtype
@@ -3776,6 +3778,10 @@ class array(Array[DType, NDim]):
 
     def __repr__(self):
         return type_repr(self)
+
+    @property
+    def allocation_kind(self):
+        return warp._src.context._get_array_allocation_kind(self)
 
     def __getitem__(self, key):
         if isinstance(key, int):
@@ -4505,18 +4511,30 @@ class array(Array[DType, NDim]):
             RuntimeError: The array is not associated with a CUDA device.
             RuntimeError: The CUDA device does not appear to support IPC.
             RuntimeError: The array was allocated using the :ref:`mempool memory allocator <mempool_allocators>`.
+            RuntimeError: The array was allocated using the managed-memory allocator.
+            RuntimeError: The array wraps external CUDA memory.
+            RuntimeError: The array is a view into another allocation.
         """
 
         if self.device is None or not self.device.is_cuda:
             raise RuntimeError("IPC requires a CUDA device")
+
+        allocation_kind = warp._src.context._get_array_allocation_kind(self)
+        if allocation_kind == warp._src.context.AllocationKind.CUDA_MANAGED:
+            raise RuntimeError("IPC is not supported for managed-memory arrays")
         elif self.device.is_ipc_supported is False:
             raise RuntimeError("IPC does not appear to be supported on this CUDA device")
-        elif isinstance(self._allocator, warp._src.context.CudaMempoolAllocator):
+
+        if allocation_kind == warp._src.context.AllocationKind.CUDA_MEMPOOL:
             raise RuntimeError(
                 "Currently, IPC is only supported for arrays using the default memory allocator.\n"
                 "See https://nvidia.github.io/warp/stable/deep_dive/allocators.html for instructions on how to disable\n"
                 f"the mempool allocator on device {self.device}."
             )
+        elif allocation_kind == warp._src.context.AllocationKind.UNKNOWN:
+            raise RuntimeError("IPC is not supported for externally wrapped arrays")
+        elif getattr(self, "_ref", None) is not None:
+            raise RuntimeError("IPC is not supported for array views")
 
         # Allocate a buffer for the data (64-element char array)
         ipc_handle_buffer = (ctypes.c_char * 64)()

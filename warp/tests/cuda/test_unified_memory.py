@@ -95,6 +95,8 @@ def test_unified_memory_device_capabilities(test, device):
         "is_cpu_memory_access_from_gpu_supported",
         "is_gpu_memory_access_from_cpu_supported",
         "is_cpu_gpu_atomic_supported",
+        "is_managed_memory_supported",
+        "is_concurrent_managed_access_supported",
     ):
         test.assertIsInstance(getattr(device, attr), bool)
 
@@ -102,6 +104,8 @@ def test_unified_memory_device_capabilities(test, device):
         test.assertFalse(device.is_cpu_memory_access_from_gpu_supported)
         test.assertFalse(device.is_gpu_memory_access_from_cpu_supported)
         test.assertFalse(device.is_cpu_gpu_atomic_supported)
+        test.assertFalse(device.is_managed_memory_supported)
+        test.assertFalse(device.is_concurrent_managed_access_supported)
 
 
 def test_unified_memory_launch_array_access_mode_config(test, device):
@@ -227,16 +231,21 @@ def test_unified_memory_verify_rejects_cpu_reading_gpu_when_unsupported(test, de
     """Warp default CUDA allocations are not treated as CPU-accessible managed memory.
 
     CUDA exposes a host-to-managed-memory capability, but Warp's built-in CUDA
-    arrays are allocated with default device allocation APIs. Checked launch
+    arrays are allocated with CUDA malloc or memory-pool APIs. Checked launch
     verification must therefore reject CPU launches that receive those arrays.
     """
 
-    src = wp.array(np.arange(4, dtype=np.float32), dtype=wp.float32, device=device)
+    with wp.ScopedMempool(device, False):
+        src = wp.array(np.arange(4, dtype=np.float32), dtype=wp.float32, device=device)
     dst = wp.empty(4, dtype=wp.float32, device="cpu")
 
+    test.assertIs(src.allocation_kind, wp.AllocationKind.CUDA_MALLOC)
+
     with launch_array_access_mode(wp.config.LaunchArrayAccessMode.CHECKED):
-        with test.assertRaisesRegex(RuntimeError, "array allocation is not accessible or cannot be verified"):
+        with test.assertRaises(RuntimeError) as cm:
             wp.launch(read_gpu_write_cpu, dim=src.size, inputs=[src], outputs=[dst], device="cpu", record_cmd=True)
+    test.assertIn("array allocation is not accessible or cannot be verified", str(cm.exception))
+    test.assertIn("allocation_kind=CUDA_MALLOC", str(cm.exception))
 
 
 def test_unified_memory_relaxed_allows_cpu_launch_with_gpu_array(test, device):
@@ -347,6 +356,172 @@ def test_unified_memory_array_view_allocator_lookup_uses_parent_array(test, devi
     test.assertIs(wp._src.context._get_array_allocator(src_slice), src._allocator)
 
 
+def test_unified_memory_managed_allocator_can_access(test, device):
+    """Managed arrays use managed-memory access rules, not peer or mempool access rules."""
+
+    if not device.is_managed_memory_supported:
+        test.skipTest(f"{device} does not support CUDA managed memory")
+
+    cpu = wp.get_device("cpu")
+    managed = wp.ManagedAllocator()
+
+    with wp.ScopedAllocator(device, managed):
+        arr = wp.empty(8, dtype=wp.float32, device=device)
+
+    expected_cpu_access = (
+        device.is_concurrent_managed_access_supported or device.is_gpu_memory_access_from_cpu_supported
+    )
+    test.assertEqual(wp.can_access(cpu, arr), expected_cpu_access)
+
+    for target in wp.get_cuda_devices():
+        with test.subTest(target=target):
+            test.assertEqual(wp.can_access(target, arr), target.is_managed_memory_supported)
+
+
+def test_unified_memory_ipc_handle_rejects_unsupported_arrays(test, device):
+    """CUDA IPC handles are only exposed for representable CUDA device allocations."""
+
+    cases = []
+
+    if device.is_managed_memory_supported:
+        managed = wp.ManagedAllocator()
+        with wp.ScopedAllocator(device, managed):
+            managed_arr = wp.empty(4, dtype=wp.float32, device=device)
+
+        cases.extend(
+            (
+                ("managed array", managed_arr, "managed-memory arrays"),
+                ("managed array view", managed_arr[1:], "managed-memory arrays"),
+            )
+        )
+
+    if device.is_ipc_supported is not False:
+        with wp.ScopedMempool(device, False):
+            cuda_arr = wp.empty(8, dtype=wp.float32, device=device)
+
+        external_view = wp.array(
+            ptr=cuda_arr.ptr + 2 * cuda_arr.strides[0], dtype=wp.float32, shape=(4,), device=device
+        )
+        cases.extend(
+            (
+                ("default CUDA array view", cuda_arr[2:], "array views"),
+                ("externally wrapped CUDA pointer", external_view, "externally wrapped arrays"),
+            )
+        )
+
+    if not cases:
+        test.skipTest(f"{device} does not support CUDA managed memory or IPC")
+
+    for name, arr, message in cases:
+        with test.subTest(kind=name):
+            with test.assertRaisesRegex(RuntimeError, message):
+                arr.ipc_handle()
+
+
+def test_unified_memory_checked_cpu_launch_with_managed_array(test, device):
+    """Checked mode accepts CPU access to managed arrays only on devices that report host access support."""
+
+    if not device.is_managed_memory_supported:
+        test.skipTest(f"{device} does not support CUDA managed memory")
+
+    managed = wp.ManagedAllocator()
+    src_np = np.arange(4, dtype=np.float32)
+    with wp.ScopedAllocator(device, managed):
+        src = wp.array(src_np, dtype=wp.float32, device=device)
+
+    dst = wp.empty(4, dtype=wp.float32, device="cpu")
+    expected_cpu_access = (
+        device.is_concurrent_managed_access_supported or device.is_gpu_memory_access_from_cpu_supported
+    )
+
+    with launch_array_access_mode(wp.config.LaunchArrayAccessMode.CHECKED):
+        if expected_cpu_access:
+            # The GPU-side initialization of ``src`` must complete before a CPU kernel reads it.
+            wp.synchronize_device(device)
+            wp.launch(read_gpu_write_cpu, dim=src.size, inputs=[src], outputs=[dst], device="cpu")
+            np.testing.assert_allclose(dst.numpy(), src_np + 3.0)
+        else:
+            with test.assertRaisesRegex(RuntimeError, "array allocation is not accessible or cannot be verified"):
+                wp.launch(
+                    read_gpu_write_cpu,
+                    dim=src.size,
+                    inputs=[src],
+                    outputs=[dst],
+                    device="cpu",
+                    record_cmd=True,
+                )
+
+
+def test_unified_memory_managed_array_cross_device_graph_capture(test, device):
+    """Preallocated managed arrays can be used by captured kernels on another CUDA device."""
+
+    if wp.get_cuda_device_count() < 2:
+        test.skipTest("Multi-GPU not available")
+    if not check_p2p():
+        test.skipTest("Peer-to-Peer transfers not supported")
+    if not device.is_managed_memory_supported:
+        test.skipTest(f"{device} does not support CUDA managed memory")
+
+    target = next(d for d in wp.get_cuda_devices() if d != device)
+    if not target.is_managed_memory_supported:
+        test.skipTest(f"{target} does not support CUDA managed memory")
+
+    managed = wp.ManagedAllocator()
+    with wp.ScopedAllocator(device, managed):
+        src = wp.array(np.arange(8, dtype=np.float32), dtype=wp.float32, device=device)
+
+    test.assertTrue(wp.can_access(target, src))
+
+    dst = wp.empty(src.size, dtype=wp.float32, device=target)
+    with launch_array_access_mode(wp.config.LaunchArrayAccessMode.CHECKED):
+        with wp.ScopedCapture(device=target) as capture:
+            wp.launch(read_cpu_write_gpu, dim=src.size, inputs=[src], outputs=[dst], device=target)
+
+    wp.capture_launch(capture.graph)
+    np.testing.assert_allclose(dst.numpy(), np.arange(8, dtype=np.float32) * 2.0)
+
+
+def test_unified_memory_managed_allocator_allocates_during_graph_capture(test, device):
+    """ManagedAllocator can allocate during capture when managed memory pools are available."""
+
+    if not device.is_managed_memory_supported:
+        test.skipTest(f"{device} does not support CUDA managed memory")
+    if device.runtime.toolkit_version is not None and device.runtime.toolkit_version < (13, 0):
+        test.skipTest("Managed memory pools require CUDA toolkit 13.0 or newer")
+    if not device.is_mempool_supported:
+        test.skipTest(f"{device} does not support CUDA memory pools")
+
+    managed = wp.ManagedAllocator()
+
+    try:
+        with wp.ScopedAllocator(device, managed):
+            with wp.ScopedCapture(device=device) as capture:
+                arr = wp.empty(8, dtype=wp.float32, device=device)
+                wp.launch(write_output_array, dim=arr.size, outputs=[arr], device=device)
+    except RuntimeError as e:
+        if "managed allocation during CUDA graph capture" in str(e):
+            test.skipTest(f"{device} does not support managed allocation during CUDA graph capture")
+        raise
+
+    wp.capture_launch(capture.graph)
+    np.testing.assert_allclose(arr.numpy(), np.arange(8, dtype=np.float32) + 10.0)
+
+
+def test_unified_memory_managed_allocator_capture_rejects_cuda12_fallback(test, device):
+    """CUDA 12.x managed allocation falls back to cudaMallocManaged outside capture only."""
+
+    if not device.is_managed_memory_supported:
+        test.skipTest(f"{device} does not support CUDA managed memory")
+    if device.runtime.toolkit_version is None or device.runtime.toolkit_version >= (13, 0):
+        test.skipTest("CUDA 12.x fallback path not active")
+
+    managed = wp.ManagedAllocator()
+    with wp.ScopedAllocator(device, managed):
+        with test.assertRaisesRegex(RuntimeError, "managed allocation during CUDA graph capture"):
+            with wp.ScopedCapture(device=device):
+                wp.empty(8, dtype=wp.float32, device=device)
+
+
 devices = get_test_devices()
 cuda_devices = get_cuda_test_devices()
 
@@ -405,6 +580,7 @@ class TestUnifiedMemory(unittest.TestCase):
             call for call in mock_log_warning.call_args_list if "cannot verify cross-device access" in call.args[0]
         ]
         self.assertEqual(len(matching), 1)
+        self.assertIn("allocation_kind=UNKNOWN", matching[0].args[0])
 
     @unittest.skipUnless(wp.is_cuda_available(), "CUDA not available")
     def test_unified_memory_strict_rejects_custom_allocator_cross_device(self):
@@ -777,6 +953,43 @@ add_function_test(
     "test_unified_memory_array_view_allocator_lookup_uses_parent_array",
     test_unified_memory_array_view_allocator_lookup_uses_parent_array,
     devices=devices,
+)
+add_function_test(
+    TestUnifiedMemory,
+    "test_unified_memory_managed_allocator_can_access",
+    test_unified_memory_managed_allocator_can_access,
+    devices=cuda_devices,
+)
+add_function_test(
+    TestUnifiedMemory,
+    "test_unified_memory_ipc_handle_rejects_unsupported_arrays",
+    test_unified_memory_ipc_handle_rejects_unsupported_arrays,
+    devices=cuda_devices,
+)
+add_function_test(
+    TestUnifiedMemory,
+    "test_unified_memory_checked_cpu_launch_with_managed_array",
+    test_unified_memory_checked_cpu_launch_with_managed_array,
+    devices=cuda_devices,
+)
+add_function_test(
+    TestUnifiedMemory,
+    "test_unified_memory_managed_array_cross_device_graph_capture",
+    test_unified_memory_managed_array_cross_device_graph_capture,
+    devices=cuda_devices,
+)
+add_function_test(
+    TestUnifiedMemory,
+    "test_unified_memory_managed_allocator_allocates_during_graph_capture",
+    test_unified_memory_managed_allocator_allocates_during_graph_capture,
+    devices=cuda_devices,
+)
+add_function_test(
+    TestUnifiedMemory,
+    "test_unified_memory_managed_allocator_capture_rejects_cuda12_fallback",
+    test_unified_memory_managed_allocator_capture_rejects_cuda12_fallback,
+    devices=cuda_devices,
+    check_output=False,
 )
 if __name__ == "__main__":
     unittest.main(verbosity=2)

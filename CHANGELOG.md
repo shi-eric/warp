@@ -12,6 +12,73 @@
 - Extend AddressSanitizer support to JIT-compiled CPU kernels: when `warp-clang` is built with `--sanitize=address`, CPU
   kernels are automatically instrumented and share the host's single in-process ASan runtime, so out-of-bounds accesses
   into a `wp.array` are reported as `heap-buffer-overflow` ([GH-1387](https://github.com/NVIDIA/warp/issues/1387)).
+- Add `wp.tile_empty` to allocate a tile of uninitialized items ([GH-1312](https://github.com/NVIDIA/warp/issues/1312)).
+- Extend APIC graph capture on CPU with support for backward (adjoint) kernel launches
+  and tile-using kernels, plus kernel parameters of any size and `@wp.struct` /
+  `wp.indexedarray` arguments containing pointers
+  ([GH-1431](https://github.com/NVIDIA/warp/issues/1431)).
+- Expose CUDA graph capture mode via `ScopedCapture` / `capture_begin()`
+  ([GH-1410](https://github.com/NVIDIA/warp/issues/1410)).
+- Add pre-allocated functors for `warp.optim.linear` solvers. Passing `run=False` to `cg`, `cr`, `bicgstab`, or `gmres`
+  returns a state object that holds all temporary buffers and can be invoked repeatedly on compatible systems
+  (same shape, batch count, dtype, and device), avoiding per-call allocation overhead and allowing usage in CUDA subgraphs
+  ([GH-1391](https://github.com/NVIDIA/warp/issues/1391)).
+- Add batched-input support to `warp.optim.linear` solvers: a `LinearOperator` built with `batch_offsets`
+  partitions the DOF vector into independent subproblems that are all solved in a single launch sequence,
+  with per-batch convergence checks ([GH-1391](https://github.com/NVIDIA/warp/issues/1391)).
+- Add `--sanitize=<name>` build option to `build_lib.py`, enabling AddressSanitizer builds of
+  `warp.dll` and `warp-clang.dll` on Windows, Linux, and macOS
+  ([GH-1387](https://github.com/NVIDIA/warp/issues/1387)).
+- Extend AddressSanitizer support to JIT-compiled CPU kernels: when `warp-clang` is built with
+  `--sanitize=address`, CPU kernels are automatically instrumented and share the host's single
+  in-process ASan runtime, so out-of-bounds accesses into a `wp.array` are reported as
+  `heap-buffer-overflow` ([GH-1387](https://github.com/NVIDIA/warp/issues/1387)).
+- Add analytic backward passes for `wp.curlnoise()` (2D, 3D, 4D). Previously
+  the adjoints were stubbed as no-ops and `is_differentiable=False`, so
+  gradients silently dropped through curl-noise force fields in
+  differentiable simulations
+  ([GH-1012](https://github.com/NVIDIA/warp/issues/1012)).
+- Add cooperative GPU scalar fallbacks for `tile_cholesky`, `tile_cholesky_solve`,
+  `tile_lower_solve`, and `tile_upper_solve` (and their inplace variants) and for the
+  `tile_cholesky` adjoint, so they run on GPU when libmathdx is unavailable. Add the
+  `enable_mathdx_solver` config flag and module option (parity with `enable_mathdx_gemm`)
+  to route these ops through the fallback when libmathdx is available
+  ([GH-1402](https://github.com/NVIDIA/warp/issues/1402)).
+- Add `wp.copysign(x, y)`: returns a value with the magnitude of `x` and the
+  sign of `y`, matching C `copysign` ([GH-1444](https://github.com/NVIDIA/warp/issues/1444)).
+- Add `--use-dynamic-cuda` build option to link against shared CUDA libraries instead of embedding
+  them statically; the corresponding shared libraries must be present at runtime
+  ([GH-1334](https://github.com/NVIDIA/warp/issues/1334)).
+- Add an optional CMake source-build path for `warp` and `warp-clang`
+  with Packman-managed dependencies and support for parallel and incremental
+  developer builds ([GH-1495](https://github.com/NVIDIA/warp/issues/1495)).
+- Add pluggable logging infrastructure: implement the `wp.Logger` protocol and pass it to `wp.set_logger()`,
+  or scope it temporarily with `wp.ScopedLogger`. `wp.config.log_level` controls the global verbosity threshold
+  and can be scoped temporarily with `wp.ScopedLogLevel`; all Python-side diagnostic output now routes through
+  the logger ([GH-1315](https://github.com/NVIDIA/warp/issues/1315),
+  [GH-1434](https://github.com/NVIDIA/warp/issues/1434)).
+- Add `wp.tile_fft()` and `wp.tile_ifft()` (and their adjoints) on CPU and on GPU builds
+  without libmathdx. CPU supports power-of-two sizes and non-power-of-two sizes up to 4096
+  elements; GPU requires power-of-two sizes divisible by `block_dim`. The new
+  `enable_mathdx_fft` config flag and module option also selects the fallback on GPU builds
+  with libmathdx, trading runtime performance for faster kernel compile times
+  ([GH-1396](https://github.com/NVIDIA/warp/issues/1396)).
+- Add multi-environment support to `warp.fem` ([GH-1407](https://github.com/NVIDIA/warp/issues/1407)):
+  - Colocated `Grid2D`/`Grid3D` and packed `Nanogrid`/`AdaptiveNanogrid` geometries with environment-aware
+    lookup and `PicQuadrature` environment indices
+  - Per-cell environment metadata for unstructured FEM meshes with grouped-BVH lookup and nonconforming field
+    evaluation
+  - Environment-first space partitions for batched solves, plus a multi-environment APIC fluid example
+- Add mipmap (texture level-of-detail) support to `wp.Texture1D`, `wp.Texture2D` and `wp.Texture3D` via the new `num_mip_levels` and `mip_filter_mode` constructor parameters, with `wp.texture_sample` accepting an optional trailing `lod` argument for controlling the sampled detail level ([GH-1409](https://github.com/NVIDIA/warp/issues/1409))
+- Add `wp.ManagedAllocator()` for explicit CUDA managed-memory arrays, plus
+  `wp.AllocationKind` and `array.allocation_kind` for allocation provenance.
+  This gives CPU kernels an opt-in path to directly read and write managed CUDA
+  arrays on systems where CUDA reports compatible managed-memory access;
+  ordinary Warp CUDA arrays still require explicit CPU copies. CUDA 13 builds
+  can allocate managed arrays during CUDA graph capture when managed memory
+  pools are available. CUDA 12.x builds reject managed allocation during CUDA
+  graph capture
+  ([GH-1523](https://github.com/NVIDIA/warp/issues/1523)).
 
 ### Removed
 
