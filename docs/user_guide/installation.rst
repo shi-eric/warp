@@ -208,8 +208,21 @@ configuring and building:
 .. code-block:: console
 
     $ uv sync --no-install-project
+    $ source .venv/bin/activate
     $ cmake -S . -B _build/cmake -G Ninja
     $ cmake --build _build/cmake --parallel
+
+Activating the virtual environment ensures CMake uses the Python environment
+created for Warp instead of another interpreter found on the system. If you do
+not want to activate the environment, pass the Python executable explicitly:
+
+.. code-block:: console
+
+    $ cmake -S . -B _build/cmake -G Ninja \
+        -DPython3_EXECUTABLE:FILEPATH="$PWD/.venv/bin/python"
+
+This is especially useful on macOS, where ``/usr/bin/python3`` may be older
+than the minimum Python version required by Warp.
 
 Without ``uv``, use a Python environment you manage and install NumPy before
 running the CMake commands:
