@@ -505,13 +505,28 @@ parallel and incremental developer builds (<a class="reference external" href="h
 <li><p>Extend AddressSanitizer support to JIT-compiled CPU kernels: when <code class="docutils literal notranslate"><span class="pre">warp-clang</span></code> is built with <code class="docutils literal notranslate"><span class="pre">--sanitize=address</span></code>, CPU
 kernels are automatically instrumented and share the host’s single in-process ASan runtime, so out-of-bounds accesses
 into a <code class="docutils literal notranslate"><span class="pre">wp.array</span></code> are reported as <code class="docutils literal notranslate"><span class="pre">heap-buffer-overflow</span></code> (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1387">GH-1387</a>).</p></li>
+<li><p>Extend <code class="docutils literal notranslate"><span class="pre">wp.utils.array_scan()</span></code> to 64-bit scalar and vector types, and extend <code class="docutils literal notranslate"><span class="pre">wp.utils.radix_sort_pairs()</span></code> to 32- and
+64-bit signed, unsigned, and floating-point keys with 4- or 8-byte values
+(<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1538">GH-1538</a>).</p></li>
+<li><p>Add row-capacity support to <code class="docutils literal notranslate"><span class="pre">warp.sparse</span></code> BSR matrices, including padded topology policies for topology-changing
+sparse operations, <code class="docutils literal notranslate"><span class="pre">bsr_zeros(row_capacity=...)</span></code> for reserving row capacity, <code class="docutils literal notranslate"><span class="pre">bsr_compress()</span></code> for inplace compaction of sparse matrices, and sparse status constants for overflow checks (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1537">GH-1537</a>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">fem.integrate()</span></code> and <code class="docutils literal notranslate"><span class="pre">fem.interpolate()</span></code> can now leverage <code class="docutils literal notranslate"><span class="pre">sparse.bsr_compress()</span></code> to perform inplace matrix assembly, reducing peak memory usage (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1537">GH-1537</a>).</p></li>
 </ul>
 </section>
 <section id="removed">
 <h3>Removed<a class="headerlink" href="#removed" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">warp.fem</span></code>: Remove the deprecated <code class="docutils literal notranslate"><span class="pre">quadrature</span></code> and <code class="docutils literal notranslate"><span class="pre">domain</span></code> arguments of <code class="docutils literal notranslate"><span class="pre">fem.interpolate()</span></code>, and the deprecated
+<code class="docutils literal notranslate"><span class="pre">space</span></code> argument of <code class="docutils literal notranslate"><span class="pre">fem.make_space_restriction()</span></code> and <code class="docutils literal notranslate"><span class="pre">fem.make_space_partition()</span></code>. Pass a <code class="docutils literal notranslate"><span class="pre">Quadrature</span></code> or
+<code class="docutils literal notranslate"><span class="pre">GeometryDomain</span></code> to <code class="docutils literal notranslate"><span class="pre">at</span></code> when interpolating, pass <code class="docutils literal notranslate"><span class="pre">space_topology</span></code> to <code class="docutils literal notranslate"><span class="pre">fem.make_space_partition()</span></code>, and pass
+<code class="docutils literal notranslate"><span class="pre">space_topology</span></code> or <code class="docutils literal notranslate"><span class="pre">space_partition</span></code> to <code class="docutils literal notranslate"><span class="pre">fem.make_space_restriction()</span></code>.</p></li>
+</ul>
 </section>
 <section id="deprecated">
 <h3>Deprecated<a class="headerlink" href="#deprecated" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p>Deprecate <code class="docutils literal notranslate"><span class="pre">masked=True</span></code> arguments in <code class="docutils literal notranslate"><span class="pre">warp.sparse</span></code> topology-changing operations; use <code class="docutils literal notranslate"><span class="pre">topology=&quot;masked&quot;</span></code> instead.</p></li>
+</ul>
 </section>
 <section id="changed">
 <h3>Changed<a class="headerlink" href="#changed" title="Link to this heading">#</a></h3>
@@ -521,6 +536,14 @@ libraries (<code class="docutils literal notranslate"><span class="pre">warp.dll
 or unreadable native version symbols the same way (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1508">GH-1508</a>).</p></li>
 <li><p>Speed up Warp kernel creation, particularly for workloads that declare many kernels programmatically (e.g. dynamic
 factory patterns) (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1486">GH-1486</a>).</p></li>
+<li><p>Improve <code class="docutils literal notranslate"><span class="pre">wp.mesh_query_ray()</span></code> and <code class="docutils literal notranslate"><span class="pre">wp.mesh_query_ray_anyhit()</span></code> BVH traversal performance
+by visiting the nearer child first at each inner node, enabling earlier tightening of the
+closest-hit bound, more aggressive subtree pruning and by reusing loaded node payloads across traversal stack operations
+and using a faster AABB intersection path for non-parallel rays. The thread local stack for <code class="docutils literal notranslate"><span class="pre">mesh_query_ray</span></code> and
+<code class="docutils literal notranslate"><span class="pre">mesh_query_ray_anyhit</span></code> doubled in size (<code class="docutils literal notranslate"><span class="pre">uint32_t</span></code> to <code class="docutils literal notranslate"><span class="pre">uint64_t</span></code>) due to this. (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1529">GH-1529</a>)
+closest-hit bound and more aggressive subtree pruning. (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1529">GH-1529</a>)</p></li>
+<li><p>Report out-of-bounds shared and register tile indexing with coordinate-specific debug-mode diagnostics, including
+CUDA device-side assertions (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1483">GH-1483</a>).</p></li>
 </ul>
 </section>
 <section id="fixed">
@@ -530,8 +553,9 @@ factory patterns) (<a class="reference external" href="https://github.com/NVIDIA
 precompiles the correct CUDA kernel variant. On CUDA drivers older than 12.3 this previously raised
 <code class="docutils literal notranslate"><span class="pre">CUDA_ERROR_STREAM_CAPTURE_UNSUPPORTED</span></code>; on newer drivers it silently recompiled inside the capture window
 (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/564">GH-564</a>).</p></li>
-<li><p>Fix an intermittent failure when loading modules in parallel with <code class="docutils literal notranslate"><span class="pre">wp.force_load(max_workers</span> <span class="pre">&gt;</span> <span class="pre">1)</span></code> that could cause
-modules sharing a <code class="docutils literal notranslate"><span class="pre">&#64;wp.func</span></code> to fail to compile or load (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1474">GH-1474</a>).</p></li>
+<li><p>Fix intermittent failures when loading modules in parallel with <code class="docutils literal notranslate"><span class="pre">wp.force_load(max_workers</span> <span class="pre">&gt;</span> <span class="pre">1)</span></code> that could cause
+modules sharing a <code class="docutils literal notranslate"><span class="pre">&#64;wp.func</span></code> to fail to compile or to raise a <code class="docutils literal notranslate"><span class="pre">KeyError</span></code> in <code class="docutils literal notranslate"><span class="pre">Module.load</span></code>
+(<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1474">GH-1474</a>, <a class="reference external" href="https://github.com/NVIDIA/warp/issues/1532">GH-1532</a>).</p></li>
 <li><p>Fix binding a Warp function to a kernel-local variable, so patterns like <code class="docutils literal notranslate"><span class="pre">f</span> <span class="pre">=</span> <span class="pre">my_func</span></code>,
 <code class="docutils literal notranslate"><span class="pre">f</span> <span class="pre">=</span> <span class="pre">module.my_func</span></code>, assigning a <code class="docutils literal notranslate"><span class="pre">wp.static(...)</span></code> function result to <code class="docutils literal notranslate"><span class="pre">f</span></code>, and <code class="docutils literal notranslate"><span class="pre">wp.grad(f)</span></code> where <code class="docutils literal notranslate"><span class="pre">f</span></code> is such
 a local now compile and call correctly instead of failing during code generation. Rebinding a function-valued
@@ -553,6 +577,23 @@ visualization scopes (<a class="reference external" href="https://github.com/NVI
 instead of an internal <code class="docutils literal notranslate"><span class="pre">AttributeError</span></code> (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1487">GH-1487</a>).</p></li>
 <li><p>Fix stale gradient keepalive references when replacing a <code class="docutils literal notranslate"><span class="pre">&#64;wp.struct</span></code> plain-array field with <code class="docutils literal notranslate"><span class="pre">None</span></code> or a
 non-gradient array (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1520">GH-1520</a>).</p></li>
+<li><p>Fix CUDA kernel launch failures to raise a Python <code class="docutils literal notranslate"><span class="pre">RuntimeError</span></code> instead of only logging native CUDA stderr and
+continuing with stale outputs or gradients (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1535">GH-1535</a>).</p></li>
+<li><p>Fix unary minus on referenced 64-bit scalar constants, such as values declared with <code class="docutils literal notranslate"><span class="pre">wp.constant(wp.float64(...))</span></code>,
+being silently dropped when the constant appears as the leading operand of a multiply or divide expression, e.g.
+<code class="docutils literal notranslate"><span class="pre">-a</span> <span class="pre">*</span> <span class="pre">b</span></code> producing the wrong sign (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1540">GH-1540</a>).</p></li>
+<li><p>Fix <code class="docutils literal notranslate"><span class="pre">wp.mesh_query_ray()</span></code> and related functions silently missing intersections for
+axis-aligned rays whose origin lies on a BVH node’s AABB slab boundary. The previous
+traversal relied on fixed <code class="docutils literal notranslate"><span class="pre">eps</span> <span class="pre">=</span> <span class="pre">1e-3</span></code> AABB inflation to avoid <code class="docutils literal notranslate"><span class="pre">0</span> <span class="pre">*</span> <span class="pre">inf</span></code> cases in the
+slab calculation, but that offset is not robust at larger coordinate scales where it
+can round away in float32. Parallel slabs are now handled explicitly, and the
+per-traversal epsilon expansion is removed
+(<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1530">GH-1530</a>).</p></li>
+<li><p>Fix parameterized <code class="docutils literal notranslate"><span class="pre">&#64;wp.func(...)</span></code> decorators, such as <code class="docutils literal notranslate"><span class="pre">&#64;wp.func(module=&quot;unique&quot;)</span></code>, in directly executed scripts to
+register successfully instead of raising <code class="docutils literal notranslate"><span class="pre">AttributeError</span></code> during decoration
+(<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1544">GH-1544</a>).</p></li>
+<li><p>Fix LTO cache collisions and stale FFT metadata handling by using longer cache keys and rebuilding invalid metadata
+(<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1511">GH-1511</a>).</p></li>
 </ul>
 </section>
 <section id="documentation">
