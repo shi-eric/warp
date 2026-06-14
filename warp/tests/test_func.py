@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any
+from typing import Any, get_overloads
 
 import numpy as np
 
@@ -572,8 +572,6 @@ class TestFunc(unittest.TestCase):
         Pyright/Pylance show generic _Wrapped types instead of the actual function
         signature when hovering over @wp.func decorated functions.
         """
-        from typing import get_overloads  # noqa: PLC0415
-
         overloads = get_overloads(wp.func)
         # Should have at least 2 overloads:
         # 1. @wp.func (bare decorator)
@@ -588,8 +586,6 @@ class TestFunc(unittest.TestCase):
     @unittest.skipUnless(sys.version_info >= (3, 11), "get_overloads() is only available in Python 3.11 and later")
     def test_func_decorator_overloads_preserve_signature(self):
         """Verify @wp.func overloads return Callable types to preserve signatures."""
-        from typing import get_overloads  # noqa: PLC0415
-
         overloads = get_overloads(wp.func)
         if len(overloads) < 2:
             self.skipTest("Overloads not yet implemented")
