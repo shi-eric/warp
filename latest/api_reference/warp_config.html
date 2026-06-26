@@ -389,6 +389,7 @@
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/configuration.html">Configuration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/cpp_cuda_workflows.html">C++ and CUDA Workflows</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/debugging.html">Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../user_guide/deterministic_execution.html">Deterministic Execution</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/limitations.html">Limitations</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/contribution_guide.html">Contribution Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../user_guide/publications.html">Publications using Warp</a></li>
@@ -520,6 +521,18 @@ setting documentation for details.</p>
 </tr>
 <tr class="row-even"><td><p><a class="reference internal" href="_generated/warp.config.cuda_output.html#warp.config.cuda_output" title="warp.config.cuda_output"><code class="xref py py-obj docutils literal notranslate"><span class="pre">cuda_output</span></code></a></p></td>
 <td><p>Preferred CUDA output format for kernel compilation.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="_generated/warp.config.default_grid_stride.html#warp.config.default_grid_stride" title="warp.config.default_grid_stride"><code class="xref py py-obj docutils literal notranslate"><span class="pre">default_grid_stride</span></code></a></p></td>
+<td><p>Default <code class="docutils literal notranslate"><span class="pre">grid_stride</span></code> for kernels that make no explicit choice.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="_generated/warp.config.deterministic.html#warp.config.deterministic" title="warp.config.deterministic"><code class="xref py py-obj docutils literal notranslate"><span class="pre">deterministic</span></code></a></p></td>
+<td><p>Determinism guarantee for supported atomic operations.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="_generated/warp.config.deterministic_debug.html#warp.config.deterministic_debug" title="warp.config.deterministic_debug"><code class="xref py py-obj docutils literal notranslate"><span class="pre">deterministic_debug</span></code></a></p></td>
+<td><p>Enable debug diagnostics for deterministic execution mode.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="_generated/warp.config.deterministic_max_records.html#warp.config.deterministic_max_records" title="warp.config.deterministic_max_records"><code class="xref py py-obj docutils literal notranslate"><span class="pre">deterministic_max_records</span></code></a></p></td>
+<td><p>Default per-target, per-thread record bound for deterministic atomics.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="_generated/warp.config.enable_backward.html#warp.config.enable_backward" title="warp.config.enable_backward"><code class="xref py py-obj docutils literal notranslate"><span class="pre">enable_backward</span></code></a></p></td>
 <td><p>Enable compilation of kernel backward passes.</p></td>

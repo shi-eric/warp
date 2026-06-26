@@ -388,6 +388,7 @@
 <li class="toctree-l1"><a class="reference internal" href="user_guide/configuration.html">Configuration</a></li>
 <li class="toctree-l1"><a class="reference internal" href="user_guide/cpp_cuda_workflows.html">C++ and CUDA Workflows</a></li>
 <li class="toctree-l1"><a class="reference internal" href="user_guide/debugging.html">Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="user_guide/deterministic_execution.html">Deterministic Execution</a></li>
 <li class="toctree-l1"><a class="reference internal" href="user_guide/limitations.html">Limitations</a></li>
 <li class="toctree-l1"><a class="reference internal" href="user_guide/contribution_guide.html">Contribution Guide</a></li>
 <li class="toctree-l1"><a class="reference internal" href="user_guide/publications.html">Publications using Warp</a></li>
@@ -831,6 +832,21 @@ tile-based GPU programming. Install the optional dependencies with
 <li class="toctree-l2"><a class="reference internal" href="user_guide/debugging.html#cpu-memory-error-detection-with-addresssanitizer">CPU Memory Error Detection with AddressSanitizer</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="user_guide/deterministic_execution.html">Deterministic Execution</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="user_guide/deterministic_execution.html#quick-start">Quick Start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="user_guide/deterministic_execution.html#choosing-a-scope">Choosing a Scope</a></li>
+<li class="toctree-l2"><a class="reference internal" href="user_guide/deterministic_execution.html#what-warp-supports">What Warp Supports</a></li>
+<li class="toctree-l2"><a class="reference internal" href="user_guide/deterministic_execution.html#tape-and-backward-passes">Tape and Backward Passes</a></li>
+<li class="toctree-l2"><a class="reference internal" href="user_guide/deterministic_execution.html#writing-manual-deterministic-code">Writing Manual Deterministic Code</a></li>
+<li class="toctree-l2"><a class="reference internal" href="user_guide/deterministic_execution.html#picking-the-right-mode">Picking the Right Mode</a></li>
+<li class="toctree-l2"><a class="reference internal" href="user_guide/deterministic_execution.html#capacity-and-dynamic-loops">Capacity and Dynamic Loops</a></li>
+<li class="toctree-l2"><a class="reference internal" href="user_guide/deterministic_execution.html#cuda-graph-capture">CUDA Graph Capture</a></li>
+<li class="toctree-l2"><a class="reference internal" href="user_guide/deterministic_execution.html#performance">Performance</a></li>
+<li class="toctree-l2"><a class="reference internal" href="user_guide/deterministic_execution.html#limitations">Limitations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="user_guide/deterministic_execution.html#checklist">Checklist</a></li>
+<li class="toctree-l2"><a class="reference internal" href="user_guide/deterministic_execution.html#related-nvidia-libraries">Related NVIDIA Libraries</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="user_guide/limitations.html">Limitations</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="user_guide/limitations.html#unsupported-features">Unsupported Features</a></li>
 <li class="toctree-l2"><a class="reference internal" href="user_guide/limitations.html#kernels-and-user-functions">Kernels and User Functions</a></li>
@@ -899,7 +915,6 @@ tile-based GPU programming. Install the optional dependencies with
 <li class="toctree-l2"><a class="reference internal" href="deep_dive/memory_access.html#checking-access-for-a-specific-array-with-wp-can-access">Checking access for a specific array with <code class="docutils literal notranslate"><span class="pre">wp.can_access()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="deep_dive/memory_access.html#checking-coarse-device-access-with-device-can-access">Checking coarse device access with <code class="docutils literal notranslate"><span class="pre">Device.can_access()</span></code></a></li>
 <li class="toctree-l2"><a class="reference internal" href="deep_dive/memory_access.html#checking-array-access-before-launch">Checking array access before launch</a></li>
-<li class="toctree-l2"><a class="reference internal" href="deep_dive/memory_access.html#checking-cpu-gpu-atomic-support">Checking CPU/GPU atomic support</a></li>
 <li class="toctree-l2"><a class="reference internal" href="deep_dive/memory_access.html#choosing-a-memory-access-pattern">Choosing a memory access pattern</a></li>
 </ul>
 </li>
