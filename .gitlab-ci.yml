@@ -143,6 +143,22 @@ linux-x86_64 cuda 13 build:
     - mv warp/bin/warp.so warp/bin/linux-x86_64
     - mv warp/bin/warp-clang.so warp/bin/linux-x86_64
 
+linux-x86_64 python free-threaded build:
+  stage: build
+  image: $WARP_BUILDER_IMAGE_CU13
+  variables:
+    IPP_RUNNER_EXECUTION_DURATION: "3600"
+    UV_PYTHON: "3.14t"
+  extends:
+    - .save_warp_bin_artifact
+    - .ipp_lnx_x86_64_cpu_medium
+  script:
+    - uv python install 3.14t
+    - uv run --python 3.14t build_lib.py --cuda-path=/usr/local/cuda
+    - mkdir -p warp/bin/linux-x86_64
+    - mv warp/bin/warp.so warp/bin/linux-x86_64
+    - mv warp/bin/warp-clang.so warp/bin/linux-x86_64
+
 linux-aarch64 cuda 13 build:
   stage: build
   image: $WARP_BUILDER_IMAGE_CU13
@@ -491,6 +507,27 @@ linux-x86_64-blackwell test:
     - gpu/B40
     - os/linux
     - platform/horde
+
+linux-x86_64 python free-threaded test:
+  stage: test
+  needs: [linux-x86_64 python free-threaded build]
+  image: $UV_TRIXIE_SLIM_IMAGE
+  variables:
+    IPP_RUNNER_EXECUTION_DURATION: "3600"
+    UV_PYTHON: "3.14t"
+  extends:
+    - .ipp_lnx_x86_64_gpu
+    - .save_test_report_artifact
+    - .basic_test_changes_rules
+  before_script:
+    - !reference [.snippets, section-start-install-deps]
+    - df -h
+    - apt-get update && apt-get install build-essential --no-install-recommends -y
+    - uv python install 3.14t
+    - !reference [.snippets, move-linux-x86_64-binaries]
+    - !reference [.snippets, section-end-install-deps]
+  script:
+    - uv run --python 3.14t --extra dev -m warp.tests --junit-report-xml rspec.xml -s autodetect --failfast
 
 linux-x86_64 test debug mode:
   stage: test
