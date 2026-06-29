@@ -513,19 +513,11 @@ Python source files that do not affect the module hash but make the line-correla
 Profiling Module Compilation
 ----------------------------
 
-Versions of Warp built with at least CUDA 12.8 support the generation of
-`Trace Event Format <https://docs.google.com/document/d/1CvAClvFfyA5R-PhYUmn5OOQtYMH4h6I0nSsKchNAySU/preview?tab=t.0#heading=h.yr4qxyxotyw>`__
-files when compiling modules for the GPU. This feature can be used to identify
-bottlenecks in the runtime compilation process.
-
-By setting the global configuration option :attr:`warp.config.compile_time_trace` to ``True``,
-an additional JSON file with the suffix ``_compile-time-trace.json`` will be
-generated in the corresponding kernel cache directory (see :attr:`warp.config.kernel_cache_dir`)
-when modules are compiled. This file can be opened in a viewer like a Chromium browser's built-in
-profiler (e.g. ``chrome://tracing/`` or ``edge://tracing/``) or the `Perfetto UI <https://ui.perfetto.dev/>`__.
-
-For more information about profiling the compilation process, see the NVIDIA Developer blog post
-`Optimizing Compile Times for CUDA C++ <https://developer.nvidia.com/blog/optimizing-compile-times-for-cuda-c/>`__.
+Warp's module-load output is usually the first measurement to check. It reports
+the module name, target device, elapsed load time, and whether the module was
+compiled or loaded from cache. If a compiled module is slow enough that you need
+to separate Warp code generation, CUDA compilation, MathDx LTO compilation, and
+driver-cache effects, use the cold-start workflow below.
 
 .. _benchmarking-cold-start-compilation:
 
@@ -596,9 +588,34 @@ search for and write cache entries. Choose the approach that best matches your
 benchmarking scenario: Option A reflects normal operation with an empty cache,
 while Option B eliminates all cache-related overhead.
 
+Optional GPU Compile-Time Trace
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For GPU module compilation on Warp builds using CUDA 12.8 or newer, enable
+:attr:`warp.config.compile_time_trace` when module-load timing is not enough and
+you need a breakdown of CUDA compiler time:
+
+.. code-block:: python
+
+    import warp as wp
+
+    wp.config.compile_time_trace = True
+    wp.init()
+
+Warp writes a ``*_compile-time-trace.json`` file in the corresponding kernel
+cache directory (see :attr:`warp.config.kernel_cache_dir`) when modules are
+compiled. Open it with a Trace Event Format viewer such as
+``chrome://tracing``, ``edge://tracing``, or the `Perfetto UI
+<https://ui.perfetto.dev/>`__. Compare the trace duration against the
+module-load time to determine whether startup is dominated by CUDA compiler
+work or by surrounding work such as Warp code generation, LTO compilation,
+driver-cache behavior, or application startup.
+
 Additional References
 ^^^^^^^^^^^^^^^^^^^^^
 
+- `Optimizing Compile Times for CUDA C++ <https://developer.nvidia.com/blog/optimizing-compile-times-for-cuda-c/>`__
+  - Background on CUDA compile-time tracing and compiler bottlenecks.
 - `CUDA Programming Guide: CUDA Environment Variables <https://docs.nvidia.com/cuda/cuda-c-programming-guide/#cuda-environment-variables>`__
   - Authoritative reference for ``CUDA_CACHE_DISABLE``, ``CUDA_CACHE_PATH``, and other cache-related environment variables.
 - `CUDA Pro Tip: Understand Fat Binaries and JIT Caching <https://developer.nvidia.com/blog/cuda-pro-tip-understand-fat-binaries-jit-caching/>`__

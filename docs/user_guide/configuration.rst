@@ -31,6 +31,9 @@ For example, the location of the user kernel cache can be changed with:
     wp.init()
 
 See :doc:`../api_reference/warp_config` for a complete list of global settings.
+For guidance on which compilation and startup-related settings to use in
+production or only during development iteration, see
+:doc:`compilation_startup_performance`.
 
 .. _module-settings:
 

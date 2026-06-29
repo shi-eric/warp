@@ -59,6 +59,8 @@ generated compilation artifacts as Warp does not automatically try to keep the c
 Note that these functions only clear Warp's own cache. The NVIDIA CUDA driver
 maintains a separate compute cache that is not affected by Warp's cache-clearing
 functions (see :ref:`benchmarking-cold-start-compilation`).
+For guidance on reducing startup latency and improving cache reuse, see
+:doc:`compilation_startup_performance`.
 
 
 .. _Runtime Kernel Creation:

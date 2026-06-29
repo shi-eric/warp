@@ -175,6 +175,7 @@ warp/examples/tile
     user_guide/installation
     user_guide/basics
     user_guide/runtime
+    Compilation and Startup Performance <user_guide/compilation_startup_performance>
     user_guide/devices
     user_guide/differentiability
     user_guide/generics

@@ -533,6 +533,8 @@ much less time to load the module since code compilation is skipped:
     Module __main__ 0b0ecab load on device 'cuda:0' took 30.98 ms  (cached)
 
 For more information, see the :doc:`../deep_dive/codegen` section.
+For a practical guide to reducing startup latency and cold compile time, see
+:doc:`compilation_startup_performance`.
 
 Language Details
 ----------------
