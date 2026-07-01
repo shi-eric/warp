@@ -850,7 +850,7 @@ CPU Tile Semantics
 
 Tile operations are block-cooperative on the GPU: the ``block_dim`` threads of a block
 share tile storage and cooperate on reductions, scans, scatters, and stores. The CPU
-backend is single-threaded, so it executes tiled kernels with an effective ``block_dim``
+backend is currently single-threaded, so it executes tiled kernels with an effective ``block_dim``
 of ``1``, regardless of the value you pass to :func:`wp.launch() <warp.launch>` or
 :func:`wp.launch_tiled() <warp.launch_tiled>`. The consequences are:
 
@@ -1076,14 +1076,14 @@ processed by 64 GPU threads:
     CUDA_BLOCK_DIM = 64           # GPU execution width
 
     @wp.kernel
-    def copy_tiles(inp: wp.array[float], out: wp.array[float]):
+    def copy_tiles_portable(inp: wp.array[float], out: wp.array[float]):
         tile_idx = wp.tid()
         offset = tile_idx * TILE_SIZE
         t = wp.tile_load(inp, shape=TILE_SIZE, offset=offset)
         wp.tile_store(out, t, offset=offset)
 
     wp.launch_tiled(
-        copy_tiles,
+        copy_tiles_portable,
         dim=[num_tiles],
         inputs=[inp],
         outputs=[out],
