@@ -129,19 +129,19 @@ Shared Tile Load Performance
 
 When loading tiles into shared memory, Warp uses a three-tier cascade to maximize memory bandwidth:
 
-1. **Vectorized float4 (2D+ tiles)** — Reinterprets memory as 128-bit ``float4`` values for wide loads.
+1. **Vectorized float4 (2D+ tiles):** Reinterprets memory as 128-bit ``float4`` values for wide loads.
    Requires the last dimension to be float4-aligned (``last_dim * sizeof(T) % 16 == 0``), a contiguous
    source array, 16-byte aligned base address, tile in-bounds, and float4-aligned outer-dimension strides.
    Use ``aligned=True`` on :func:`tile_load <warp._src.lang.tile_load>` to skip runtime alignment checks
    when you can guarantee these conditions.
 
-2. **Coalesced byte-copy (large element types, ``sizeof(T) > 16``)** — For types like ``mat33``, ``mat44``,
+2. **Coalesced byte-copy (large element types, ``sizeof(T) > 16``):** For types like ``mat33``, ``mat44``,
    and ``mat66``, copies raw bytes as ``float*`` with thread-striped access for perfect memory coalescing.
    This avoids the scalar path's per-element strided access pattern where each element load strides across
    multiple cache lines. Requires a contiguous source array, the tile must fit within array bounds, and the
    tile must span the full inner dimensions.
 
-3. **Scalar fallback (universal)** — Per-element loads with bounds-checked zero-padding. Handles
+3. **Scalar fallback (universal):** Per-element loads with bounds-checked zero-padding. Handles
    non-contiguous arrays, partial tiles, transposed layouts, and CPU execution. 1D tiles do not use the
    vectorized float4 path, but may use the coalesced byte-copy path for large element types.
 
@@ -284,15 +284,15 @@ struct-valued tiles are supported by operations that:
 * sort structs as a value payload permuted by scalar keys, or
 * perform field-wise additive accumulation.
 
-Operations that require a canonical numeric interpretation of the element — an ordering, a bitwise
-representation, a random or range fill, or a linear-algebra meaning — remain numeric-only and
-reject struct tiles.
+Operations that require a canonical numeric interpretation of the element, such as an ordering, a
+bitwise representation, a random or range fill, or a linear-algebra meaning, remain numeric-only
+and reject struct tiles.
 
 Field-wise additive accumulation combines only the fields whose scalar leaf type is accepted by
 :func:`wp.atomic_add <warp.atomic_add>`: ``[u]int32``, ``[u]int64``, ``float16``, ``bfloat16``,
 ``float32``, and ``float64``. Vector and matrix fields accumulate component-wise when their scalar
-component is one of these types. All other fields — including ``bool``, the narrow integers
-``[u]int8`` and ``[u]int16``, and array fields — are carried through the struct value unchanged
+component is one of these types. All other fields, including ``bool``, the narrow integers
+``[u]int8`` and ``[u]int16``, and array fields, are carried through the struct value unchanged
 rather than accumulated. Array fields are carried as descriptors with unspecified merge behavior; see
 :ref:`limitations-arrays-in-structs`. Accumulation is differentiable for the accumulating fields,
 subject to the general CPU ``block_dim=1`` rule described under `CPU vs. GPU behavior differences`_.
@@ -303,10 +303,8 @@ Arithmetic
 Tiles support standard Python arithmetic operators for element-wise operations.
 These operations are cooperative and execute across all threads in the block.
 
-**Addition and Subtraction**
-
-The ``+`` and ``-`` operators perform element-wise addition and subtraction between two tiles
-of the same shape and dtype:
+The ``+`` and ``-`` operators perform element-wise addition and subtraction between two
+tiles of the same shape and dtype:
 
 .. code:: python
 
@@ -321,9 +319,7 @@ of the same shape and dtype:
 
 Tiles also support the ``+=`` and ``-=`` in-place operators.
 
-**Multiplication** (``*``)
-
-The ``*`` operator supports three forms:
+The multiplication operator (``*``) supports three forms:
 
 .. list-table::
    :header-rows: 1
@@ -367,9 +363,8 @@ scalar types must match. For example:
         # vec3f constant * float tile -> vec3f tile
         f = wp.vec3(1.0, 2.0, 3.0) * a
 
-**Division** (``/``)
-
-The ``/`` operator supports three forms with the same type rules as multiplication:
+The division operator (``/``) supports three forms with the same type rules as
+multiplication:
 
 .. list-table::
    :header-rows: 1
@@ -416,10 +411,7 @@ a scalar, and the underlying scalar types must match. For example:
         # vec3f constant / float tile -> vec3f tile
         g = wp.vec3(1.0, 2.0, 4.0) / a
 
-**Type Promotion Rules**
-
-The following table summarizes the result type for ``*`` and ``/`` operations between
-tiles and constants:
+The type-promotion rules for ``*`` and ``/`` operations between tiles and constants are:
 
 .. list-table::
    :header-rows: 1
@@ -494,8 +486,8 @@ Tile stacks provide a cooperative, block-scoped stack data structure in shared m
 They enable patterns such as stream compaction and dynamic load balancing where threads
 within a block need to collectively build and consume a shared work-list.
 
-Most tile stack operations are **cooperative** — every thread in the block must call them,
-even if a particular thread has no data to contribute, because they contain internal
+Most tile stack operations are cooperative. Every thread in the block must call them, even
+if a particular thread has no data to contribute, because they contain internal
 synchronization barriers. The exception is :func:`wp.tile_stack_count
 <warp._src.lang.tile_stack_count>`, which contains no barrier and may be called by a
 single thread or from within a divergent branch.
@@ -520,7 +512,7 @@ Push and Pop
 ^^^^^^^^^^^^
 
 :func:`wp.tile_stack_push() <warp._src.lang.tile_stack_push>` conditionally pushes a value
-onto the stack. Each thread provides a value and a boolean ``has_value`` flag — only threads
+onto the stack. Each thread provides a value and a boolean ``has_value`` flag. Only threads
 with ``has_value=True`` write to the stack. The function returns the slot index where the
 value was written, or ``-1`` if the thread did not push (either because ``has_value`` was
 ``False`` or because the stack overflowed):
@@ -532,8 +524,9 @@ value was written, or ``-1`` if the thread did not push (either because ``has_va
 :func:`wp.tile_stack_pop() <warp._src.lang.tile_stack_pop>` removes values from the stack.
 Each calling thread races for a slot. It returns a tuple ``(value, slot)`` where ``slot``
 identifies which stack slot was popped (in ``[0, capacity-1]`` when non-negative), or
-``-1`` if the stack was empty — consistent with
-:func:`wp.tile_stack_push() <warp._src.lang.tile_stack_push>` which also returns ``-1`` on failure:
+``-1`` if the stack was empty. This matches
+:func:`wp.tile_stack_push() <warp._src.lang.tile_stack_push>`, which also returns ``-1`` on
+failure:
 
 .. code:: python
 
@@ -552,10 +545,10 @@ allowing it to be reused within the same kernel invocation:
     wp.tile_stack_clear(s)
 
 :func:`wp.tile_stack_count() <warp._src.lang.tile_stack_count>` returns the current number of
-elements. Unlike the other operations it is **not** cooperative — it contains no
-synchronization barrier and may be called by a single thread or from within a divergent
-branch. It is safe to call after any push, pop, or clear, all of which end with a barrier
-that makes the count visible:
+elements. Unlike the other operations, it is not cooperative: it contains no synchronization
+barrier and may be called by a single thread or from within a divergent branch. It is safe
+to call after any push, pop, or clear, all of which end with a barrier that makes the count
+visible:
 
 .. code:: python
 
@@ -573,8 +566,8 @@ Example: Stream Compaction
 A common use case is filtering elements that satisfy a condition. Because
 ``tile_stack`` is a within-block primitive, the slot returned by
 :func:`wp.tile_stack_pop() <warp._src.lang.tile_stack_pop>` is compact only
-within a single tile — for a single-tile launch this maps directly to a compact
-output array:
+within a single tile. For a single-tile launch, this maps directly to a compact output
+array:
 
 .. code:: python
 
@@ -588,12 +581,12 @@ output array:
         val = data[j]
         keep = val > 0.5
 
-        # Cooperative push — only threads with keep=True write to the stack
+        # Cooperative push: only threads with keep=True write to the stack
         s = wp.tile_stack(capacity=CAPACITY, dtype=float)
         wp.tile_stack_push(s, val, keep)
 
         # Each thread races for a slot. The returned slot is a unique compact
-        # index in [0, capacity-1] — use it directly as the output index.
+        # index in [0, capacity-1], so use it directly as the output index.
         result, slot = wp.tile_stack_pop(s)
         if slot != -1:
             out[slot] = result
@@ -625,7 +618,7 @@ Tiles and SIMT Code
 -------------------
 
 Traditionally, Warp kernels are primarily written in the SIMT programming model, where each thread's execution happens independently. 
-Tiles, on the other hand, allow threads to work **cooperatively** to perform operations.
+Tiles, on the other hand, allow threads to work cooperatively to perform operations.
 Warp exposes the :func:`warp.tile <warp._src.lang.tile>`, and :func:`warp.untile <warp._src.lang.untile>` methods to convert data between per-thread value types and
 the equivalent tile representation. For example:
 
@@ -855,7 +848,7 @@ relatively unaffected.
 CPU Tile Semantics
 ------------------
 
-Tile operations are **block-cooperative** on the GPU: the ``block_dim`` threads of a block
+Tile operations are block-cooperative on the GPU: the ``block_dim`` threads of a block
 share tile storage and cooperate on reductions, scans, scatters, and stores. The CPU
 backend is single-threaded, so it executes tiled kernels with an effective ``block_dim``
 of ``1``, regardless of the value you pass to :func:`wp.launch() <warp.launch>` or
@@ -864,26 +857,26 @@ of ``1``, regardless of the value you pass to :func:`wp.launch() <warp.launch>` 
 - :func:`wp.block_dim() <warp._src.lang.block_dim>` returns ``1``.
 - For :func:`wp.launch_tiled() <warp.launch_tiled>`, the trailing lane index added to
   :func:`wp.tid() <warp._src.lang.tid>` is always ``0``.
-- :func:`wp.tile(value) <warp._src.lang.tile>` builds a **1-element** tile, even if the
+- :func:`wp.tile(value) <warp._src.lang.tile>` builds a one-element tile, even if the
   launch requested ``block_dim > 1``.
 - Tile state is not cooperatively populated by ``block_dim`` lanes on CPU. On the GPU,
   lanes ``0`` through ``block_dim - 1`` can each contribute values to the same block tile.
   On CPU the effective lane count is ``1``, so only lane ``0`` participates.
 
-Crucially, this does **not** make all tile code non-portable. Whole-tile cooperative
+This does not make all tile code non-portable. Whole-tile cooperative
 operations on explicitly shaped tiles still produce the same result on CPU and GPU. A
 pattern such as :func:`tile_load() <warp._src.lang.tile_load>`, then
 :func:`tile_sum() <warp._src.lang.tile_sum>`, then
 :func:`tile_store() <warp._src.lang.tile_store>` remains correct on CPU, because CPU
 execution still processes the full explicit tile shape. Divergence appears only when a
 kernel uses ``block_dim`` or the lane index in its arithmetic, reduces or scans over
-``wp.tile(value)``, or relies on multiple lanes cooperating on one tile — the three cases
-detailed below.
+``wp.tile(value)``, or relies on multiple lanes cooperating on one tile. These are the three
+cases detailed below.
 
 Patterns that do not produce identical CPU/GPU results
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Every divergence below traces to one fact: **a CPU block has a single lane.** A kernel's
+Every divergence below traces to one fact: a CPU block has a single lane. A kernel's
 result differs across devices only when it depends on a block having *more than one* lane.
 That dependence enters in three ways. The CPU and GPU outputs are shown as comments.
 
@@ -914,7 +907,7 @@ CPU. Here ``block_dim()`` drives the load offset, so each block reads the wrong 
 
 **Problem 2: reductions or scans over** ``wp.tile(value)``. :func:`wp.tile(value)
 <warp._src.lang.tile>` builds a ``block_dim``-wide tile from each lane's scalar, but a
-**1-element** tile on CPU. A block reduction or scan over it aggregates the whole block on
+one-element tile on CPU. A block reduction or scan over it aggregates the whole block on
 the GPU and collapses to the lane's own value on CPU:
 
 .. code-block:: python
@@ -1006,10 +999,10 @@ values may still coincide.
 Writing device-portable tile kernels
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The unifying principle is to **make the result independent of** ``block_dim`` so that a
-kernel computes the *intended* result on both devices — a genuine block reduction, say,
-rather than a per-lane no-op. Three approaches produce equivalent CPU and GPU results
-today, in rough order of preference:
+The unifying principle is to make the result independent of ``block_dim`` so that a kernel
+computes the *intended* result on both devices, such as a genuine block reduction rather
+than a per-lane no-op. Three approaches produce equivalent CPU and GPU results today, in
+rough order of preference:
 
 **1. Accumulate block results into a global with**
 :func:`tile_atomic_add() <warp._src.lang.tile_atomic_add>`. This replaces a
@@ -1155,8 +1148,8 @@ values, the value dimensions remain, but the trailing lane dimension still becom
 CPU. Using an explicit tile-size constant for offsets, bounds, or loop counts does not
 change the ``block_dim``-sized lane dimension created by ``wp.tile(value)``.
 
-Separately, if a kernel's work is *purely per-lane* — each thread only reads and writes
-its own element — tiles are the wrong abstraction altogether. Skip the block-shared tile
+Separately, if a kernel's work is *purely per-lane* (each thread only reads and writes
+its own element), tiles are the wrong abstraction altogether. Skip the block-shared tile
 and have each thread write directly to the global array (e.g. ``out[i] = x[i] * 2.0``).
 This is ordinary SIMT code rather than a tile kernel, but it already runs identically on
 both devices and avoids the cooperative machinery entirely.
@@ -1164,8 +1157,8 @@ both devices and avoids the cooperative machinery entirely.
 .. note::
 
     Approach 3 trades away the in-block SIMT parallelism that tiles exist to provide.
-    There is currently no way to preserve **both** cross-device parity **and** the
-    cooperative block execution model within a *single* kernel on CPU. We intend to emulate
+    There is currently no way to preserve cross-device parity and the cooperative block
+    execution model within a *single* kernel on CPU. We intend to emulate
     ``block_dim`` on the CPU in the future so that valid tiled kernels behave the same on
     both devices without this workaround.
 
@@ -1181,7 +1174,7 @@ Please see the :ref:`differentiability` section for more details.
 Tiles in ``@wp.func`` Functions
 -------------------------------
 
-Tile parameters in :func:`@wp.func <warp.func>` functions are **passed by reference**. This is
+Tile parameters in :func:`@wp.func <warp.func>` functions are passed by reference. This is
 a departure from other Warp types (scalars, vectors, matrices, etc.), which are passed by value.
 The difference is observable when a function modifies a tile in place:
 
@@ -1195,10 +1188,10 @@ The difference is observable when a function modifies a tile in place:
     def compute(input: wp.array2d[float], out: wp.array2d[float]):
         i = wp.tid()
         t = wp.tile_load(input, shape=(TILE_M, TILE_N), offset=(0, 0), storage="shared")
-        add_bias(t)          # modifies t in place — caller sees the change
+        add_bias(t)          # modifies t in place; caller sees the change
         wp.tile_store(out, t) # t now contains input + 5.0
 
-This behavior applies to **both** shared-memory and register tiles, and matches Python's
+This behavior applies to shared-memory and register tiles, and matches Python's
 semantics for mutable objects. The reasons for pass-by-reference are:
 
 - Shared-memory tiles are handles to a fixed region of shared memory and cannot be copied.
@@ -1219,11 +1212,11 @@ semantics for mutable objects. The reasons for pass-by-reference are:
 Vectorized Tile Loads
 ---------------------
 
-When loading shared-memory tiles, Warp automatically attempts a **vectorized path**
+When loading shared-memory tiles, Warp automatically attempts a vectorized path
 that uses 128-bit (``float4``) memory transactions instead of per-element loads. This
 gives up to 1.3× higher bandwidth because each thread issues fewer, wider loads.
 
-The vectorized path activates when **all** of the following hold:
+The vectorized path activates when all of the following hold:
 
 1. **Last-dimension alignment:** ``tile_last_dim × sizeof(element) % 16 == 0``.
    For ``float32`` (4 bytes), the last dimension must be divisible by 4.
@@ -1248,16 +1241,15 @@ The vectorized path activates when **all** of the following hold:
    has ``strides[0]=140`` bytes, and ``140 % 16 != 0``, so vectorization is rejected
    even if the tile's last dimension is aligned.
 
-When any condition fails, Warp tries a **coalesced byte-copy path** for large element
+When any condition fails, Warp tries a coalesced byte-copy path for large element
 types (``sizeof(T) > 16``) such as ``mat33``, ``mat44``, and ``mat66``. This path copies
 raw bytes as ``float*`` with thread-striped access for perfect memory coalescing, and works
-for both 1D and N-D tiles. If that path is also ineligible, Warp falls back to a **scalar
-load path** that handles arbitrary alignment, strides, and partial (out-of-bounds) tiles
+for both 1D and N-D tiles. If that path is also ineligible, Warp falls back to a scalar
+load path that handles arbitrary alignment, strides, and partial (out-of-bounds) tiles
 with zero-padding.
 
-**Padding for vectorized loads:** if your data dimensions are not naturally aligned, pad
-them to hit the vectorized path. For example, with ``float32`` tiles of width 30 (not
-divisible by 4), pad to 32:
+To use vectorized loads, pad data dimensions that are not naturally aligned. For example,
+pad ``float32`` tiles of width 30 (not divisible by 4) to 32:
 
 .. code:: python
 
@@ -1268,8 +1260,8 @@ divisible by 4), pad to 32:
     # Now tile_load with width=32 hits the fast vectorized path
     t = wp.tile_load(data, shape=(8, 32), offset=(i * 8, 0), storage="shared")
 
-**The ``aligned`` parameter:** when you know all conditions above are met, pass
-``aligned=True`` to skip the runtime eligibility checks:
+When you know all conditions above are met, pass ``aligned=True`` to skip the runtime
+eligibility checks:
 
 .. code:: python
 
@@ -1294,12 +1286,11 @@ use the vectorized path).
 Software Pipelining with Register Tiles
 ----------------------------------------
 
-When a kernel iterates over many tiles, the default pattern — load, compute, store,
-repeat — leaves the GPU's memory pipeline idle during compute and the ALU idle during
-loads.
+When a kernel iterates over many tiles, the default load-compute-store pattern leaves the
+GPU's memory pipeline idle during compute and the ALU idle during loads.
 
-**Sequential (baseline):** each iteration loads a tile, processes it, stores the result,
-then moves on. The next load cannot begin until the current store completes:
+In the sequential baseline, each iteration loads a tile, processes it, stores the result,
+and then moves on. The next load cannot begin until the current store completes:
 
 .. testcode::
     :skipif: wp.get_cuda_device_count() == 0
@@ -1349,7 +1340,7 @@ then moves on. The next load cannot begin until the current store completes:
         a = wp.tile_load(inp, shape=(1, TILE_N), offset=(0, 0), storage="register")
 
         for i in range(1, N_ROWS):
-            # Issue next load — GPU fetches in background during compute below
+            # Issue next load; GPU fetches in background during compute below
             b = wp.tile_load(inp, shape=(1, TILE_N), offset=(i, 0), storage="register")
 
             # Heavy compute overlaps with the memory fetch for b
@@ -1416,9 +1407,9 @@ GPU's memory pipeline immediately, but the result registers are not read until `
 on the next iteration. The GPU's instruction scheduler fills the gap with the ALU-heavy
 ``tile_map`` calls, effectively hiding the memory latency for free.
 
-No special parameters or API calls are needed — the hardware pipeline handles the overlap
-automatically. The benefit scales with the amount of compute per tile: with four
-transcendental ``tile_map`` calls per iteration (as above), expect **1.2–1.6× speedup**
+No special parameters or API calls are needed because the hardware pipeline handles the
+overlap automatically. The benefit scales with the amount of compute per tile. With four
+transcendental ``tile_map`` calls per iteration, as above, expect a 1.2–1.6× speedup
 depending on the GPU.
 
 .. note::
@@ -1521,7 +1512,7 @@ Tile operations in divergent branches
 
 *Can I use tile operations inside* ``if`` *statements or loops with early exits?*
 
-Most tile operations are **cooperative**: every thread in the block must call them,
+Most tile operations are cooperative: every thread in the block must call them,
 because they contain internal synchronization barriers (analogous to CUDA's
 ``__syncthreads()``). Calling a cooperative tile operation from a divergent branch, where
 only some threads execute it, will deadlock or produce undefined behavior.
@@ -1540,12 +1531,12 @@ Register vs. shared memory tiles
 
 *How do I choose between register and shared memory for my tile?*
 
-**Register tiles** (the default) distribute data across threads: with 64 threads and a
+Register tiles (the default) distribute data across threads: with 64 threads and a
 tile of 256 elements, each thread holds 4 elements. Register storage is the fastest on
 most hardware but does not support random per-element access, because a thread cannot
 directly read elements assigned to other threads. See `Register Tiles`_.
 
-**Shared memory tiles** store data in a region accessible by all threads in the block,
+Shared memory tiles store data in a region accessible by all threads in the block,
 enabling random access. They are required for operations such as
 :func:`wp.tile_matmul() <warp._src.lang.tile_matmul>` that need to read arbitrary
 elements. Shared memory is a limited per-block resource whose size varies by
@@ -1576,15 +1567,15 @@ Debugging garbage or NaN output
 
 *My kernel produces garbage or NaNs. What are the most common causes?*
 
-1. **Uninitialized output tile passed to** :func:`wp.tile_matmul() <warp._src.lang.tile_matmul>` **.**
-   :func:`wp.tile_matmul() <warp._src.lang.tile_matmul>` accumulates into ``out``,
+1. **Uninitialized output tile:** :func:`wp.tile_matmul() <warp._src.lang.tile_matmul>`
+   accumulates into ``out``,
    computing ``alpha * a @ b + beta * out``.
    With the default ``beta=1.0``, an uninitialized ``out`` tile produces garbage. Always
    initialize the accumulator with :func:`wp.tile_zeros() <warp._src.lang.tile_zeros>`
    before calling :func:`~warp._src.lang.tile_matmul`.
 
-2. **aligned=True with unmet conditions.**
-   Passing ``aligned=True`` to :func:`wp.tile_load() <warp._src.lang.tile_load>` or
+2. **Invalid alignment assumptions:** Passing ``aligned=True`` to
+   :func:`wp.tile_load() <warp._src.lang.tile_load>` or
    :func:`wp.tile_store() <warp._src.lang.tile_store>` skips runtime eligibility checks
    for the vectorized load path. Address-alignment violations trap unconditionally (even
    in release builds), but bounds and contiguity violations are caught only by debug-only
@@ -1616,7 +1607,7 @@ Out-of-bounds handling
 *How do* ``wp.tile_load()`` *and* ``wp.tile_store()`` *handle out-of-bounds accesses?*
 
 :func:`wp.tile_load() <warp._src.lang.tile_load>` handles out-of-bounds accesses
-automatically: positions past the array edge are **zero-padded**, so boundary tiles are
+automatically: positions past the array edge are zero-padded, so boundary tiles are
 always safe to load without special handling. For
 :func:`wp.tile_store() <warp._src.lang.tile_store>`, out-of-bounds writes are silently
 dropped.
