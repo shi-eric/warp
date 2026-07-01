@@ -995,11 +995,13 @@ forward pass and only lane 0 can receive a gradient in the backward pass:
     # GPU  out:   [1, 2, 3, 4, 5, 6, 7, 8]
     # CPU  out:   [1, 0, 0, 0, 0, 0, 0, 0]
 
-Finally, **seeded random tiles are not reproducible across devices.**
+Finally, seeded random tiles do not provide cross-device reproducibility.
 :func:`tile_randf() <warp._src.lang.tile_randf>` and
-:func:`tile_randi() <warp._src.lang.tile_randi>` partition the RNG stream across lanes. On
-CPU's single lane the whole tile is drawn from lane 0's stream, so only the first element
-matches the GPU result while the rest differ, even though the tile shape is the same.
+:func:`tile_randi() <warp._src.lang.tile_randi>` derive per-lane RNG states. CPU lane ``0``
+generates the entire tile, while a multi-lane GPU distributes generation across lanes.
+Element ``0`` uses the same lane-0 RNG state on both devices, but subsequent elements do
+not follow the same RNG-state progression and should not be expected to match. Individual
+values may still coincide.
 
 Writing device-portable tile kernels
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
