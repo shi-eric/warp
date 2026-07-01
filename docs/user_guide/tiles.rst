@@ -63,7 +63,16 @@ In the following example, we launch a grid of threads where each block is respon
 
     b = [   0.  256.  512.  768. 1024. 1280. 1536. 1792. 2048. 2304.]
     
-Here, we have used the new :func:`warp.launch_tiled` function which assigns ``TILE_THREADS`` threads to each of the elements in the launch grid. Each block of ``TILE_THREADS`` threads then loads an entire row of 256 values from the global memory array and computes its sum (cooperatively).
+Here, :func:`warp.launch_tiled` assigns a block of ``TILE_THREADS`` threads to each
+element in the launch grid. Each block then loads an entire row of 256 values from the
+global memory array and computes its sum cooperatively.
+
+``TILE_SIZE`` and ``TILE_THREADS`` describe independent quantities. ``TILE_SIZE`` defines
+the tile's logical data shape, while ``TILE_THREADS`` selects how many GPU threads
+cooperate to process it. A tile does not need one thread per element: in this example, 64
+threads process a 256-element tile. Define tile dimensions explicitly and use them for
+shapes, offsets, bounds, and other data-model arithmetic. Treat ``block_dim`` as an
+execution and performance choice rather than as the tile's logical extent.
 
 
 Tile Properties
@@ -905,6 +914,49 @@ CPU. Here ``block_dim()`` drives the load offset, so each block reads the wrong 
     # GPU  out:  [0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15]
     # CPU  out:  [0 1 2 3 1 2 3 4 2 3 4 5 3 4 5 6]
 
+Replacing :func:`wp.block_dim() <warp._src.lang.block_dim>` with an explicit tile dimension
+repairs data arithmetic that incorrectly derives the logical tile extent from the execution
+width, but it cannot make lane-dependent code portable. On CPU only lane ``0`` executes,
+so a kernel cannot obtain a value that would have been computed by a nonzero lane. For
+example, replacing every use of ``wp.block_dim()`` in a
+:func:`tile_from_thread() <warp._src.lang.tile_from_thread>` broadcast with ``TILE_SIZE``
+still produces different results:
+
+.. code-block:: python
+
+    TILE_SIZE = wp.constant(8)
+
+    @wp.kernel
+    def constant_width_broadcast(out: wp.array[int]):
+        block, lane = wp.tid()
+
+        offset = 0
+        if lane == TILE_SIZE - 1:
+            offset = block * TILE_SIZE
+
+        offset_tile = wp.tile_from_thread(
+            shape=TILE_SIZE,
+            value=offset,
+            thread_idx=TILE_SIZE - 1,
+        )
+        indices = wp.tile_arange(0, TILE_SIZE, dtype=int)
+        wp.tile_store(out, offset_tile + indices, offset=block * TILE_SIZE)
+
+    wp.launch_tiled(
+        constant_width_broadcast,
+        dim=[2],
+        outputs=[out],
+        block_dim=TILE_SIZE,
+        device=device,
+    )
+
+    # GPU: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    # CPU: [0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7]
+
+For block ``1``, only GPU lane ``7`` assigns ``offset = 8``. CPU executes lane ``0``
+only, so ``offset`` remains zero; its implementation of ``tile_from_thread()`` returns the
+current invocation's value because the selected lane never ran.
+
 **Problem 2: reductions or scans over** ``wp.tile(value)``. :func:`wp.tile(value)
 <warp._src.lang.tile>` builds a ``block_dim``-wide tile from each lane's scalar, but a
 one-element tile on CPU. A block reduction or scan over it aggregates the whole block on
@@ -925,6 +977,14 @@ the GPU and collapses to the lane's own value on CPU:
 
     # GPU:  [ 6  0  0  0 22  0  0  0 38  0  0  0]   (block sums at 0, 4, 8)
     # CPU:  [ 0  1  2  3  4  5  6  7  8  9 10 11]   (each lane's own value)
+
+:func:`wp.tile(value) <warp._src.lang.tile>` is an explicit exception to the separation
+between logical tile shape and execution width: by definition, its trailing lane dimension
+has size ``block_dim``. For a scalar value, it therefore constructs a
+``block_dim``-element tile on GPU and a one-element tile on CPU. For vector and matrix
+values, the value dimensions remain, but the trailing lane dimension still becomes one on
+CPU. An explicit tile-size constant used for offsets, bounds, or loop counts does not
+change this lane dimension.
 
 **Problem 3: results that require lanes to cooperate on one tile.** When each lane fills its
 own part of a tile that the block then consumes as a whole, only one lane's contribution
@@ -1004,6 +1064,12 @@ computes the *intended* result on both devices, such as a genuine block reductio
 than a per-lane no-op. Three approaches produce equivalent CPU and GPU results today, in
 rough order of preference:
 
+Before applying one of these approaches, check whether the work is purely per-lane, with
+each thread reading and writing only its own element. In that case, tiles are the wrong
+abstraction: have each thread write directly to the global array (for example,
+``out[i] = x[i] * 2.0``). Ordinary SIMT code already runs identically on both devices and
+avoids the cooperative machinery entirely.
+
 **1. Accumulate block results into a global with**
 :func:`tile_atomic_add() <warp._src.lang.tile_atomic_add>`. This replaces a
 first-lane :func:`tile_store() <warp._src.lang.tile_store>` of a block aggregate with a
@@ -1040,12 +1106,12 @@ paths to keep in sync:
     else:
         wp.launch(cpu_reduce, dim=x.shape[0], inputs=[x], outputs=[out])
 
-**3. Have one thread own the tile and loop over the lanes** *(last resort).* As a
-compatibility or debugging fallback, launch with one thread per block (``block_dim=1`` on
-both devices) and iterate over what would be the lanes. This keeps a single kernel and
-produces the intended result everywhere, but it serializes the work and forfeits the
-cooperative execution model that tiles exist to provide, so it is not recommended for
-production GPU kernels:
+**3. Have one thread own the tile and loop over the lanes** *(last resort).* For
+lane-dependent work that cannot use the global-accumulation approach, a compatibility or
+debugging fallback is to launch with one thread per block (``block_dim=1`` on both devices)
+and iterate over what would be the lanes. This keeps a single kernel and produces the
+intended result on CPU and GPU, but it serializes the work and forfeits cooperative GPU
+execution, so it is not recommended for production GPU kernels:
 
 .. code-block:: python
 
@@ -1061,106 +1127,6 @@ production GPU kernels:
         wp.tile_store(out, t, offset=b * TILE_SIZE)
 
     wp.launch(owned_tile, dim=NBLOCKS, inputs=[x], outputs=[out], block_dim=1)
-
-Treat a tile's logical shape and its block execution width as independent quantities.
-Define explicit tile dimensions and use them for tile shapes, offsets, bounds, and other
-data-model arithmetic. Choose ``block_dim`` separately as the number of GPU threads that
-cooperate on the tile; CPU execution uses ``block_dim=1`` regardless of the requested
-value. Do not assume one thread per tile element or derive a tile's logical extent from
-:func:`wp.block_dim() <warp._src.lang.block_dim>`. For example, a 256-element tile can be
-processed by 64 GPU threads:
-
-.. code-block:: python
-
-    TILE_SIZE = wp.constant(256)  # logical data extent
-    CUDA_BLOCK_DIM = 64           # GPU execution width
-
-    @wp.kernel
-    def copy_tiles_portable(inp: wp.array[float], out: wp.array[float]):
-        tile_idx = wp.tid()
-        offset = tile_idx * TILE_SIZE
-        t = wp.tile_load(inp, shape=TILE_SIZE, offset=offset)
-        wp.tile_store(out, t, offset=offset)
-
-    wp.launch_tiled(
-        copy_tiles_portable,
-        dim=[num_tiles],
-        inputs=[inp],
-        outputs=[out],
-        block_dim=CUDA_BLOCK_DIM,
-        device=device,
-    )
-
-Here ``TILE_SIZE`` defines the logical tile shape on both devices. ``CUDA_BLOCK_DIM``
-chooses how 64 GPU threads cooperate to process it and is forced to ``1`` on CPU. No
-correctness calculation assumes that the two values are equal.
-
-Replacing :func:`wp.block_dim() <warp._src.lang.block_dim>` with an explicit tile dimension
-only repairs data arithmetic that incorrectly derived the logical tile extent from the
-execution width. It cannot make lane-dependent code portable. On CPU only lane ``0``
-executes, so a kernel cannot obtain a value that would have been computed by a nonzero
-lane. For example, replacing every use of ``wp.block_dim()`` in a
-:func:`tile_from_thread() <warp._src.lang.tile_from_thread>` broadcast with ``TILE_SIZE``
-still produces different results:
-
-.. code-block:: python
-
-    TILE_SIZE = wp.constant(8)
-
-    @wp.kernel
-    def constant_width_broadcast(out: wp.array[int]):
-        block, lane = wp.tid()
-
-        offset = 0
-        if lane == TILE_SIZE - 1:
-            offset = block * TILE_SIZE
-
-        offset_tile = wp.tile_from_thread(
-            shape=TILE_SIZE,
-            value=offset,
-            thread_idx=TILE_SIZE - 1,
-        )
-        indices = wp.tile_arange(0, TILE_SIZE, dtype=int)
-        wp.tile_store(out, offset_tile + indices, offset=block * TILE_SIZE)
-
-    wp.launch_tiled(
-        constant_width_broadcast,
-        dim=[2],
-        outputs=[out],
-        block_dim=TILE_SIZE,
-        device=device,
-    )
-
-    # GPU: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-    # CPU: [0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7]
-
-For block ``1``, only GPU lane ``7`` assigns ``offset = 8``. CPU executes lane ``0``
-only, so ``offset`` remains zero; its implementation of ``tile_from_thread()`` returns the
-current invocation's value because the selected lane never ran. If a kernel relies on a
-particular nonzero lane or on values contributed by multiple lanes, use the
-architecture-specific approach above or have one thread serially own the tile as in
-approach 3.
-
-:func:`wp.tile(value) <warp._src.lang.tile>` is an explicit exception: by definition, its
-trailing lane dimension has size ``block_dim``. For a scalar value, it therefore constructs
-a ``block_dim``-element tile on GPU and a one-element tile on CPU. For vector and matrix
-values, the value dimensions remain, but the trailing lane dimension still becomes one on
-CPU. Using an explicit tile-size constant for offsets, bounds, or loop counts does not
-change the ``block_dim``-sized lane dimension created by ``wp.tile(value)``.
-
-Separately, if a kernel's work is *purely per-lane* (each thread only reads and writes
-its own element), tiles are the wrong abstraction altogether. Skip the block-shared tile
-and have each thread write directly to the global array (e.g. ``out[i] = x[i] * 2.0``).
-This is ordinary SIMT code rather than a tile kernel, but it already runs identically on
-both devices and avoids the cooperative machinery entirely.
-
-.. note::
-
-    Approach 3 trades away the in-block SIMT parallelism that tiles exist to provide.
-    There is currently no way to preserve cross-device parity and the cooperative block
-    execution model within a *single* kernel on CPU. We intend to emulate
-    ``block_dim`` on the CPU in the future so that valid tiled kernels behave the same on
-    both devices without this workaround.
 
 Automatic Differentiation
 -------------------------
