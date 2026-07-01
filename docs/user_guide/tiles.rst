@@ -938,12 +938,12 @@ own part of a tile that the block then consumes as a whole, only one lane's cont
 lands on CPU. This is the mechanism behind per-lane element writes (``t[i] = ...``,
 ``t[i][c]``, ``t[i][r, c]``), :func:`tile_scatter_add() <warp._src.lang.tile_scatter_add>`,
 and :func:`tile_stack_push() <warp._src.lang.tile_stack_push>` /
-:func:`tile_stack_pop() <warp._src.lang.tile_stack_pop>`. The adjoint collapses the same
-way — only the surviving lane receives a gradient.
+:func:`tile_stack_pop() <warp._src.lang.tile_stack_pop>`.
 
-The exact wrong answer depends on the launch. Under :func:`wp.launch() <warp.launch>` each
-thread becomes its own single-lane block, so cooperative stores to the same output race and
-the last write wins:
+The exact wrong answer depends on the launch. Under :func:`wp.launch() <warp.launch>`, each
+logical CPU thread runs as a separate single-lane task, so each task performs a full-tile
+store to the same output. CPU tasks execute in ascending order, so the last task's store
+remains:
 
 .. code-block:: python
 
@@ -962,8 +962,21 @@ the last write wins:
     # GPU  out: [0, 2, 4, 6, 8, 10, 12, 14]
     # CPU  out: [0, 0, 0, 0, 0, 0, 0, 14]          (only the last thread's store remains)
 
-Under :func:`wp.launch_tiled() <warp.launch_tiled>` the block runs once with lane ``0``, so
-only lane 0's contribution is present:
+    # With an all-ones out.grad:
+    # GPU  x.grad: [2, 2, 2, 2, 2, 2, 2, 2]
+    # CPU  x.grad: [2, 0, 0, 0, 0, 0, 0, 0]
+
+The CPU forward survivor does not receive the gradient. In the current CPU implementation,
+forward and backward tasks both execute in ascending order. Task ``7`` performs the final
+forward store, but task ``0`` consumes and clears ``out.grad`` before the remaining backward
+tasks run. This CPU adjoint is a consequence of the overlapping full-tile stores created
+when ``wp.launch()`` executes each logical thread as a separate single-lane task. It reflects
+the current CPU execution order, not a rule that the task whose value survives the forward
+pass also receives the gradient.
+
+Under :func:`wp.launch_tiled() <warp.launch_tiled>`, there are no overlapping CPU tasks for
+a tile. The block runs once with lane ``0``, so only lane 0's contribution is present in the
+forward pass and only lane 0 can receive a gradient in the backward pass:
 
 .. code-block:: python
 
