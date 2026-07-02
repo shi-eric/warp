@@ -133,8 +133,16 @@ class Adam:
                 # buffer dtype), not ``param.dtype``, otherwise the buffers are re-zeroed on every call.
                 if self.m[i] is None or self.m[i].shape != param.shape or self.m[i].dtype != dtype:
                     self.m[i] = wp.zeros(shape=param.shape, dtype=dtype, device=param.device)
+                elif self.m[i].device != param.device:
+                    migrated_m = wp.empty(shape=param.shape, dtype=dtype, device=param.device)
+                    wp.copy(migrated_m, self.m[i])
+                    self.m[i] = migrated_m
                 if self.v[i] is None or self.v[i].shape != param.shape or self.v[i].dtype != dtype:
                     self.v[i] = wp.zeros(shape=param.shape, dtype=dtype, device=param.device)
+                elif self.v[i].device != param.device:
+                    migrated_v = wp.empty(shape=param.shape, dtype=dtype, device=param.device)
+                    wp.copy(migrated_v, self.v[i])
+                    self.v[i] = migrated_v
 
     def reset_internal_state(self):
         """Reset moment buffers and timestep to zero."""
