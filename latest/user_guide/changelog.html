@@ -504,6 +504,10 @@ overhead and register pressure, which can speed up launch-bound kernels; it stil
 the block count can no longer be capped, so launching such a kernel with <code class="docutils literal notranslate"><span class="pre">max_blocks</span> <span class="pre">&gt;</span> <span class="pre">0</span></code> raises an error pointing
 back at the grid-stride default. The default launch is unchanged
 (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1270">GH-1270</a>).</p></li>
+<li><p>Add <code class="docutils literal notranslate"><span class="pre">wp.cuda_profiler_start()</span></code>, <code class="docutils literal notranslate"><span class="pre">wp.cuda_profiler_stop()</span></code>, and the <code class="docutils literal notranslate"><span class="pre">wp.ScopedCudaProfiler</span></code> context manager to
+control CUDA profiler data collection from Python (equivalent to <code class="docutils literal notranslate"><span class="pre">cuProfilerStart</span></code>/<code class="docutils literal notranslate"><span class="pre">cuProfilerStop</span></code>), for use with an
+external profiler’s capture range. They accept an optional <code class="docutils literal notranslate"><span class="pre">device</span></code> argument and act on that device’s current CUDA
+context (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1596">GH-1596</a>).</p></li>
 <li><p>Add <code class="docutils literal notranslate"><span class="pre">wp.ref[T]</span></code> parameter annotation for <code class="docutils literal notranslate"><span class="pre">&#64;wp.func</span></code> and <code class="docutils literal notranslate"><span class="pre">&#64;wp.func_native</span></code>, enabling explicit pass-by-reference
 semantics for scalar, vector, matrix, quaternion, and struct types. Mutations to a <code class="docutils literal notranslate"><span class="pre">wp.ref[T]</span></code> parameter are visible
 in the caller’s storage without a return value. Add <code class="docutils literal notranslate"><span class="pre">wp.address_of(expr)</span> <span class="pre">-&gt;</span> <span class="pre">wp.uint64</span></code> for obtaining a raw pointer
@@ -531,6 +535,9 @@ can produce bit-exact repeated results. Configurable at the global and module le
 created after the config is set. Deterministic backward reductions are supported for generated and custom-adjoint
 accumulation patterns; consumed-return counter atomics require explicit replay functions and are rejected in generated
 backward replay to avoid incorrect gradients (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1443">GH-1443</a>).</p></li>
+<li><p>Add rebuildable NanoVDB volumes with capacity/status controls, point masks, CPU parity, CUDA graph-capturable
+allocation and rebuilds, <code class="docutils literal notranslate"><span class="pre">warp.fem.Nanogrid</span></code> topology refresh support for rebuildable volumes, and an
+<code class="docutils literal notranslate"><span class="pre">example_apic_fluid</span></code> path that exercises captured grid rebuilds (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1606">GH-1606</a>).</p></li>
 <li><p>Add row-capacity support to <code class="docutils literal notranslate"><span class="pre">warp.sparse</span></code> BSR matrices, including padded topology policies for topology-changing
 sparse operations, <code class="docutils literal notranslate"><span class="pre">bsr_zeros(row_capacity=...)</span></code> for reserving row capacity, <code class="docutils literal notranslate"><span class="pre">bsr_compress()</span></code> for inplace compaction of sparse matrices, and sparse status constants for overflow checks (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1537">GH-1537</a>).</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">fem.integrate()</span></code> and <code class="docutils literal notranslate"><span class="pre">fem.interpolate()</span></code> can now leverage <code class="docutils literal notranslate"><span class="pre">sparse.bsr_compress()</span></code> to perform inplace matrix assembly, reducing peak memory usage (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1537">GH-1537</a>).</p></li>
@@ -562,6 +569,7 @@ reusable (<code class="docutils literal notranslate"><span class="pre">wp.launch
 host-return form of <code class="docutils literal notranslate"><span class="pre">wp.utils.runlength_encode()</span></code>, and <code class="docutils literal notranslate"><span class="pre">wp.copy()</span></code> other than a contiguous same-device copy
 (cross-device or non-contiguous copies) cannot be captured on CUDA and raise during APIC capture
 (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1431">GH-1431</a>).</p></li>
+<li><p>Add <code class="docutils literal notranslate"><span class="pre">wp.Stream.is_blocking</span></code> to check if a CUDA stream is blocking (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1618">GH-1618</a>).</p></li>
 </ul>
 </section>
 <section id="removed">
@@ -588,6 +596,9 @@ source-built binaries compatible with free-threaded Python builds
 (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1594">GH-1594</a>). The arguments and attributes now emit <code class="docutils literal notranslate"><span class="pre">DeprecationWarning</span></code>
 and are scheduled for removal in Warp 1.19. Output arrays are sized dynamically, extraction runs on the input field’s
 device, and the <code class="docutils literal notranslate"><span class="pre">id</span></code> and <code class="docutils literal notranslate"><span class="pre">runtime</span></code> attributes have no replacement.</p></li>
+<li><p>Deprecate the per-environment sequence form of <code class="docutils literal notranslate"><span class="pre">warp.fem.Nanogrid.from_environment_voxels()</span></code> and
+<code class="docutils literal notranslate"><span class="pre">warp.fem.AdaptiveNanogrid.from_environment_voxels()</span></code>; pass flat <code class="docutils literal notranslate"><span class="pre">points</span></code>, <code class="docutils literal notranslate"><span class="pre">cell_levels</span></code> where applicable,
+<code class="docutils literal notranslate"><span class="pre">point_envs</span></code>, and <code class="docutils literal notranslate"><span class="pre">env_count</span></code> instead.</p></li>
 </ul>
 </section>
 <section id="changed">
@@ -617,6 +628,8 @@ behavior for non-contiguous arrays (<a class="reference external" href="https://
 <section id="fixed">
 <h3>Fixed<a class="headerlink" href="#fixed" title="Link to this heading">#</a></h3>
 <ul class="simple">
+<li><p>Fix batched iterative linear solvers to ignore inactive trailing degrees of freedom beyond the final batch offset
+(<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1608">GH-1608</a>).</p></li>
 <li><p>Fix eager Python calls to generic <code class="docutils literal notranslate"><span class="pre">&#64;wp.func</span></code> functions to resolve a matching generic template after other concrete
 overloads have already been instantiated (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1603">GH-1603</a>).</p></li>
 <li><p>Fix <code class="docutils literal notranslate"><span class="pre">wp.tile_dot()</span></code> compilation failure for scalar <code class="docutils literal notranslate"><span class="pre">wp.float64</span></code> and <code class="docutils literal notranslate"><span class="pre">wp.float16</span></code> tiles, which previously narrowed
@@ -687,10 +700,11 @@ temporaries, for the captured graph’s lifetime instead of recycling them befor
 <li><p>Fix CPU APIC graph capture of untracked or native-only host buffers used by memory operations, so saved graphs no
 longer drop captured copies and fills or depend on capture-time pointers
 (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1431">GH-1431</a>).</p></li>
-<li><p>Fix CUDA graph capture of padded <code class="docutils literal notranslate"><span class="pre">wp.sparse.bsr_set_transpose()</span></code> and <code class="docutils literal notranslate"><span class="pre">wp.sparse.bsr_set_from_triplets()</span></code>: the
-row-capacity status buffer is now allocated when the matrix is created rather than during capture, so capturing
-these operations no longer leaves an invalid capture-scoped buffer that fails on later host access and disrupts
-subsequent CUDA operations (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1431">GH-1431</a>).</p></li>
+<li><p>Fix CUDA graph capture for padded <code class="docutils literal notranslate"><span class="pre">warp.sparse</span></code> matrices so <code class="docutils literal notranslate"><span class="pre">bsr_zeros(row_capacity=...)</span></code> can create padded
+temporary matrices inside capture when graph-capture allocation is available. Padded sparse status storage follows
+normal graph-capture allocation semantics, and <code class="docutils literal notranslate"><span class="pre">BsrMatrix.status_sync()</span></code> (and <code class="docutils literal notranslate"><span class="pre">BsrMatrix.nnz_sync()</span></code> for its
+block-count readback) now raise a clear error when a host readback is requested during a live CUDA graph capture;
+<code class="docutils literal notranslate"><span class="pre">status_sync()</span></code> is likewise rejected during a CPU APIC capture (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1611">GH-1611</a>).</p></li>
 <li><p>Fix CUDA graph capture that begins as the first operation on a context: the one-time memory-pool warm-up now runs
 before capture starts instead of on the legacy stream mid-capture, which previously invalidated the capture and
 left the graph unbuildable (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1431">GH-1431</a>).</p></li>
@@ -705,10 +719,29 @@ pause/resume flows are preserved (<a class="reference external" href="https://gi
 capture, which APIC cannot record for replay (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1559">GH-1559</a>).</p></li>
 <li><p>Fix APIC graph capture for <code class="docutils literal notranslate"><span class="pre">warp.fem</span></code> workflows by making partition node counts graph-capture safe
 (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1407">GH-1407</a>).</p></li>
+<li><p>Fix <code class="docutils literal notranslate"><span class="pre">warp.optim.Adam.set_params()</span></code> re-zeroing the optimizer moment buffers on every call for <code class="docutils literal notranslate"><span class="pre">fp16</span></code>
+parameters, which silently discarded accumulated state. The reuse check now compares against the
+moment-buffer dtype rather than the parameter dtype
+(<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1593">GH-1593</a>).</p></li>
+<li><p>Fix CPU kernel compilation failures by registering the <code class="docutils literal notranslate"><span class="pre">exp2</span></code> and <code class="docutils literal notranslate"><span class="pre">ldexp</span></code> math symbols that LLVM
+may emit when simplifying power-of-two <code class="docutils literal notranslate"><span class="pre">pow</span></code> calls
+(<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1562">GH-1562</a>).</p></li>
+<li><p>Fix CUDA graph capture when constructing an environment-first <code class="docutils literal notranslate"><span class="pre">warp.fem</span></code> space partition with a fixed
+<code class="docutils literal notranslate"><span class="pre">max_node_count</span></code> capacity (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1607">GH-1607</a>).</p></li>
+<li><p>Fix <code class="docutils literal notranslate"><span class="pre">warp.optim.Adam.set_params()</span></code> and <code class="docutils literal notranslate"><span class="pre">warp.optim.SGD.set_params()</span></code> reusing optimizer state on the wrong device
+when replacement parameters move devices. Compatible buffers now migrate with the parameters while preserving
+accumulated state (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1615">GH-1615</a>).</p></li>
+<li><p>Fix <code class="docutils literal notranslate"><span class="pre">wp.from_dlpack()</span></code> support for standards-conformant 8-bit Boolean tensors
+(<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1619">GH-1619</a>).</p></li>
 </ul>
 </section>
 <section id="documentation">
 <h3>Documentation<a class="headerlink" href="#documentation" title="Link to this heading">#</a></h3>
+<ul class="simple">
+<li><p>Document the tiled kernel patterns that diverge between CPU and CUDA under the forced CPU <code class="docutils literal notranslate"><span class="pre">block_dim=1</span></code>, along with
+portable workarounds (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1580">GH-1580</a>).</p></li>
+<li><p>Document working with non-blocking CUDA streams, including streams borrowed from PyTorch (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1618">GH-1618</a>).</p></li>
+</ul>
 </section>
 </section>
 <section id="id1">
