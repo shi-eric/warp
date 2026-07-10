@@ -377,12 +377,44 @@ export NVSHMEM_DISABLE_NVLS=1
 export NVSHMEM_SYMMETRIC_SIZE=67108864
 ```
 
-On the tested RTX PRO 6000 Blackwell system, two ranks were assigned to separate 1g.24gb MIG slices.
-NVSHMEM classified them as multiple PEs on one physical GPU (MPG) and warned that only limited MPG
-support was available without MPS. It nevertheless reported both PEs in its P2P connected list,
-opened CUDA IPC handles between the slices, and completed device-side PE queries, a barrier, and an
-`nvshmem_float_p` from PE 0 to PE 1. This configuration validates local P2P behavior only; multi-node
-testing must select a network transport appropriate for the target system.
+Transport selection and MPG support are independent. `NVSHMEM_REMOTE_TRANSPORT=none` disables
+network transports such as `ibrc`; it does not select an MPG support level.
+
+### MIG, MPG, and MPS Support Levels
+
+- A processing element (PE) is one process participating in an NVSHMEM job.
+- Multi-Instance GPU (MIG) partitions one physical GPU into isolated CUDA-visible devices. On the
+  tested system, each PE was assigned to a different 1g.24gb MIG slice, but NVSHMEM still grouped the
+  two PEs under their shared physical GPU and classified the job as multiple processes per GPU (MPG).
+- CUDA Multi-Process Service (MPS) allows work from multiple CUDA process contexts to execute
+  concurrently on a GPU.
+- In **limited MPG** mode, MPS is absent or the configured active-thread percentages sum to more
+  than 100%.
+  NVSHMEM documents support for point-to-point RMA and a limited set of host- or stream-initiated
+  barriers and synchronization APIs. Device-side synchronization and collectives are not part of
+  this support level.
+- In **full MPG** mode, MPS is running and the active-thread percentages for PEs sharing a GPU total
+  at most 100%. NVSHMEM then enables its complete API, including device-side synchronization and
+  collectives. On a MIG system, enabling MPS requires one server and distinct pipe directory per MIG
+  GPU instance rather than a single environment-variable change.
+
+See the NVSHMEM [MPG installation guidance][nvshmem-mpg] and the CUDA
+[MIG with MPS workflow][mig-mps] for the configuration requirements.
+
+The RTX PRO 6000 Blackwell result is **limited-MPG empirical validation**. MPS was not running, and
+NVSHMEM explicitly warned that only limited MPG support was available. It nevertheless reported both
+PEs in its P2P connected list, opened CUDA IPC handles between the MIG slices, and completed
+device-side PE queries, an `nvshmem_float_p` from PE 0 to PE 1, and a device-side barrier. The RMA is
+within the documented limited-MPG API set; the successful device-side barrier is an observed behavior
+on this configuration, not a claim that NVSHMEM supports device-side synchronization in limited MPG
+mode. A full-MPG validation would require a separately configured MPS-enabled CI job and is not
+covered by this test.
+
+This configuration validates same-host CUDA IPC/P2P without a network transport. Multi-node testing
+must select a network transport appropriate for the target system.
+
+[nvshmem-mpg]: https://docs.nvidia.com/nvshmem/release-notes-install-guide/install-guide/nvshmem-install-proc.html#using-nvshmem-with-multiple-processes-per-gpu
+[mig-mps]: https://docs.nvidia.com/datacenter/tesla/mig-user-guide/latest/getting-started-with-mig.html#mig-with-cuda-mps
 
 ### Cache Identity Does Not Persist Runtime Initialization State
 
@@ -405,14 +437,16 @@ Set `wp.config.cuda_output = "cubin"` before loading NVSHMEM-enabled modules.
 - Test that a cache hit in a fresh `Module` restores `uses_nvshmem` and attempts module initialization.
 - Test `symmetric=True` array allocation error paths (CPU rejection, non-NVSHMEM build rejection).
 - Multi-PE tests (PE queries, float_p) launched via `mpirun` or `nvshmrun` subprocess.
-- Test two-PE UID bootstrap and `nvshmem_float_p` over local P2P with remote transports disabled.
+- Test two-PE UID bootstrap and `nvshmem_float_p` as limited-MPG empirical validation over local P2P
+  with remote transports disabled.
 
 **End-to-end validation**:
 
 - A one-PE UID-bootstrap smoke test loads the NVSHMEM 3.7.1 host library, allocates symmetric Warp
   arrays, compiles a kernel from the embedded fatbin, and verifies device-side PE 0 of one PE.
 - The checked-in `TestNvshmemMultiPE.test_uid_local_p2p` test verifies that PE 0 writes 42.0 to PE 1's
-  symmetric buffer through in-kernel `nvshmem_float_p` without MPI or a network transport.
+  symmetric buffer through in-kernel `nvshmem_float_p` without MPI or a network transport. On the
+  tested MIG system, this is limited-MPG empirical validation, not full-MPG API coverage.
 
 Run the non-IBRC test after building with the opt-in CUDA Toolkit and NVSHMEM 3.7.1 archive:
 
@@ -439,7 +473,8 @@ uses an atomic temporary file to share the UID, and assigns one local rank to ea
 - One-PE UID initialization with the 3.7.1 host library, symmetric allocation, and a real Warp kernel
   returning PE 0 and one total PE.
 - Checked-in two-PE UID test across two MIG slices with `NVSHMEM_REMOTE_TRANSPORT=none`, including a
-  device-side write from PE 0 to PE 1 over CUDA IPC/P2P.
+  device-side write from PE 0 to PE 1 over CUDA IPC/P2P. NVSHMEM reported limited MPG because MPS was
+  absent; the test does not claim full-MPG API coverage.
 - Fresh-process cache hit that loads the cubin and executes the NVSHMEM module-initialization path.
 - Full standard rebuild with the default CUDA 13.0 toolkit after the opt-in test; the native accessor
   reports no embedded payload and device-dependent tests skip as expected.
