@@ -21,6 +21,8 @@
 #include <libcufftdx.h>
 #include <libcusolverdx.h>
 #include <libmathdx.h>
+#endif
+#if WP_ENABLE_MATHDX || WP_ENABLE_NVSHMEM
 #include <nvJitLink.h>
 #endif
 
@@ -4576,7 +4578,7 @@ bool write_file(const char* data, size_t size, std::string filename, const char*
     }
 }
 
-#if WP_ENABLE_MATHDX
+#if WP_ENABLE_MATHDX || WP_ENABLE_NVSHMEM
 bool check_nvjitlink_result(nvJitLinkHandle handle, nvJitLinkResult result, const char* file, int line)
 {
     if (result != NVJITLINK_SUCCESS) {
@@ -4614,6 +4616,7 @@ size_t wp_cuda_compile_program(
     bool lineinfo,
     bool compile_time_trace,
     bool precompiled_headers,
+    bool link_nvshmem,
     const char* output_path,
     const char* pch_dir,
     size_t num_ltoirs,
@@ -4622,6 +4625,26 @@ size_t wp_cuda_compile_program(
     int* ltoir_input_types
 )
 {
+    const void* nvshmem_device_library = nullptr;
+    size_t nvshmem_device_library_size = 0;
+    int nvshmem_device_library_kind = WP_NVSHMEM_DEVICE_LIBRARY_NONE;
+    if (link_nvshmem) {
+#if WP_ENABLE_NVSHMEM
+        nvshmem_device_library
+            = wp_nvshmem_get_device_library(&nvshmem_device_library_size, &nvshmem_device_library_kind);
+        if (nvshmem_device_library == nullptr || nvshmem_device_library_size == 0
+            || (nvshmem_device_library_kind != WP_NVSHMEM_DEVICE_LIBRARY_LTOIR
+                && nvshmem_device_library_kind != WP_NVSHMEM_DEVICE_LIBRARY_FATBIN)) {
+            fprintf(stderr, "Warp error: NVSHMEM device library is not embedded in warp.so\n");
+            return size_t(-1);
+        }
+#else
+        fprintf(stderr, "Warp error: NVSHMEM linking requested but Warp was built without NVSHMEM support\n");
+        return size_t(-1);
+#endif
+    }
+    const size_t num_link_inputs = num_ltoirs + (link_nvshmem ? 1 : 0);
+
     // use file extension to determine whether to output PTX or CUBIN
     const char* output_ext = strrchr(output_path, '.');
     bool use_ptx = output_ext && strcmp(output_ext + 1, "ptx") == 0;
@@ -4752,7 +4775,7 @@ size_t wp_cuda_compile_program(
     opts.push_back("--restrict");
     opts.push_back("--diag-suppress=177,550");  // "was declared but never referenced", "was set but never used"
 
-    if (num_ltoirs > 0) {
+    if (num_link_inputs > 0) {
         opts.push_back("-dlto");
         opts.push_back("--relocatable-device-code=true");
     }
@@ -4814,13 +4837,15 @@ size_t wp_cuda_compile_program(
     nvrtcResult (*get_output_size)(nvrtcProgram, size_t*);
     nvrtcResult (*get_output_data)(nvrtcProgram, char*);
     const char* output_mode;
-    if (num_ltoirs > 0) {
+    if (num_link_inputs > 0) {
 #if WP_ENABLE_MATHDX || WP_ENABLE_NVSHMEM
         get_output_size = nvrtcGetLTOIRSize;
         get_output_data = nvrtcGetLTOIR;
         output_mode = "wb";
 #else
-        fprintf(stderr, "Warp error: num_ltoirs > 0 but Warp was not built with MathDx or NVSHMEM support\n");
+        fprintf(
+            stderr, "Warp error: link inputs were provided but Warp was not built with MathDx or NVSHMEM support\n"
+        );
         return size_t(-1);
 #endif
     } else if (use_ptx) {
@@ -4842,11 +4867,11 @@ size_t wp_cuda_compile_program(
         if (check_nvrtc(res)) {
 
             // LTOIR case - need an extra step
-            if (num_ltoirs > 0) {
+            if (num_link_inputs > 0) {
 #if WP_ENABLE_MATHDX || WP_ENABLE_NVSHMEM
-                if (ltoir_input_types == nullptr || ltoirs == nullptr || ltoir_sizes == nullptr) {
+                if (num_ltoirs > 0 && (ltoir_input_types == nullptr || ltoirs == nullptr || ltoir_sizes == nullptr)) {
                     fprintf(
-                        stderr, "Warp error: num_ltoirs > 0 but ltoir_input_types, ltoirs or ltoir_sizes are NULL\n"
+                        stderr, "Warp error: external link inputs were provided without data, sizes, or input types\n"
                     );
                     return size_t(-1);
                 }
@@ -4905,6 +4930,28 @@ size_t wp_cuda_compile_program(
                         res = nvrtcResult(-1);
                     }
                 }
+                if (link_nvshmem) {
+                    nvJitLinkInputType input_type = nvshmem_device_library_kind == WP_NVSHMEM_DEVICE_LIBRARY_FATBIN
+                        ? NVJITLINK_INPUT_FATBIN
+                        : NVJITLINK_INPUT_LTOIR;
+                    if (std::getenv("WARP_DUMP_LTOIR")) {
+                        const char* filename = input_type == NVJITLINK_INPUT_FATBIN ? "nvshmem_device_library.fatbin"
+                                                                                    : "nvshmem_device_library.ltoir";
+                        write_file(
+                            static_cast<const char*>(nvshmem_device_library), nvshmem_device_library_size, filename,
+                            "wb"
+                        );
+                    }
+                    if (!check_nvjitlink(
+                            handle,
+                            nvJitLinkAddData(
+                                handle, input_type, nvshmem_device_library, nvshmem_device_library_size,
+                                "nvshmem_device_library"
+                            )
+                        )) {
+                        res = nvrtcResult(-1);
+                    }
+                }
                 if (!check_nvjitlink(handle, nvJitLinkComplete(handle))) {
                     res = nvrtcResult(-1);
                 } else {
@@ -4924,7 +4971,10 @@ size_t wp_cuda_compile_program(
                 }
                 check_nvjitlink(handle, nvJitLinkDestroy(&handle));
 #else
-                fprintf(stderr, "Warp error: num_ltoirs > 0 but Warp was not built with MathDx or NVSHMEM support\n");
+                fprintf(
+                    stderr,
+                    "Warp error: link inputs were provided but Warp was not built with MathDx or NVSHMEM support\n"
+                );
                 return size_t(-1);
 #endif
             }

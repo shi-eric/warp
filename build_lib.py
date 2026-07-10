@@ -16,10 +16,13 @@ from __future__ import annotations
 
 import argparse
 import copy
+import ctypes
 import datetime
 import glob
+import hashlib
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -148,30 +151,189 @@ def validate_libmathdx_path(libmathdx_path: str) -> bool:
     return True
 
 
-def validate_nvshmem_path(nvshmem_path: str) -> bool:
+def validate_nvshmem_path(nvshmem_path: str, *, quiet: bool = False) -> bool:
     """Validate that NVSHMEM path exists and has required directory structure.
 
     Args:
         nvshmem_path: Path to NVSHMEM installation to validate.
+        quiet: Whether to suppress validation diagnostics.
 
     Returns:
         True if valid, False otherwise (with error message printed).
     """
     if not os.path.isdir(nvshmem_path):
-        print(f"Error: NVSHMEM path does not exist or is not a directory: {nvshmem_path}")
+        if not quiet:
+            print(f"Error: NVSHMEM path does not exist or is not a directory: {nvshmem_path}")
         return False
 
     lib_dir = os.path.join(nvshmem_path, "lib")
     if not os.path.isdir(lib_dir):
-        print(f"Error: NVSHMEM installation is missing 'lib' directory: {lib_dir}")
+        if not quiet:
+            print(f"Error: NVSHMEM installation is missing 'lib' directory: {lib_dir}")
         return False
 
     device_bc = os.path.join(lib_dir, "libnvshmem_device.bc")
     if not os.path.isfile(device_bc):
-        print(f"Error: NVSHMEM installation is missing 'lib/libnvshmem_device.bc': {device_bc}")
+        if not quiet:
+            print(f"Error: NVSHMEM installation is missing 'lib/libnvshmem_device.bc': {device_bc}")
+        return False
+
+    version_header = os.path.join(nvshmem_path, "include", "non_abi", "nvshmem_version.h")
+    if not os.path.isfile(version_header):
+        if not quiet:
+            print(f"Error: NVSHMEM installation is missing 'include/non_abi/nvshmem_version.h': {version_header}")
         return False
 
     return True
+
+
+NVSHMEM_DEVICE_LTOIR_FILENAME = "libnvshmem_device.ltoir"
+NVSHMEM_DEVICE_FATBIN_FILENAME = "libnvshmem_device.ltoir.fatbin"
+NVSHMEM_DEVICE_LIBRARY_KINDS = {"ltoir": 1, "fatbin": 2}
+
+
+def find_nvshmem_device_library(
+    nvshmem_path: str,
+    ltoir_path: str | None = None,
+    fatbin_path: str | None = None,
+) -> tuple[str, str] | None:
+    """Find the NVSHMEM device library to embed in Warp.
+
+    Explicit paths take precedence over discovery. NVSHMEM 3.7 and newer
+    distributions provide a multi-architecture LTOIR fatbin, which is
+    preferred over architecture-specific raw LTOIR files.
+
+    Args:
+        nvshmem_path: Root of the NVSHMEM installation.
+        ltoir_path: Explicit path to a raw LTOIR file.
+        fatbin_path: Explicit path to an LTOIR fatbin.
+
+    Returns:
+        A ``(kind, path)`` pair, where ``kind`` is ``"ltoir"`` or
+        ``"fatbin"``, or ``None`` when no device library is available.
+
+    Raises:
+        ValueError: If both explicit input paths are provided.
+        FileNotFoundError: If an explicit input path does not exist.
+    """
+    if ltoir_path and fatbin_path:
+        raise ValueError("Specify only one NVSHMEM device library: raw LTOIR or LTOIR fatbin")
+
+    if fatbin_path:
+        if not os.path.isfile(fatbin_path):
+            raise FileNotFoundError(f"NVSHMEM device fatbin not found: {fatbin_path}")
+        return "fatbin", fatbin_path
+
+    if ltoir_path:
+        if not os.path.isfile(ltoir_path):
+            raise FileNotFoundError(f"NVSHMEM device LTOIR not found: {ltoir_path}")
+        return "ltoir", ltoir_path
+
+    packaged_fatbin = os.path.join(nvshmem_path, "lib", NVSHMEM_DEVICE_FATBIN_FILENAME)
+    if os.path.isfile(packaged_fatbin):
+        return "fatbin", packaged_fatbin
+
+    return None
+
+
+def get_nvshmem_build_cuda_version(nvshmem_path: str) -> tuple[int, int] | None:
+    """Read the CUDA Toolkit version used to produce an NVSHMEM distribution."""
+    version_header = os.path.join(nvshmem_path, "include", "non_abi", "nvshmem_version.h")
+    try:
+        with open(version_header, encoding="utf-8") as header_file:
+            contents = header_file.read()
+    except OSError:
+        return None
+
+    match = re.search(r"CUDA_HOME=\S*/r(\d+)\.(\d+)/", contents)
+    if match is None:
+        return None
+    return int(match.group(1)), int(match.group(2))
+
+
+def generate_nvshmem_device_library_assembly(base_path: str, kind: str, source_path: str) -> tuple[str, str]:
+    """Stage an NVSHMEM device library and generate assembly that embeds it.
+
+    Args:
+        base_path: Root of the Warp repository.
+        kind: Either ``"ltoir"`` or ``"fatbin"``.
+        source_path: Device library to embed.
+
+    Returns:
+        Paths to the generated assembly and staged device library.
+    """
+    if kind not in NVSHMEM_DEVICE_LIBRARY_KINDS:
+        raise ValueError(f"Unsupported NVSHMEM device library kind: {kind}")
+
+    embed_path = os.path.join(base_path, "_build", "nvshmem-device-library")
+    os.makedirs(embed_path, exist_ok=True)
+    staged_path = os.path.join(embed_path, "nvshmem_device_library.bin")
+    assembly_path = os.path.join(embed_path, "nvshmem_device_library.S")
+    shutil.copyfile(source_path, staged_path)
+
+    escaped_staged_path = staged_path.replace("\\", "\\\\").replace('"', '\\"')
+    assembly = f"""\
+.section .rodata.wp_nvshmem_device_library,"a",@progbits
+.balign 16
+.globl wp_nvshmem_device_library_start
+.hidden wp_nvshmem_device_library_start
+.type wp_nvshmem_device_library_start,@object
+wp_nvshmem_device_library_start:
+.incbin "{escaped_staged_path}"
+.globl wp_nvshmem_device_library_end
+.hidden wp_nvshmem_device_library_end
+.type wp_nvshmem_device_library_end,@object
+wp_nvshmem_device_library_end:
+.size wp_nvshmem_device_library_start, wp_nvshmem_device_library_end - wp_nvshmem_device_library_start
+.section .note.GNU-stack,"",@progbits
+"""
+    with open(assembly_path, "w", encoding="utf-8") as assembly_file:
+        assembly_file.write(assembly)
+
+    return assembly_path, staged_path
+
+
+def remove_legacy_nvshmem_device_libraries(build_path: str) -> None:
+    """Remove sidecar device libraries left by earlier builds."""
+    for filename in (NVSHMEM_DEVICE_FATBIN_FILENAME, NVSHMEM_DEVICE_LTOIR_FILENAME):
+        stale_path = os.path.join(build_path, "bin", filename)
+        if os.path.isfile(stale_path):
+            os.remove(stale_path)
+            print(f"Removed legacy NVSHMEM device library: {stale_path}")
+
+
+def verify_embedded_nvshmem_device_library(
+    warp_library_path: str,
+    source_path: str,
+    expected_kind: int,
+) -> None:
+    """Verify the NVSHMEM bytes exposed by ``warp.so`` match the source."""
+    warp_library = ctypes.CDLL(warp_library_path)
+    get_library = warp_library.wp_nvshmem_get_device_library
+    get_library.argtypes = [ctypes.POINTER(ctypes.c_size_t), ctypes.POINTER(ctypes.c_int)]
+    get_library.restype = ctypes.c_void_p
+
+    embedded_size = ctypes.c_size_t()
+    embedded_kind = ctypes.c_int()
+    embedded_ptr = get_library(ctypes.byref(embedded_size), ctypes.byref(embedded_kind))
+    if embedded_ptr is None or embedded_kind.value != expected_kind:
+        raise RuntimeError(
+            f"Embedded NVSHMEM device library is missing or has kind {embedded_kind.value}; expected {expected_kind}"
+        )
+
+    source_size = os.path.getsize(source_path)
+    if embedded_size.value != source_size:
+        raise RuntimeError(
+            f"Embedded NVSHMEM device library is {embedded_size.value} bytes; expected {source_size} bytes"
+        )
+
+    with open(source_path, "rb") as source_file:
+        source_data = source_file.read()
+    embedded_data = ctypes.string_at(embedded_ptr, embedded_size.value)
+    if hashlib.sha256(embedded_data).digest() != hashlib.sha256(source_data).digest():
+        raise RuntimeError("Embedded NVSHMEM device library does not match its source bytes")
+
+    print(f"Verified embedded NVSHMEM device library ({embedded_size.value} bytes)")
 
 
 def find_nvshmem(cuda_toolkit_major_version: int, base_path: str) -> str | None:
@@ -226,7 +388,7 @@ def find_nvshmem(cuda_toolkit_major_version: int, base_path: str) -> str | None:
             return None
 
     nvshmem_path = os.path.join(base_path, "_build", "target-deps", "libnvshmem")
-    if validate_nvshmem_path(nvshmem_path):
+    if validate_nvshmem_path(nvshmem_path, quiet=True):
         return nvshmem_path
 
     # Packman may extract into an archive subdirectory; check one level down
@@ -411,11 +573,18 @@ def main(argv: list[str] | None = None) -> int:
         default=True,
         help="Build with NVSHMEM support for multi-GPU/multi-node symmetric memory operations (Linux only)",
     )
-    group_build.add_argument(
+    group_nvshmem_device = group_build.add_mutually_exclusive_group()
+    group_nvshmem_device.add_argument(
         "--nvshmem-ltoir",
         type=str,
         default=None,
-        help="Path to pre-built libnvshmem_device.ltoir (see tools/build_nvshmem_device_ltoir.sh)",
+        help="Path to a raw NVSHMEM device LTOIR file (see tools/build_nvshmem_device_ltoir.sh)",
+    )
+    group_nvshmem_device.add_argument(
+        "--nvshmem-fatbin",
+        type=str,
+        default=None,
+        help="Path to libnvshmem_device.ltoir.fatbin from an NVSHMEM 3.7 or newer distribution",
     )
     group_build.add_argument(
         "--verify-fp",
@@ -579,6 +748,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         args.use_nvshmem = False
 
+    args.nvshmem_device_library_kind = 0
+
     # setup MSVC and WinSDK paths
     if platform.system() == "Windows":
         if args.msvc_path or args.sdk_path:
@@ -600,6 +771,8 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     try:
+        embedded_nvshmem_source_path = None
+
         # Handle CI nightly builds (returns updated version string if triggered, else None)
         nightly_version = handle_ci_nightly_build(base_path)
 
@@ -677,23 +850,59 @@ def main(argv: list[str] | None = None) -> int:
 
         warp_dll_path = os.path.join(build_path, f"bin/{lib_name('warp')}")
 
-        # Copy libnvshmem_device.ltoir to warp/bin/ for runtime nvJitLink linking.
-        # The LTOIR must be pre-built. See design/nvshmem-integration.md for instructions.
+        # Embed the selected NVSHMEM device library in warp.so for runtime nvJitLink linking.
         if args.nvshmem_path:
-            ltoir_dst = os.path.join(build_path, "bin", "libnvshmem_device.ltoir")
-            ltoir_src = args.nvshmem_ltoir or os.environ.get("NVSHMEM_DEVICE_LTOIR")
-
-            if ltoir_src and os.path.isfile(ltoir_src):
-                shutil.copy(ltoir_src, ltoir_dst)
-                print(f"Copied libnvshmem_device.ltoir ({os.path.getsize(ltoir_dst)} bytes)")
-            elif os.path.isfile(ltoir_dst):
-                print(f"Using existing libnvshmem_device.ltoir ({os.path.getsize(ltoir_dst)} bytes)")
+            if args.nvshmem_ltoir:
+                ltoir_src = args.nvshmem_ltoir
+                fatbin_src = None
+            elif args.nvshmem_fatbin:
+                ltoir_src = None
+                fatbin_src = args.nvshmem_fatbin
             else:
-                print(
-                    "Warning: libnvshmem_device.ltoir not found. NVSHMEM device-side builtins will not work.\n"
-                    "  Build it with: tools/build_nvshmem_device_ltoir.sh\n"
-                    "  Then pass: --nvshmem-ltoir /path/to/libnvshmem_device.ltoir"
+                ltoir_src = os.environ.get("NVSHMEM_DEVICE_LTOIR")
+                fatbin_src = os.environ.get("NVSHMEM_DEVICE_FATBIN")
+            try:
+                device_library = find_nvshmem_device_library(
+                    args.nvshmem_path,
+                    ltoir_path=ltoir_src,
+                    fatbin_path=fatbin_src,
                 )
+            except (FileNotFoundError, ValueError) as e:
+                print(f"Error: {e}")
+                return 1
+
+            if device_library:
+                kind, source_path = device_library
+                source_real_path = os.path.realpath(source_path)
+                nvshmem_real_path = os.path.realpath(args.nvshmem_path)
+                if os.path.commonpath((source_real_path, nvshmem_real_path)) == nvshmem_real_path:
+                    producer_version = get_nvshmem_build_cuda_version(args.nvshmem_path)
+                    toolkit_version = build_dll.get_cuda_toolkit_version(args.cuda_path)
+                    if producer_version and toolkit_version < producer_version:
+                        producer_string = ".".join(str(part) for part in producer_version)
+                        toolkit_string = ".".join(str(part) for part in toolkit_version)
+                        print(
+                            f"Error: NVSHMEM device {kind} was produced with CUDA {producer_string}, but Warp is "
+                            f"building with CUDA {toolkit_string}. Use CUDA {producer_string} or newer, or provide "
+                            "a device LTOIR built with the selected Warp toolkit."
+                        )
+                        return 1
+                assembly_path, staged_path = generate_nvshmem_device_library_assembly(base_path, kind, source_path)
+                warp_cpp_paths.append(assembly_path)
+                args.nvshmem_device_library_kind = NVSHMEM_DEVICE_LIBRARY_KINDS[kind]
+                embedded_nvshmem_source_path = staged_path
+                remove_legacy_nvshmem_device_libraries(build_path)
+                print(f"Embedding NVSHMEM device {kind} from {source_path} ({os.path.getsize(source_path)} bytes)")
+            else:
+                remove_legacy_nvshmem_device_libraries(build_path)
+                print(
+                    "Warning: NVSHMEM device library not found. Device-side builtins will not work.\n"
+                    "  With NVSHMEM 3.7 or newer, set NVSHMEM_HOME to use its packaged LTOIR fatbin.\n"
+                    "  Otherwise build raw LTOIR with tools/build_nvshmem_device_ltoir.sh and pass\n"
+                    "  --nvshmem-ltoir /path/to/libnvshmem_device.ltoir"
+                )
+        else:
+            remove_legacy_nvshmem_device_libraries(build_path)
 
         # Build warp.dll and warp-clang.dll in parallel (only when not building LLVM from source)
         # Object files use unique names per target (derived from dll_path) to avoid conflicts
@@ -734,6 +943,13 @@ def main(argv: list[str] | None = None) -> int:
             if args.standalone:
                 build_llvm.build_llvm_clang_from_source(args)
                 build_llvm.build_warp_clang(args, lib_name("warp-clang"))
+
+        if embedded_nvshmem_source_path:
+            verify_embedded_nvshmem_device_library(
+                warp_dll_path,
+                embedded_nvshmem_source_path,
+                args.nvshmem_device_library_kind,
+            )
 
     except Exception as e:
         print(f"Warp build error: {e}")

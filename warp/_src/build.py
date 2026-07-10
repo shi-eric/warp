@@ -47,6 +47,7 @@ def build_cuda(
     arch_suffix="",
     llvm_cuda=False,
     use_precompiled_headers=True,
+    nvshmem=False,
 ) -> None:
     with open(cu_path, "rb") as src_file:
         src = src_file.read()
@@ -92,6 +93,7 @@ def build_cuda(
             lineinfo,
             compile_time_trace,
             use_precompiled_headers,
+            nvshmem,
             output_path,
             pch_dir_bytes,
             num_link,

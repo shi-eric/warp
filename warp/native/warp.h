@@ -18,6 +18,10 @@
 #define WP_CUDA_GRAPH_CAPTURE_MODE_THREAD_LOCAL 1
 #define WP_CUDA_GRAPH_CAPTURE_MODE_RELAXED      2
 
+#define WP_NVSHMEM_DEVICE_LIBRARY_NONE   0
+#define WP_NVSHMEM_DEVICE_LIBRARY_LTOIR  1
+#define WP_NVSHMEM_DEVICE_LIBRARY_FATBIN 2
+
 enum wp_memory_kind {
     WP_MEMORY_KIND_UNKNOWN = 0,
     WP_MEMORY_KIND_HOST = 1,
@@ -49,6 +53,9 @@ WP_API int wp_is_cuda_compatibility_enabled();
 WP_API int wp_is_mathdx_enabled();
 // whether Warp was compiled with NVSHMEM support
 WP_API int wp_is_nvshmem_enabled();
+WP_API uint32_t wp_nvshmem_get_build_version();
+WP_API uint32_t wp_nvshmem_get_loaded_version();
+WP_API const void* wp_nvshmem_get_device_library(size_t* size, int* kind);
 // whether Warp was compiled with cuBQL support
 WP_API int wp_is_cubql_enabled();
 // whether Warp was compiled with debug support
@@ -816,6 +823,7 @@ WP_API size_t wp_cuda_compile_program(
     bool lineinfo,
     bool compile_time_trace,
     bool precompiled_headers,
+    bool link_nvshmem,
     const char* output_path,
     const char* pch_dir,
     size_t num_ltoirs,

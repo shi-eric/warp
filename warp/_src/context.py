@@ -79,6 +79,26 @@ _MODULE_USES_NVSHMEM_META_KEY = "__uses_nvshmem__"
 warp_home = os.path.realpath(os.path.join(os.path.dirname(__file__), ".."))
 
 
+def _decode_nvshmem_version(version: int) -> tuple[int, int, int]:
+    """Decode an NVSHMEM version packed as three unsigned bytes."""
+    return (version >> 16) & 0xFF, (version >> 8) & 0xFF, version & 0xFF
+
+
+def _validate_nvshmem_version() -> None:
+    """Reject a loaded NVSHMEM host runtime that differs from Warp's build."""
+    expected = runtime.core.wp_nvshmem_get_build_version()
+    loaded = runtime.core.wp_nvshmem_get_loaded_version()
+    if expected == 0 or loaded == 0 or expected == loaded:
+        return
+
+    expected_string = ".".join(str(part) for part in _decode_nvshmem_version(expected))
+    loaded_string = ".".join(str(part) for part in _decode_nvshmem_version(loaded))
+    raise RuntimeError(
+        f"NVSHMEM version mismatch: Warp was built for NVSHMEM {expected_string}, "
+        f"but the loaded host library is NVSHMEM {loaded_string}. Install matching NVSHMEM device and host libraries."
+    )
+
+
 class CudaMemcpyKind(enum.IntEnum):
     H2H = 0
     H2D = 1
@@ -3839,18 +3859,6 @@ class Module:
                             "Rebuild with: python build_lib.py --use-nvshmem"
                         )
 
-                    # Load libnvshmem_device.ltoir from warp/bin/
-                    nvshmem_ltoir_path = os.path.normpath(
-                        os.path.join(os.path.dirname(__file__), "..", "bin", "libnvshmem_device.ltoir")
-                    )
-                    if not os.path.isfile(nvshmem_ltoir_path):
-                        raise FileNotFoundError(
-                            f"NVSHMEM device LTOIR not found at {nvshmem_ltoir_path}. "
-                            "Rebuild Warp with NVSHMEM_SRC set and --use-nvshmem."
-                        )
-                    with open(nvshmem_ltoir_path, "rb") as f:
-                        ltoir_values.append(f.read())
-
                 # generate PTX or CUBIN
                 with warp.ScopedTimer(
                     f"Compile CUDA (arch={options['output_arch']}{arch_suffix}, mode={mode}, block_dim={options['block_dim']})",
@@ -3873,6 +3881,7 @@ class Module:
                         pch_dir=runtime.get_nvrtc_pch_dir(),
                         llvm_cuda=options["llvm_cuda"],
                         use_precompiled_headers=options["use_precompiled_headers"],
+                        nvshmem=uses_nvshmem,
                     )
 
         except Exception as e:
@@ -4061,6 +4070,8 @@ class Module:
                 self.execs[(None, active_block_dim)] = module_exec
 
             elif device.is_cuda:
+                if self.uses_nvshmem:
+                    _validate_nvshmem_version()
                 cuda_module = warp._src.build.load_cuda(binary_path, device)
                 if cuda_module is not None:
                     if self.uses_nvshmem:
@@ -6775,6 +6786,15 @@ class Runtime:
             self.core.wp_is_mathdx_enabled.restype = ctypes.c_int
             self.core.wp_is_nvshmem_enabled.argtypes = None
             self.core.wp_is_nvshmem_enabled.restype = ctypes.c_int
+            self.core.wp_nvshmem_get_build_version.argtypes = None
+            self.core.wp_nvshmem_get_build_version.restype = ctypes.c_uint32
+            self.core.wp_nvshmem_get_loaded_version.argtypes = None
+            self.core.wp_nvshmem_get_loaded_version.restype = ctypes.c_uint32
+            self.core.wp_nvshmem_get_device_library.argtypes = [
+                ctypes.POINTER(ctypes.c_size_t),
+                ctypes.POINTER(ctypes.c_int),
+            ]
+            self.core.wp_nvshmem_get_device_library.restype = ctypes.c_void_p
             self.core.wp_is_debug_enabled.argtypes = None
             self.core.wp_is_debug_enabled.restype = ctypes.c_int
 
@@ -7120,6 +7140,7 @@ class Runtime:
                 ctypes.c_bool,  # lineinfo
                 ctypes.c_bool,  # compile_time_trace
                 ctypes.c_bool,  # precompiled_headers
+                ctypes.c_bool,  # link_nvshmem
                 ctypes.c_char_p,  # output_path
                 ctypes.c_char_p,  # kernel_cache_dir
                 ctypes.c_size_t,  # num_ltoirs

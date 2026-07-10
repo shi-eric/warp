@@ -625,6 +625,7 @@ def build_dll_for_arch(args, dll_path, cpp_paths, cu_paths, arch, libs: list[str
     else:
         nvshmem_includes = ""
         nvshmem_enabled = "WP_ENABLE_NVSHMEM=0"
+    nvshmem_device_library_kind = int(getattr(args, "nvshmem_device_library_kind", 0))
 
     if os.name == "nt":
         if args.host_compiler:
@@ -636,7 +637,7 @@ def build_dll_for_arch(args, dll_path, cpp_paths, cu_paths, arch, libs: list[str
         llvm_include_paths = get_llvm_include_paths(args, warp_home_path, mode, arch)
         cpp_includes = format_include_paths(llvm_include_paths, "/I")
         cuda_includes = f' /I"{cuda_home}/include"' if cu_paths else ""
-        includes = cpp_includes + cuda_includes
+        includes = cpp_includes + cuda_includes + nvshmem_includes
 
         # nvrtc_static.lib is built with /MT and _ITERATOR_DEBUG_LEVEL=0 so if we link it in we must match these options
         if cu_paths or mode != "debug":
@@ -648,7 +649,7 @@ def build_dll_for_arch(args, dll_path, cpp_paths, cu_paths, arch, libs: list[str
             iter_dbg = "_ITERATOR_DEBUG_LEVEL=2"
             debug = "_DEBUG"
 
-        cpp_flags = f'/nologo /std:c++17 /GR- /EHsc {runtime} /D "{debug}" /D "{cuda_enabled}" /D "{mathdx_enabled}" /D "{nvshmem_enabled}" /D "{cuda_compat_enabled}" /D "{iter_dbg}" /I"{native_dir}" {includes} '
+        cpp_flags = f'/nologo /std:c++17 /GR- /EHsc {runtime} /D "{debug}" /D "{cuda_enabled}" /D "{mathdx_enabled}" /D "{nvshmem_enabled}" /D "WP_NVSHMEM_DEVICE_LIBRARY_KIND={nvshmem_device_library_kind}" /D "{cuda_compat_enabled}" /D "{iter_dbg}" /I"{native_dir}" {includes} '
 
         if args.mode == "debug":
             cpp_flags += "/FS /Zi /Od /D WP_ENABLE_DEBUG=1"
@@ -723,13 +724,17 @@ def build_dll_for_arch(args, dll_path, cpp_paths, cu_paths, arch, libs: list[str
                         f'cudart_static.lib nvrtc_static.lib nvrtc-builtins_static.lib nvptxcompiler_static.lib ws2_32.lib user32.lib ntdll.lib /LIBPATH:"{cuda_home}/lib/x64"'
                     )
 
+                if args.libmathdx_path or getattr(args, "nvshmem_path", None):
+                    if args.use_dynamic_cuda:
+                        linkopts.append("nvJitLink.lib")
+                    else:
+                        linkopts.append("nvJitLink_static.lib")
+
                 if args.libmathdx_path:
                     if args.use_dynamic_cuda:
-                        linkopts.append(f'nvJitLink.lib /LIBPATH:"{args.libmathdx_path}/lib/x64" mathdx.lib')
+                        linkopts.append(f'/LIBPATH:"{args.libmathdx_path}/lib/x64" mathdx.lib')
                     else:
-                        linkopts.append(
-                            f'nvJitLink_static.lib /LIBPATH:"{args.libmathdx_path}/lib/x64" mathdx_static.lib'
-                        )
+                        linkopts.append(f'/LIBPATH:"{args.libmathdx_path}/lib/x64" mathdx_static.lib')
 
             if args.jobs <= 1:
                 with ScopedTimer("build_cuda", active=args.verbose):
@@ -761,7 +766,7 @@ def build_dll_for_arch(args, dll_path, cpp_paths, cu_paths, arch, libs: list[str
         llvm_include_paths = get_llvm_include_paths(args, warp_home_path, mode, arch)
         cpp_includes = format_include_paths(llvm_include_paths, "-I")
         cuda_includes = f' -I"{cuda_home}/include"' if cu_paths else ""
-        includes = cpp_includes + cuda_includes
+        includes = cpp_includes + cuda_includes + nvshmem_includes
 
         if sys.platform == "darwin":
             version = f"--target={arch}-apple-macos11"
@@ -774,7 +779,7 @@ def build_dll_for_arch(args, dll_path, cpp_paths, cu_paths, arch, libs: list[str
             else:
                 version = ""
 
-        cpp_flags = f'-Werror -Wuninitialized {version} --std=c++17 -fno-rtti -D{cuda_enabled} -D{mathdx_enabled} -D{nvshmem_enabled} -D{cuda_compat_enabled} -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -D_GLIBCXX_USE_CXX11_ABI=0 -I"{native_dir}" {includes} '
+        cpp_flags = f'-Werror -Wuninitialized {version} --std=c++17 -fno-rtti -D{cuda_enabled} -D{mathdx_enabled} -D{nvshmem_enabled} -DWP_NVSHMEM_DEVICE_LIBRARY_KIND={nvshmem_device_library_kind} -D{cuda_compat_enabled} -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -D_GLIBCXX_USE_CXX11_ABI=0 -I"{native_dir}" {includes} '
 
         if mode == "debug":
             cpp_flags += "-Og -g -D_DEBUG -DWP_ENABLE_DEBUG=1"
@@ -801,7 +806,10 @@ def build_dll_for_arch(args, dll_path, cpp_paths, cu_paths, arch, libs: list[str
                 cpp_out = cpp_path + _obj_tag + ".o"
                 ld_inputs.append(quote(cpp_out))
                 extra_flags = ""
-                cpp_cmd = f'{cpp_compiler} {cpp_flags}{extra_flags} -c "{cpp_path}" -o "{cpp_out}"'
+                if cpp_path.endswith(".S"):
+                    cpp_cmd = f'{cpp_compiler} -fPIC -c "{cpp_path}" -o "{cpp_out}"'
+                else:
+                    cpp_cmd = f'{cpp_compiler} {cpp_flags}{extra_flags} -c "{cpp_path}" -o "{cpp_out}"'
                 cpp_cmds.append(cpp_cmd)
 
             if args.jobs <= 1:
@@ -845,11 +853,17 @@ def build_dll_for_arch(args, dll_path, cpp_paths, cu_paths, arch, libs: list[str
                         f'-L"{cuda_home}/lib64" -lcudart_static -lnvrtc_static -lnvrtc-builtins_static -lnvptxcompiler_static -lpthread -ldl -lrt'
                     )
 
+                if args.libmathdx_path or getattr(args, "nvshmem_path", None):
+                    if args.use_dynamic_cuda:
+                        ld_inputs.append("-lnvJitLink")
+                    else:
+                        ld_inputs.append("-lnvJitLink_static")
+
                 if args.libmathdx_path:
                     if args.use_dynamic_cuda:
-                        ld_inputs.append(f"-lnvJitLink -L{args.libmathdx_path}/lib -lmathdx")
+                        ld_inputs.append(f"-L{args.libmathdx_path}/lib -lmathdx")
                     else:
-                        ld_inputs.append(f"-lnvJitLink_static -L{args.libmathdx_path}/lib -lmathdx_static")
+                        ld_inputs.append(f"-L{args.libmathdx_path}/lib -lmathdx_static")
 
                 # NVSHMEM host library is loaded at runtime via dlopen(RTLD_NOLOAD),
                 # reusing the library nvshmem4py already loaded. No build-time link needed.

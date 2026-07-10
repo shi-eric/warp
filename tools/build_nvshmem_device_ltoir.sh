@@ -2,8 +2,8 @@
 # Build libnvshmem_device.ltoir from NVSHMEM source.
 #
 # This produces the LTOIR file that Warp links into NVSHMEM-enabled kernels
-# via nvJitLink at runtime. The file should be passed to build_lib.py via
-# --nvshmem-ltoir or placed in warp/bin/ before building.
+# via nvJitLink at runtime. Pass the output to build_lib.py via
+# --nvshmem-ltoir so the build selects it explicitly.
 #
 # Usage (docker, no local dependencies):
 #   ./tools/build_nvshmem_device_ltoir.sh

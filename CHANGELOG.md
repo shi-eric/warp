@@ -235,6 +235,8 @@
   ([GH-1619](https://github.com/NVIDIA/warp/issues/1619)).
 - Fix cached CUDA modules that use NVSHMEM builtins skipping NVSHMEM module initialization when loaded in a fresh
   process.
+- Embed packaged NVSHMEM device fatbins in the Warp native library, reject inputs built by newer CUDA Toolkits,
+  and reject mismatched NVSHMEM host libraries before CUDA module initialization.
 
 ### Documentation
 

@@ -1226,6 +1226,7 @@ WP_API size_t wp_cuda_compile_program(
     bool lineinfo,
     bool compile_time_trace,
     bool precompiled_headers,
+    bool link_nvshmem,
     const char* output_path,
     const char* pch_dir,
     size_t num_ltoirs,
