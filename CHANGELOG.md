@@ -233,6 +233,8 @@
   accumulated state ([GH-1615](https://github.com/NVIDIA/warp/issues/1615)).
 - Fix `wp.from_dlpack()` support for standards-conformant 8-bit Boolean tensors
   ([GH-1619](https://github.com/NVIDIA/warp/issues/1619)).
+- Fix cached CUDA modules that use NVSHMEM builtins skipping NVSHMEM module initialization when loaded in a fresh
+  process.
 
 ### Documentation
 

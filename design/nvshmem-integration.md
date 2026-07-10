@@ -22,12 +22,12 @@ with no mpi4py dependency.
 | ID  | Requirement                                                       | Priority | Notes                                                        |
 | --- | ----------------------------------------------------------------- | -------- | ------------------------------------------------------------ |
 | R1  | Device-side NVSHMEM builtins callable from `@wp.kernel` functions | Must     | Minimal set: PE queries, scalar/bulk put, sync                |
-| R2  | `libnvshmem_device.ltoir` linked via nvJitLink at runtime         | Must     | Built from NVSHMEM source for PoC, shipped as file            |
+| R2  | NVSHMEM device code linked via nvJitLink at runtime              | Must     | 3.7.1 ships raw LTOIR files and a multi-architecture fatbin   |
 | R3  | `symmetric=True` parameter on `wp.array` for NVSHMEM allocation   | Must     | Native C via `dlopen(RTLD_NOLOAD)` into nvshmem4py's host lib |
 | R4  | Automatic `nvshmemx_cumodule_init` after loading NVSHMEM modules  | Must     | Native C, same dlopen approach as R3                          |
 | R5  | Clear error at compile time if nvshmem4py is not installed        | Must     | `import nvshmem` check during kernel compilation              |
 | R6  | Jacobi solver example using pure NVSHMEM (no mpi4py)             | Should   | Example written but not yet end-to-end tested                 |
-| R7  | Packman integration for NVSHMEM distribution                     | Must     | Headers + version.h for LTOIR build, Linux x86_64 + sbsa      |
+| R7  | Packman integration for NVSHMEM distribution                     | Must     | Currently 3.6.5; moving to 3.7.1 removes the LTOIR build step |
 | R8  | License file for NVSHMEM                                         | Must     | `licenses/libnvshmem-LICENSE.txt`                             |
 
 **Non-goals** (explicitly out of scope for this PoC):
@@ -47,33 +47,76 @@ with no mpi4py dependency.
 
 ### Approach
 
-Ship `libnvshmem_device.ltoir` in `warp/bin/`.
+The current implementation ships `libnvshmem_device.ltoir` in `warp/bin/`.
 At runtime, Warp's codegen emits `extern "C"` forward declarations for NVSHMEM device functions,
 compiles the kernel to LTOIR via NVRTC, and links it with `libnvshmem_device.ltoir` via nvJitLink.
 Host-side operations (init, malloc, cumodule_init) call into `libnvshmem_host.so` via
 `dlopen(RTLD_NOLOAD)`, reusing the library that nvshmem4py loaded during `nvshmem.init()`.
 
-**Where the LTOIR comes from**: The NVSHMEM 3.6.x distribution does not include it.
-A standalone script (`tools/build_nvshmem_device_ltoir.sh`) builds it via cmake from the
-NVSHMEM source. It supports two modes: local build from a source checkout (`NVSHMEM_SRC` env var),
-or a docker-based build using `nvcr.io/nvidia/nvhpc` (no local dependencies needed).
-Starting with NVSHMEM 3.7, the LTOIR will be available in the binary distribution
-(`developer.download.nvidia.com/compute/nvshmem/redist/libnvshmem/`).
+**Where the LTOIR comes from**: The NVSHMEM 3.6.x distribution does not include it, so the PoC uses
+`tools/build_nvshmem_device_ltoir.sh` to build it from source. The official NVSHMEM 3.7.1 CUDA 13
+archive now includes architecture-specific raw LTOIR files and a multi-architecture LTOIR fatbin.
+The source-build script remains useful for 3.6.x and custom NVSHMEM builds, but is no longer needed
+when consuming the 3.7.1 distribution.
 
 `build_lib.py` does not build the LTOIR itself. It expects a pre-built file, passed via
 `--nvshmem-ltoir` or already present in `warp/bin/`.
 
-**Open question for production**: Should Warp embed the `.ltoir` in its wheel (adding ~7.5 MB),
-or require users to install it separately? Embedding is simpler for users but couples Warp releases
-to a specific NVSHMEM version. Requiring a separate install avoids the coupling but adds friction
-(users would need to add NVIDIA's apt index or pip index and install additional packages).
-This decision can be deferred until NVSHMEM 3.7 ships.
+**Recommended production direction**: Consume the official 3.7.1
+`libnvshmem_device.ltoir.fatbin` instead of building and shipping a single raw LTOIR file. The fatbin
+is multi-architecture and smaller than any individual raw LTOIR file. Warp's general nvJitLink path
+already supports `NVJITLINK_INPUT_FATBIN`; the remaining work is to teach the NVSHMEM-specific build
+and runtime path to discover, copy, and submit this file as a fatbin rather than as raw LTOIR.
+
+Whether the fatbin belongs in the Warp wheel or in a separately installed NVSHMEM package remains a
+packaging decision. Embedding approximately 3.9 MB is simpler for users but couples the wheel to an
+NVSHMEM version. Discovering an external install avoids that payload and coupling, but requires
+reliable package discovery and clear version diagnostics.
 
 **TODO: Version diagnostics.** Record the NVSHMEM version that the shipped `.ltoir` was built from
 (e.g., via `wp.nvshmem_version()` or embedding it in `warp.so`). This would help diagnose
 ABI mismatches between the device LTOIR and the host library from nvshmem4py.
 The coupling is on the device state struct layout (`nvshmemi_device_host_state_t`, 776 bytes
-with `static_assert` size checks). Within NVSHMEM 3.x this is likely stable.
+with `static_assert` size checks). Do not assume that all NVSHMEM 3.x releases are interchangeable;
+the 3.7.1 testing found that Python package resolution can select a different host-library version.
+
+### NVSHMEM 3.7.1 Distribution Findings
+
+The [official NVSHMEM 3.7.1 Linux x86_64 CUDA 13 archive](https://developer.download.nvidia.com/compute/nvshmem/redist/libnvshmem/linux-x86_64/libnvshmem-linux-x86_64-3.7.1_cuda13-archive.tar.xz)
+contains:
+
+| Artifact                               | Architectures                | Size      |
+| -------------------------------------- | ---------------------------- | --------- |
+| `libnvshmem_device.ltoir.fatbin`       | Multi-architecture           | 3,899,400 bytes |
+| `libnvshmem_device_sm_75.ltoir`        | SM 75                        | 7,760,100 bytes |
+| `libnvshmem_device_sm_80.ltoir`        | SM 80                        | 7,680,796 bytes |
+| `libnvshmem_device_sm_89.ltoir`        | SM 89                        | 7,680,796 bytes |
+| `libnvshmem_device_sm_90.ltoir`        | SM 90                        | 8,614,236 bytes |
+| `libnvshmem_device_sm_100.ltoir`       | SM 100                       | 8,221,584 bytes |
+| `libnvshmem_device_sm_120.ltoir`       | SM 120                       | 8,221,584 bytes |
+
+The SM 120 raw LTOIR was verified by a full Warp build with CUDA 13.3 and an SM 120 Blackwell target.
+The packaged multi-architecture fatbin was also passed directly through Warp's existing fatbin input
+path and linked successfully into a cubin. This confirms that both packaged forms are usable; the
+fatbin is the better distribution artifact because it avoids selecting one architecture at build
+time and has the smallest payload.
+
+CUDA 13.3 was installed and exercised only as an opt-in toolkit through
+`--cuda-path /usr/local/cuda-13.3`. Warp's default build remains on CUDA 13.0 because CUDA 13.1
+through 13.3 have a known Blackwell Warp-module compilation bug that is expected to be fixed in
+CUDA 13.4. A representative opt-in build is:
+
+```bash
+export NVSHMEM_HOME=/path/to/libnvshmem-linux-x86_64-3.7.1_cuda13-archive
+WARP_CACHE_PATH=/tmp/warp-cache-warp-worktree-1-nvshmem-3.7.1 \
+WARP_CACHE_ROOT=/tmp/warp-cache-warp-worktree-1-nvshmem-3.7.1 \
+uv run build_lib.py \
+    --cuda-path /usr/local/cuda-13.3 \
+    --nvshmem-ltoir "$NVSHMEM_HOME/lib/libnvshmem_device_sm_120.ltoir"
+```
+
+This command verifies the current raw-LTOIR workflow. A future fatbin-aware option should accept
+`libnvshmem_device.ltoir.fatbin` directly and preserve its input type through nvJitLink.
 
 ### Alternatives Considered and Rejected
 
@@ -93,13 +136,12 @@ Linking the `.bc` into the shim at build time via `nvcc -dlink` produced a fully
 that no longer exported the wrapper symbols for nvJitLink to find.
 The shim approach was ultimately unnecessary once we built the LTOIR from source.
 
-**dlopen for `libnvshmem_host.so`**.
-The NVSHMEM distribution ships only `libnvshmem_host.so` (shared), not `.a` (static).
-Initially attempted `dlopen` at runtime, but the system may have multiple copies at different paths
-(system install, nvshmem4py bundle) causing version mismatches.
-Resolved by linking at build time against the Packman distribution's `.so` and shipping it in `warp/bin/`
-with the existing `$ORIGIN` rpath. The NVSHMEM host headers cannot be included by g++ (CCCL dependency),
-so the five needed C functions are forward-declared instead.
+**Direct linking to `libnvshmem_host.so`**.
+The NVSHMEM distribution ships only a shared host library. Linking Warp against one packaged copy
+would not guarantee that it matches the library loaded by nvshmem4py. The implementation therefore
+uses `dlopen(RTLD_NOLOAD)` to find the already-loaded `libnvshmem_host.so` and resolves the five
+required symbols with `dlsym`. This makes initialization order explicit and avoids loading a second,
+potentially incompatible host runtime.
 
 **Embedding LTOIR in `warp.so` via `ld -r -b binary`**.
 Worked mechanically (the binary data was linked in) but the retrieved data
@@ -110,12 +152,11 @@ Not worth debugging for a PoC. Ship the LTOIR as a file instead.
 
 #### Build System
 
-**LTOIR prerequisite**: `libnvshmem_device.ltoir` must be pre-built before running `build_lib.py`.
-The standalone script `tools/build_nvshmem_device_ltoir.sh` handles this via cmake
-(either from a local NVSHMEM source checkout or a docker container).
-The cmake build uses `-DNVSHMEM_IBGDA_SUPPORT=OFF` to avoid InfiniBand header dependencies
-and `-DCMAKE_CUDA_ARCHITECTURES=80` (NVSHMEM's minimum supported arch; nvJitLink recompiles
-the LTOIR for the actual target arch at kernel link time).
+**LTOIR prerequisite**: `libnvshmem_device.ltoir` must be available before running `build_lib.py`.
+For NVSHMEM 3.6.x, `tools/build_nvshmem_device_ltoir.sh` produces it via cmake from a local checkout
+or a container. For NVSHMEM 3.7.1, pass one of the packaged architecture-specific files to
+`--nvshmem-ltoir`. The cmake fallback uses `-DNVSHMEM_IBGDA_SUPPORT=OFF` to avoid InfiniBand header
+dependencies and `-DCMAKE_CUDA_ARCHITECTURES=80`.
 
 **Packman dependency** (`deps/libnvshmem-deps.packman.xml`):
 Provides headers for `WP_ENABLE_NVSHMEM` compilation.
@@ -179,18 +220,26 @@ This populates the `__constant__` symbols in the cubin that the NVSHMEM runtime 
 The native code checks `nvshmemx_init_status() >= 2` before calling `cumodule_init`.
 If NVSHMEM is not initialized (e.g., compilation-only test), the call is skipped with a warning.
 
+`ModuleBuilder.uses_nvshmem` must also survive a cache hit in a fresh process. Codegen does not run
+on that path, so cache identity alone cannot reconstruct the in-memory flag. Warp stores the flag as
+`__uses_nvshmem__` in the module metadata, restores it before loading the CUDA module, and removes the
+private key before constructing `ModuleExec`. This ensures a cached module still receives
+`nvshmemx_cumodule_init`.
+
 #### Symmetric Array Allocation
 
 `symmetric=True` on `wp.array` routes allocation through `wp_nvshmem_malloc()`
-and deallocation through `wp_nvshmem_free()` (native C functions linked against `libnvshmem_host.so`).
+and deallocation through `wp_nvshmem_free()` (native C functions resolved from the already-loaded
+`libnvshmem_host.so`).
 
-#### Host Library Linking
+#### Host Library Loading
 
-`libnvshmem_host.so` is shipped in `warp/bin/` and linked at build time.
-`warp.so` finds it at runtime via the existing `$ORIGIN` rpath.
-The five host functions we need (`nvshmem_malloc`, `nvshmem_free`, `nvshmemx_cumodule_init`,
-`nvshmemx_cumodule_finalize`, `nvshmemx_init_status`) are forward-declared in `nvshmem.cpp`
-because the NVSHMEM headers cannot be included by g++ (they pull in CCCL/CUDA C++ headers).
+`libnvshmem_host.so` is loaded by nvshmem4py. Warp uses `dlopen(RTLD_NOLOAD)` to reuse that exact
+loaded library, then resolves `nvshmem_malloc`, `nvshmem_free`, `nvshmemx_cumodule_init`,
+`nvshmemx_cumodule_finalize`, and `nvshmemx_init_status` with `dlsym`. The 3.7.1 smoke test verified
+that calls resolved to `libnvshmem_host.so.3.7.1` from the selected archive. The functions are
+forward-declared in `nvshmem.cpp` because the NVSHMEM headers cannot be included by g++ (they pull
+in CCCL/CUDA C++ headers).
 
 **Initialization order matters**: `wp.set_device()` (which creates the CUDA context)
 must be called BEFORE `nvshmem.init()`. NVSHMEM's `cumodule_init` fails with
@@ -229,7 +278,25 @@ The NVSHMEM 3.6.x Packman distribution ships `.bc` (LLVM bitcode) and `.a` (host
 but NOT `.ltoir`. The LTOIR must be built from source via cmake with `NVSHMEM_BUILD_LTOIR_LIBRARY=ON`
 and `NVSHMEM_IBGDA_SUPPORT=OFF` (to avoid InfiniBand header dependencies).
 See `tools/build_nvshmem_device_ltoir.sh` for a reproducible build (local or docker-based).
-Starting with NVSHMEM 3.7, the `.ltoir` will be included in the distribution.
+NVSHMEM 3.7.1 resolves this packaging gap by including raw LTOIR files for SM 75, 80, 89, 90,
+100, and 120, plus `libnvshmem_device.ltoir.fatbin`.
+
+### The Packaged Fatbin Needs the Correct nvJitLink Input Type
+
+The 3.7.1 `libnvshmem_device.ltoir.fatbin` is not interchangeable with a raw `.ltoir` file at the
+API boundary. It must be submitted as `NVJITLINK_INPUT_FATBIN`, while the architecture-specific
+files use `NVJITLINK_INPUT_LTOIR`. Warp already supports both input types in its general linker path,
+but the NVSHMEM-specific path currently opens `warp/bin/libnvshmem_device.ltoir` and appends its bytes
+to the raw LTOIR list. Renaming or copying the fatbin to that filename is therefore insufficient.
+
+### Keep the Host Library and Device Input on the Same NVSHMEM Version
+
+In the test environment, `uv run --with nvshmem4py-cu13` resolved nvshmem4py 0.3.1 together with
+`nvidia-nvshmem-cu13` 3.4.5, not NVSHMEM 3.7.1. Using that host library with 3.7.1 device input would
+silently create the version mismatch described above. The 3.7.1 end-to-end test explicitly selected
+the extracted 3.7.1 host library through `NVSHMEM_HOME` and the dynamic loader path; `/proc/self/maps`
+confirmed that `libnvshmem_host.so.3.7.1` was loaded. Production tooling should either pin matching
+packages or reject a detected host/device version mismatch.
 
 ### Multiple `libnvshmem_host.so` Versions on the System
 
@@ -271,6 +338,30 @@ The guard was extended to `#if WP_ENABLE_MATHDX || WP_ENABLE_NVSHMEM`.
 When multiple MPI ranks compile Warp kernels simultaneously, they race on the shared kernel cache.
 Each rank needs its own cache directory: `os.environ["WARP_CACHE_ROOT"] = f"/tmp/warp_rank{rank}"`.
 
+### Constrain the Transport for a Local Single-PE Smoke Test
+
+The 3.7.1 library selected the `ibrc` remote transport by default on the GKE test node and waited for
+InfiniBand support that was not present. For a local, one-PE validation, the following configuration
+avoided unrelated transport and collective dependencies:
+
+```bash
+export NVSHMEM_REMOTE_TRANSPORT=none
+export NVSHMEM_DISABLE_LOCAL_ONLY_PROXY=1
+export NVSHMEM_DISABLE_NCCL=1
+export NVSHMEM_DISABLE_NVLS=1
+export NVSHMEM_SYMMETRIC_SIZE=67108864
+```
+
+This is a smoke-test configuration, not a recommendation for multi-PE or production execution. A
+multi-PE test must select a transport appropriate for the target system.
+
+### Cache Identity Does Not Persist Runtime Initialization State
+
+The module hash determines whether a compiled artifact is reusable, but it does not populate fields
+on a new `Module` object. Before `uses_nvshmem` was stored in module metadata, a fresh process could
+load a cached NVSHMEM cubin without calling `nvshmemx_cumodule_init`. The 3.7.1 cache-hit test exposed
+this distinction and verifies both metadata restoration and the module-initialization attempt.
+
 ### cubin Output Required for nvJitLink
 
 When nvJitLink links LTOIR inputs, the output must be cubin, not PTX.
@@ -280,14 +371,24 @@ Set `wp.config.cuda_output = "cubin"` before loading NVSHMEM-enabled modules.
 
 ## Testing Strategy
 
-**Unit tests** (`warp/tests/test_nvshmem.py`):
+**Unit tests** (`warp/tests/distributed/test_nvshmem.py`):
 
 - Test that NVSHMEM builtins compile without error (codegen + nvJitLink linking).
+- Test that a cache hit in a fresh `Module` restores `uses_nvshmem` and attempts module initialization.
 - Test `symmetric=True` array allocation error paths (CPU rejection, non-NVSHMEM build rejection).
 - Multi-PE tests (PE queries, float_p) launched via `mpirun` or `nvshmrun` subprocess.
 
 **End-to-end test** (`/tmp/test_nvshmem_basic.py`):
 Single kernel testing PE queries, symmetric allocation, and `nvshmem_float_p` across 2 PEs.
 Verified: PE 0 writes 42.0 to PE 1's buffer via in-kernel `nvshmem_float_p`.
+
+**NVSHMEM 3.7.1 validation**:
+
+- Full standard Warp build with `--cuda-path /usr/local/cuda-13.3` and the packaged SM 120 raw LTOIR.
+- Direct nvJitLink probe using the packaged multi-architecture fatbin as `NVJITLINK_INPUT_FATBIN`.
+- One-PE UID initialization with the 3.7.1 host library, symmetric allocation, and a real Warp kernel
+  returning PE 0 and one total PE.
+- Fresh-process cache hit that loads the cubin and executes the NVSHMEM module-initialization path.
+- Full standard rebuild with the default CUDA 13.0 toolkit after the opt-in test.
 
 **Build test**: `--no-use-nvshmem` produces a working build with stubs.

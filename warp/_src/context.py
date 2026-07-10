@@ -74,6 +74,7 @@ _KERNEL_RETURN_ERROR = (
     "Warp kernels cannot return values. Write results to output arguments, "
     "and omit the return annotation or use `-> None`."
 )
+_MODULE_USES_NVSHMEM_META_KEY = "__uses_nvshmem__"
 
 warp_home = os.path.realpath(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -2825,7 +2826,7 @@ class ModuleBuilder:
             self.functions[func] = None
 
     def build_meta(self):
-        meta = {}
+        meta = {_MODULE_USES_NVSHMEM_META_KEY: self.uses_nvshmem}
 
         for kernel in self.kernels:
             name = kernel.get_mangled_name()
@@ -3778,8 +3779,7 @@ class Module:
             options, is_cpu
         )
 
-        if uses_nvshmem:
-            self.uses_nvshmem = True
+        self.uses_nvshmem = uses_nvshmem
 
         meta_path = os.path.join(output_dir, self._get_meta_name(block_dim=active_block_dim))
 
@@ -4042,6 +4042,8 @@ class Module:
             else:
                 raise FileNotFoundError(f"Module metadata file {meta_path} was not found in the cache")
 
+            self.uses_nvshmem = bool(meta.pop(_MODULE_USES_NVSHMEM_META_KEY, self.uses_nvshmem))
+
             if device.is_cpu:
                 # LLVM modules are identified using strings, so we need to ensure uniqueness
                 id = self.increment_id()
@@ -4064,7 +4066,7 @@ class Module:
                     if self.uses_nvshmem:
                         ret = runtime.core.wp_nvshmem_cumodule_init(cuda_module)
                         if ret != 0:
-                            warp._src.utils.warn(
+                            log_warning(
                                 f"nvshmemx_cumodule_init failed (error {ret}). "
                                 "NVSHMEM device functions will not work until NVSHMEM is initialized "
                                 "and the module is reloaded."
