@@ -183,7 +183,7 @@ class TestNvshmemCodegen(unittest.TestCase):
 
 
 class TestNvshmemMultiPE(unittest.TestCase):
-    """Multi-PE tests launched via mpirun subprocess."""
+    """Multi-PE tests launched in subprocesses."""
 
     def _run_distributed(self, script_name, n_pes=2):
         """Run a script from warp/tests/distributed/ via mpirun."""
@@ -210,6 +210,66 @@ class TestNvshmemMultiPE(unittest.TestCase):
             )
         return result.stdout
 
+    def _run_uid_distributed(self, script_name, n_pes=2):
+        """Run a local P2P test through NVSHMEM's Hydra launcher and UID bootstrap."""
+        if not wp.is_nvshmem_enabled():
+            self.skipTest("NVSHMEM not enabled in this build.")
+        if not _is_nvshmem_device_library_available():
+            self.skipTest("NVSHMEM device library not embedded in this build.")
+        if wp.get_cuda_device_count() < n_pes:
+            self.skipTest(f"Test requires {n_pes} CUDA devices.")
+
+        nvshmem_home = os.environ.get("NVSHMEM_HOME")
+        launcher = None
+        if nvshmem_home:
+            candidate = os.path.join(nvshmem_home, "bin", "nvshmrun.hydra")
+            if os.path.isfile(candidate):
+                launcher = candidate
+        if launcher is None:
+            launcher = shutil.which("nvshmrun.hydra") or shutil.which("nvshmrun")
+        if launcher is None:
+            self.skipTest("NVSHMEM Hydra launcher not found.")
+
+        script = os.path.join(_DISTRIBUTED_DIR, script_name)
+        with tempfile.TemporaryDirectory(prefix="wp_nvshmem_uid_") as temp_dir:
+            env = os.environ.copy()
+            env.update(
+                {
+                    "NVSHMEM_BOOTSTRAP": "UID",
+                    "NVSHMEM_REMOTE_TRANSPORT": "none",
+                    "NVSHMEM_DISABLE_LOCAL_ONLY_PROXY": "1",
+                    "NVSHMEM_DISABLE_NCCL": "1",
+                    "NVSHMEM_DISABLE_NVLS": "1",
+                    "NVSHMEM_SYMMETRIC_SIZE": "67108864",
+                    "NVSHMEM_TEST_CACHE_ROOT": os.path.join(temp_dir, "cache"),
+                    "NVSHMEM_TEST_UID_FILE": os.path.join(temp_dir, "uid"),
+                }
+            )
+            if nvshmem_home:
+                nvshmem_lib_path = os.path.join(nvshmem_home, "lib")
+                env["LD_LIBRARY_PATH"] = os.pathsep.join(
+                    path for path in (nvshmem_lib_path, env.get("LD_LIBRARY_PATH")) if path
+                )
+
+            build_version = warp_context.runtime.core.wp_nvshmem_get_build_version()
+            env["NVSHMEM_TEST_VERSION"] = ".".join(
+                str(part) for part in warp_context._decode_nvshmem_version(build_version)
+            )
+            result = subprocess.run(
+                [launcher, "-launcher", "fork", "-prepend-rank", "-n", str(n_pes), sys.executable, script],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+                env=env,
+            )
+        if result.returncode != 0:
+            self.fail(
+                f"NVSHMEM UID launch failed with return code {result.returncode}\n"
+                f"stdout: {result.stdout}\nstderr: {result.stderr}"
+            )
+        return result.stdout
+
     def test_pe_query(self):
         """Verify my_pe and n_pes return correct values."""
         output = self._run_distributed("aux_nvshmem_pe_query.py")
@@ -219,6 +279,12 @@ class TestNvshmemMultiPE(unittest.TestCase):
         """Verify nvshmem_float_p writes to remote PE."""
         output = self._run_distributed("aux_nvshmem_float_p.py")
         self.assertIn("PASSED", output)
+
+    def test_uid_local_p2p(self):
+        """Verify UID bootstrap and device-side P2P with remote transports disabled."""
+        output = self._run_uid_distributed("aux_nvshmem_uid_p2p.py")
+        self.assertIn("PE 0/2 on cuda:0: query=(0, 2)", output)
+        self.assertIn("PE 1/2 on cuda:1: query=(1, 2), symmetric_buffer=42.0, remote_transport=none: PASSED", output)
 
 
 if __name__ == "__main__":

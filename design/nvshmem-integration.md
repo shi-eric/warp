@@ -359,14 +359,15 @@ inputs now use `WP_ENABLE_MATHDX || WP_ENABLE_NVSHMEM`; a CUDA 13.3 build with
 
 ### Per-Rank Kernel Cache Needed for Multi-Process Runs
 
-When multiple MPI ranks compile Warp kernels simultaneously, they race on the shared kernel cache.
-Each rank needs its own cache directory: `os.environ["WARP_CACHE_ROOT"] = f"/tmp/warp_rank{rank}"`.
+When multiple processes compile Warp kernels simultaneously, they race on the shared kernel cache.
+Each rank needs its own `WARP_CACHE_PATH` and `WARP_CACHE_ROOT`. The UID test creates rank-specific
+directories under a temporary test directory before importing Warp.
 
-### Constrain the Transport for a Local Single-PE Smoke Test
+### Constrain the Transport for a Local P2P Test
 
 The 3.7.1 library selected the `ibrc` remote transport by default on the GKE test node and waited for
-InfiniBand support that was not present. For a local, one-PE validation, the following configuration
-avoided unrelated transport and collective dependencies:
+InfiniBand support that was not present. For a same-host test, `NVSHMEM_REMOTE_TRANSPORT=none`
+disables network transport discovery while retaining the local CUDA IPC/P2P path:
 
 ```bash
 export NVSHMEM_REMOTE_TRANSPORT=none
@@ -376,8 +377,12 @@ export NVSHMEM_DISABLE_NVLS=1
 export NVSHMEM_SYMMETRIC_SIZE=67108864
 ```
 
-This is a smoke-test configuration, not a recommendation for multi-PE or production execution. A
-multi-PE test must select a transport appropriate for the target system.
+On the tested RTX PRO 6000 Blackwell system, two ranks were assigned to separate 1g.24gb MIG slices.
+NVSHMEM classified them as multiple PEs on one physical GPU (MPG) and warned that only limited MPG
+support was available without MPS. It nevertheless reported both PEs in its P2P connected list,
+opened CUDA IPC handles between the slices, and completed device-side PE queries, a barrier, and an
+`nvshmem_float_p` from PE 0 to PE 1. This configuration validates local P2P behavior only; multi-node
+testing must select a network transport appropriate for the target system.
 
 ### Cache Identity Does Not Persist Runtime Initialization State
 
@@ -400,13 +405,27 @@ Set `wp.config.cuda_output = "cubin"` before loading NVSHMEM-enabled modules.
 - Test that a cache hit in a fresh `Module` restores `uses_nvshmem` and attempts module initialization.
 - Test `symmetric=True` array allocation error paths (CPU rejection, non-NVSHMEM build rejection).
 - Multi-PE tests (PE queries, float_p) launched via `mpirun` or `nvshmrun` subprocess.
+- Test two-PE UID bootstrap and `nvshmem_float_p` over local P2P with remote transports disabled.
 
 **End-to-end validation**:
 
 - A one-PE UID-bootstrap smoke test loads the NVSHMEM 3.7.1 host library, allocates symmetric Warp
   arrays, compiles a kernel from the embedded fatbin, and verifies device-side PE 0 of one PE.
-- A separate two-PE validation verifies that PE 0 writes 42.0 to PE 1's symmetric buffer through
-  in-kernel `nvshmem_float_p`.
+- The checked-in `TestNvshmemMultiPE.test_uid_local_p2p` test verifies that PE 0 writes 42.0 to PE 1's
+  symmetric buffer through in-kernel `nvshmem_float_p` without MPI or a network transport.
+
+Run the non-IBRC test after building with the opt-in CUDA Toolkit and NVSHMEM 3.7.1 archive:
+
+```bash
+export NVSHMEM_HOME=/path/to/libnvshmem-linux-x86_64-3.7.1_cuda13-archive
+WARP_CACHE_PATH=/tmp/warp-cache-nvshmem-uid-parent \
+WARP_CACHE_ROOT=/tmp/warp-cache-nvshmem-uid-parent \
+uv run --with nvshmem4py-cu13 -m unittest \
+    warp.tests.distributed.test_nvshmem.TestNvshmemMultiPE.test_uid_local_p2p
+```
+
+The test discovers `NVSHMEM_HOME/bin/nvshmrun.hydra`, prepends the matching host-library directory,
+uses an atomic temporary file to share the UID, and assigns one local rank to each CUDA device.
 
 **NVSHMEM 3.7.1 validation**:
 
@@ -419,6 +438,8 @@ Set `wp.config.cuda_output = "cubin"` before loading NVSHMEM-enabled modules.
 - Rejection of a loaded host library whose NVSHMEM version differs from Warp's build version.
 - One-PE UID initialization with the 3.7.1 host library, symmetric allocation, and a real Warp kernel
   returning PE 0 and one total PE.
+- Checked-in two-PE UID test across two MIG slices with `NVSHMEM_REMOTE_TRANSPORT=none`, including a
+  device-side write from PE 0 to PE 1 over CUDA IPC/P2P.
 - Fresh-process cache hit that loads the cubin and executes the NVSHMEM module-initialization path.
 - Full standard rebuild with the default CUDA 13.0 toolkit after the opt-in test; the native accessor
   reports no embedded payload and device-dependent tests skip as expected.
