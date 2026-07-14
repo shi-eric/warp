@@ -165,6 +165,8 @@ omit = [
     "*/warp/examples/*",
     "*/warp/tests/*",
     "*/warp/_src/fem/*",
+    "*/warp/_src/generated_files.py",
+    "*/warp/_src/lang.py",
     "appdirs.py",
     "render_opengl.py",
     "build_dll.py",
