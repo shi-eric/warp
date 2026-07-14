@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import itertools
+from unittest import mock
 
 import numpy as np
 
@@ -174,6 +175,161 @@ def create_lattice_grid(N):
 
 
 class TestColoring(unittest.TestCase):
+    def test_graph_coloring_assign_validation(self):
+        valid_edges = wp.array([[0, 1]], dtype=wp.int32, device="cpu")
+        valid_colors = wp.empty(2, dtype=wp.int32, device="cpu")
+
+        cases = (
+            (
+                "edges dtype",
+                wp.array([[0, 1]], dtype=wp.int64, device="cpu"),
+                valid_colors,
+                "edges array must have dtype int32",
+            ),
+            (
+                "node colors dtype",
+                valid_edges,
+                wp.empty(2, dtype=wp.float32, device="cpu"),
+                "node_colors array must have dtype int32",
+            ),
+            (
+                "edges dimensions",
+                wp.array([0, 1], dtype=wp.int32, device="cpu"),
+                valid_colors,
+                "edges array must be 2-dimensional",
+            ),
+            (
+                "edges shape",
+                wp.empty((1, 3), dtype=wp.int32, device="cpu"),
+                valid_colors,
+                "edges array must have shape",
+            ),
+            (
+                "node colors dimensions",
+                valid_edges,
+                wp.empty((1, 2), dtype=wp.int32, device="cpu"),
+                "node_colors array must be 1-dimensional",
+            ),
+            (
+                "empty graph",
+                wp.empty((0, 2), dtype=wp.int32, device="cpu"),
+                wp.empty(0, dtype=wp.int32, device="cpu"),
+                "Cannot color an empty graph",
+            ),
+        )
+
+        for name, edges, node_colors, message in cases:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    wp.utils.graph_coloring_assign(edges, node_colors)
+
+        if wp.is_cuda_available():
+            cuda_edges = valid_edges.to("cuda:0")
+            cuda_colors = valid_colors.to("cuda:0")
+            for name, edges, node_colors, message in (
+                ("edges device", cuda_edges, valid_colors, "edges array must be on the CPU"),
+                ("node colors device", valid_edges, cuda_colors, "node_colors array must be on the CPU"),
+            ):
+                with self.subTest(name=name):
+                    with self.assertRaisesRegex(RuntimeError, message):
+                        wp.utils.graph_coloring_assign(edges, node_colors)
+
+        from warp._src.context import runtime  # noqa: PLC0415
+
+        with mock.patch.object(runtime.core, "wp_graph_coloring", return_value=-1):
+            with self.assertRaisesRegex(RuntimeError, "Graph coloring failed"):
+                wp.utils.graph_coloring_assign(valid_edges, valid_colors)
+
+    def test_graph_coloring_balance_validation(self):
+        valid_edges = wp.array([[0, 1]], dtype=wp.int32, device="cpu")
+        valid_colors = wp.array([0, 1], dtype=wp.int32, device="cpu")
+
+        cases = (
+            (
+                "edges dtype",
+                wp.array([[0, 1]], dtype=wp.int64, device="cpu"),
+                valid_colors,
+                "edges array must have dtype int32",
+            ),
+            (
+                "node colors dtype",
+                valid_edges,
+                wp.array([0.0, 1.0], dtype=wp.float32, device="cpu"),
+                "node_colors array must have dtype int32",
+            ),
+            (
+                "edges dimensions",
+                wp.array([0, 1], dtype=wp.int32, device="cpu"),
+                valid_colors,
+                "edges array must be 2-dimensional",
+            ),
+            (
+                "edges shape",
+                wp.empty((1, 3), dtype=wp.int32, device="cpu"),
+                valid_colors,
+                "edges array must have shape",
+            ),
+            (
+                "node colors dimensions",
+                valid_edges,
+                wp.empty((1, 2), dtype=wp.int32, device="cpu"),
+                "node_colors array must be 1-dimensional",
+            ),
+        )
+
+        for name, edges, node_colors, message in cases:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    wp.utils.graph_coloring_balance(edges, node_colors, 2, 1.1)
+
+        if wp.is_cuda_available():
+            cuda_edges = valid_edges.to("cuda:0")
+            cuda_colors = valid_colors.to("cuda:0")
+            for name, edges, node_colors, message in (
+                ("edges device", cuda_edges, valid_colors, "edges array must be on the CPU"),
+                ("node colors device", valid_edges, cuda_colors, "node_colors array must be on the CPU"),
+            ):
+                with self.subTest(name=name):
+                    with self.assertRaisesRegex(RuntimeError, message):
+                        wp.utils.graph_coloring_balance(edges, node_colors, 2, 1.1)
+
+    def test_graph_coloring_get_groups_validation(self):
+        valid_colors = wp.array([1, 0, 1, 0], dtype=wp.int32, device="cpu")
+
+        with self.assertRaisesRegex(RuntimeError, "color_count must be non-negative"):
+            wp.utils.graph_coloring_get_groups(valid_colors, -1)
+
+        self.assertEqual(wp.utils.graph_coloring_get_groups(valid_colors, 0), ())
+
+        cases = (
+            (
+                "node colors dtype",
+                wp.array([0.0, 1.0], dtype=wp.float32, device="cpu"),
+                "node_colors array must have dtype int32",
+            ),
+            (
+                "node colors dimensions",
+                wp.empty((1, 2), dtype=wp.int32, device="cpu"),
+                "node_colors array must be 1-dimensional",
+            ),
+        )
+
+        for name, node_colors, message in cases:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    wp.utils.graph_coloring_get_groups(node_colors, 2)
+
+        if wp.is_cuda_available():
+            with self.assertRaisesRegex(RuntimeError, "node_colors array must be on the CPU"):
+                wp.utils.graph_coloring_get_groups(valid_colors.to("cuda:0"), 2)
+
+        groups = wp.utils.graph_coloring_get_groups(valid_colors, 2, return_wp_array=False)
+        self.assertEqual(len(groups), 2)
+        self.assertIsInstance(groups[0], np.ndarray)
+        self.assertIsInstance(groups[1], np.ndarray)
+        np.testing.assert_array_equal(groups[0], np.array([1, 3], dtype=np.int32))
+        np.testing.assert_array_equal(groups[1], np.array([0, 2], dtype=np.int32))
+
     def test_coloring_corner_case(self):
         """Test corner cases: empty graph and simple 2-node graph."""
         # Test 1: Simple 2-node graph with one edge connecting the nodes
