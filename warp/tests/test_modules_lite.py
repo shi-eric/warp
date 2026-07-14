@@ -4,8 +4,10 @@
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 import warp as wp
+import warp._src.module_registry as module_registry
 import warp.utils
 from warp.tests.unittest_utils import *
 
@@ -21,6 +23,61 @@ def print_values():
 
 
 class TestModuleLite(unittest.TestCase):
+    def test_module_registry_source_resolution(self):
+        source_module = "warp.tests._registry_source"
+        public_module = "warp.tests.registry_public"
+        conflict_module = "warp.tests.registry_conflict"
+
+        with (
+            mock.patch.dict(module_registry._module_source_map),
+            mock.patch.dict(module_registry._module_construct_map),
+        ):
+            self.assertEqual(module_registry.resolve_module_name(source_module), source_module)
+
+            module_registry.register_module_source(public_module, source_module)
+            module_registry.register_module_source(public_module, source_module)
+
+            self.assertEqual(module_registry.resolve_module_name(source_module), public_module)
+            self.assertEqual(module_registry.resolve_module_name(source_module, "Kernel"), public_module)
+
+            with self.assertRaisesRegex(RuntimeError, "already registered to Warp module"):
+                module_registry.register_module_source(conflict_module, source_module)
+
+            self.assertEqual(module_registry.resolve_module_name(source_module), public_module)
+
+    def test_module_registry_construct_resolution(self):
+        source_module = "warp.tests._registry_construct_source"
+        source_public_module = "warp.tests.registry_source_public"
+        construct_public_module = "warp.tests.registry_construct_public"
+        conflict_module = "warp.tests.registry_construct_conflict"
+        qualname = "Kernel"
+        constructs = ((source_module, qualname),)
+
+        with (
+            mock.patch.dict(module_registry._module_source_map),
+            mock.patch.dict(module_registry._module_construct_map),
+        ):
+            module_registry.register_module_source(source_public_module, source_module)
+            module_registry.register_module_constructs(construct_public_module, constructs)
+            module_registry.register_module_constructs(construct_public_module, constructs)
+
+            self.assertEqual(
+                module_registry.resolve_module_name(source_module, qualname),
+                construct_public_module,
+            )
+            self.assertEqual(
+                module_registry.resolve_module_name(source_module, "OtherKernel"),
+                source_public_module,
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "already registered to Warp module"):
+                module_registry.register_module_constructs(conflict_module, constructs)
+
+            self.assertEqual(
+                module_registry.resolve_module_name(source_module, qualname),
+                construct_public_module,
+            )
+
     def test_module_lite_load(self):
         # Load current module
         wp.load_module()
