@@ -14,7 +14,7 @@ registry.
 
     pip install conan==2.30.0 cmake ninja
     conan profile detect --force
-    conan create tools/llvm --version 21.1.0 \
+    conan create tools/llvm --version 22.1.8 \
       -pr:h tools/llvm/profiles/<platform> -pr:b default
 
 Profiles: `linux-x86_64`, `linux-aarch64`, `macos-arm64`, `windows-x86_64`,
@@ -25,7 +25,7 @@ Bit-exact reproduction of the Linux CI build (the CI environment is the
 manylinux image, pinned by digest in `.github/workflows/build-llvm-sdk.yml`):
 
     docker run --rm -v "$PWD:/warp" -w /warp \
-      -e LLVM_VERSION=21.1.0 -e BUNDLE_REVISION=1 \
+      -e LLVM_VERSION=22.1.8 -e BUNDLE_REVISION=1 \
       -e PROFILE=linux-x86_64 -e IMAGE_DIGEST=local -e OUTPUT_DIR=/warp/_sdk_assets \
       -e CONAN_VERSION=2.30.0 -e CMAKE_PIN=3.31.6 -e NINJA_PIN=1.11.1.4 \
       quay.io/pypa/manylinux_2_28_x86_64@sha256:a61875a2f84cab7df8de222ff12cabc08ff86eb4ad402ac90ba7bdaed9600cca \
@@ -39,7 +39,7 @@ CI builds natively on `windows-11-arm` runners. To cross-compile from an
 x64 machine instead (fallback), pair the profiles; the recipe detects the
 cross build and compiles native x64 tablegen tools first:
 
-    conan create tools/llvm --version 21.1.0 \
+    conan create tools/llvm --version 22.1.8 \
       -pr:h tools/llvm/profiles/windows-arm64 \
       -pr:b tools/llvm/profiles/windows-x86_64
 
@@ -56,7 +56,7 @@ cross build and compiles native x64 tablegen tools first:
 
 ## Extracting the SDK from a build
 
-    conan install --requires clang-warp/21.1.0 \
+    conan install --requires clang-warp/22.1.8 \
       -pr:h tools/llvm/profiles/<platform> -pr:b default \
       --deployer tools/llvm/deployers/llvm_sdk.py --deployer-folder out
 

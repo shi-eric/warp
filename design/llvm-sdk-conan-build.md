@@ -139,7 +139,7 @@ The environment provides the toolchain; the profile describes it and pins the AB
   MSVC binary compatibility is directional: a final link must use a toolset at least as new as the
   newest toolset that compiled any object in it.
   A v143-built SDK would therefore be unlinkable from VS2019, breaking Warp's documented VS2019+ floor.
-  LLVM 21 still supports VS2019 as a host compiler, so v142 remains upstream-supported.
+  LLVM 21 and 22 still support VS2019 as a host compiler, so v142 remains upstream-supported.
   The v142 component is not preinstalled on `windows-2022` runners and is added by a VS installer step.
   When Warp's Windows floor moves to VS2022 (anticipated with a future CUDA toolkit support-policy change),
   flip the profile to the v143 toolset and drop the CI v142 installer step and the vs_version conf;
