@@ -24,8 +24,9 @@ Three overlapping build definitions exist today:
 
 This document specifies the build side of the distribution plan: a public, standalone Conan recipe
 under `tools/llvm/` executed entirely on GitHub Actions runners.
-The release model (tags, asset naming, Packman consumption, promotion) is owned by the distribution
-plan and referenced here, not redesigned.
+The release model (tag namespace, asset naming, Packman consumption) originates in the distribution
+plan; the operational release process is documented in the Release process section below,
+since the workflow in this repository now implements most of it.
 
 ## Requirements
 
@@ -41,7 +42,8 @@ plan and referenced here, not redesigned.
 | R8  | windows-arm64 is built but cannot block the platform matrix while experimental             | Should   | `continue-on-error`, outside required matrix   |
 
 **Non-goals**:
-the release/publish machinery (owned by the distribution plan);
+the release/publish machinery beyond draft-release assembly
+(publishing, promotion, SBOM generation, and the Packman consumer manifest stay with the distribution plan);
 changes to `build_llvm.py` or any mechanism to keep it in sync with the recipe (drift is accepted;
 the recipe is designed as if `build_llvm.py` did not exist);
 consolidating the `warp-builder` Dockerfile onto published SDKs (future work in the distribution plan);
@@ -182,6 +184,11 @@ Every job has the same shape:
 4. Emit a build-info JSON fragment (recipe git SHA, resolved profile, container image digest,
    toolchain and Conan versions) for the promotion job to merge.
 5. Upload as a job artifact for the release pipeline.
+   When the optional `release_tag` input is set (requires `platforms=all`), the workflow
+   assembles the draft release itself from a fully green build+smoke matrix:
+   the archives, a `SHA256SUMS` file, and the merged build-info document.
+   SBOM generation and the post-publish packman verification remain owned by the
+   distribution plan's promotion step.
 
 Triggering is manual only (`workflow_dispatch`), matching the rebuild cadence;
 SDK builds never run in PR pipelines.
@@ -207,6 +214,63 @@ Archives are created deterministically (sorted entries, fixed mtimes, numeric ow
 so rebuilding the same recipe revision in the same environment yields a byte-comparable archive.
 This makes the distribution plan's never-clobber, bump-`warp.N` policy auditable.
 The toolchain/ABI segment of the asset name is derived from the profile rather than hand-written.
+
+### Release process
+
+The build workflow owns everything up to a draft release; publishing is a human promotion decision.
+Expected cadence is one or two SDK releases a year, on LLVM version bumps.
+
+**Roles and permissions.**
+Anyone with repository write access can dispatch builds and publish drafts.
+The workflow itself runs read-only (`permissions: contents: read`);
+only the `publish-draft` job elevates to a job-scoped `contents: write` token.
+
+**1. Dispatch.**
+A maintainer runs the `Build LLVM SDK` workflow (`workflow_dispatch` only; never on push or PR) with:
+`llvm_version` (must exist in `conandata.yml`), `bundle_revision` (see corrections below),
+`platforms=all`, and a `release_tag` matching `llvm-sdk-*`.
+The `validate-inputs` job rejects unknown platform tokens, malformed tags,
+and a `release_tag` without the full platform matrix.
+Dispatches without a `release_tag` build and validate but release nothing,
+which is the mode for testing recipe or workflow changes.
+
+**2. Build and validate.**
+Five platform builds (windows-arm64 non-blocking while experimental), each running the recipe's
+JIT `test_package`, the deployer, `check_sdk.py`, and deterministic packaging;
+then per-platform consumer smoke jobs build warp-clang from the artifacts and JIT a CPU kernel,
+with the Linux legs running inside the manylinux containers at the real glibc floor.
+
+**3. Draft assembly (automatic).**
+When every required stage is green, the `publish-draft` job downloads the artifacts and creates a
+draft release containing the platform archives, `SHA256SUMS`,
+and the merged `llvm-source-and-build-info.json`.
+Draft semantics: visible only to users with repo access, assets are not anonymously downloadable,
+and the git tag materializes only when the draft is published.
+The `llvm-sdk-*` tag namespace deliberately avoids `v*` so product-release workflows never trigger.
+
+**4. Promotion (manual).**
+Review the draft and its build-info document, generate the SBOM (not yet automated),
+publish with `make_latest: false` so SDK releases never displace Warp product releases,
+then run the cold-cache Packman pull against the published assets.
+That check cannot run pre-publish because draft assets require authentication;
+the full consumption path (redirect chain, checksum rejection of corrupted archives, cache reuse,
+`@` surviving in asset names) was validated end-to-end against a temporary fork release.
+
+**5. Consumer migration (distribution plan Phase 2).**
+A checked-in Packman manifest pins the release tag, per-platform package versions,
+and SHA-256 digests, and `build_llvm.py` / CMake route through it.
+The manifest must use the `packman pull` project-file path:
+checksum pinning is not enforced by `packman install NAME VERSION`,
+which is what `fetch_prebuilt_libraries` calls today.
+
+**6. Corrections.**
+Published assets are never overwritten.
+Rebuild with an incremented `bundle_revision`, which produces new `warp.N` asset names
+(deterministic packaging makes unchanged content auditable by hash), and update the manifest.
+
+The [distribution plan](https://gist.github.com/shi-eric/4eeb78d42309eab47c6c3c79a01ed6a6)
+remains the planning record for the phases beyond this repository
+(consumer migration, CloudFront retirement).
 
 ### Alternatives considered
 

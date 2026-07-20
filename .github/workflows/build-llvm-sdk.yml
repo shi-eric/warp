@@ -15,6 +15,9 @@ on:
       platforms:
         description: Comma-separated full platform names (e.g. linux-x86_64), or "all"
         default: 'all'
+      release_tag:
+        description: If set (e.g. llvm-sdk-2026.07.1), a draft GitHub release is created from the artifacts; requires platforms=all
+        default: ''
 
 permissions:
   contents: read
@@ -33,7 +36,16 @@ jobs:
       - name: Validate platforms input
         env:
           PLATFORMS: ${{ inputs.platforms }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
+          if [[ -n "$RELEASE_TAG" && "$PLATFORMS" != "all" ]]; then
+            echo "::error::release_tag requires platforms=all (got '$PLATFORMS')"
+            exit 1
+          fi
+          if [[ -n "$RELEASE_TAG" && ! "$RELEASE_TAG" =~ ^llvm-sdk-[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::release_tag must match llvm-sdk-* (got '$RELEASE_TAG')"
+            exit 1
+          fi
           known="linux-x86_64 linux-aarch64 macos-arm64 windows-x86_64 windows-arm64"
           [[ "$PLATFORMS" == "all" ]] && exit 0
           IFS=',' read -ra tokens <<< "$PLATFORMS"
@@ -325,3 +337,58 @@ jobs:
         if: ${{ env.SKIP_BUILD != '1' && !startsWith(matrix.platform, 'linux') }}
         shell: bash
         run: uv run tools/llvm/ci/smoke_test.py
+
+  publish-draft:
+    name: Create draft release
+    needs: [validate-inputs, build-linux, build-native, smoke-test]
+    if: >-
+      ${{ !cancelled() && inputs.release_tag != ''
+          && needs.validate-inputs.result == 'success'
+          && needs.build-linux.result == 'success'
+          && needs.build-native.result == 'success'
+          && needs.smoke-test.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download all SDK artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          pattern: llvm-sdk-*
+          path: _release
+          merge-multiple: true
+
+      - name: Assemble release metadata
+        run: |
+          cd _release
+          ls -la
+          sha256sum *.tar.xz > SHA256SUMS
+          # Merge the per-platform buildinfo fragments into one document.
+          jq -s '{schema_version: 1, llvm_version: "${{ inputs.llvm_version }}", bundle_revision: "${{ inputs.bundle_revision }}", recipe_sha: "${{ github.sha }}", platforms: .}' \
+            *.buildinfo.json > llvm-source-and-build-info.json
+          cat SHA256SUMS
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The git tag is only created when the draft is published; the
+          # --target SHA is recorded in the draft. SBOM generation and the
+          # post-publish packman cold-cache check are promotion-time steps
+          # owned by the distribution plan (draft assets are not
+          # anonymously downloadable).
+          # One line per paragraph: GitHub renders newlines in release notes
+          # as hard breaks, so manual wrapping shows as ragged short lines.
+          cat > _notes.md <<'EOF'
+          Build-time LLVM/Clang SDKs for Warp's CPU-JIT compiler (warp-clang). This is NOT a Warp product release. See `tools/llvm/README.md` and `design/llvm-sdk-conan-build.md`.
+
+          Draft created automatically by the build-llvm-sdk workflow from a fully green build+smoke matrix. Publish only after promotion checks.
+          EOF
+          gh release create '${{ inputs.release_tag }}' \
+            --repo '${{ github.repository }}' \
+            --target '${{ github.sha }}' \
+            --draft --latest=false \
+            --title 'LLVM SDK ${{ inputs.llvm_version }} (${{ inputs.release_tag }})' \
+            --notes-file _notes.md \
+            _release/*.tar.xz _release/SHA256SUMS _release/llvm-source-and-build-info.json

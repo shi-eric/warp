@@ -71,7 +71,15 @@ Then `out/llvm-sdk` is a plain install tree usable directly with
 all five platforms, checks and packages each SDK, and runs a consumer smoke
 job that builds `warp-clang` from the artifact and JIT-executes a CPU
 kernel. Inputs: `llvm_version`, `bundle_revision` (bump for corrected
-rebuilds; published assets are never overwritten), `platforms`.
+rebuilds; published assets are never overwritten), `platforms`,
+`release_tag`.
+
+Setting `release_tag` (must match `llvm-sdk-*`) on a `platforms=all`
+dispatch makes a fully green run create a draft GitHub release with the
+archives, a `SHA256SUMS` file, and the merged build-info document. The
+draft is never marked latest, and the git tag only materializes when the
+draft is published. Publishing remains a manual promotion step per the
+LLVM SDK distribution plan.
 
 ## Updating the LLVM version
 
