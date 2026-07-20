@@ -13,7 +13,7 @@ on:
         description: Bundle revision (warp.N asset suffix); bump for corrected rebuilds
         default: '1'
       platforms:
-        description: Comma-separated platform list, or "all"
+        description: Comma-separated full platform names (e.g. linux-x86_64), or "all"
         default: 'all'
 
 permissions:
@@ -21,16 +21,40 @@ permissions:
 
 env:
   CONAN_VERSION: '2.30.0'
+  CMAKE_PIN: '3.31.6'
+  NINJA_PIN: '1.11.1.4'
 
 jobs:
+  validate-inputs:
+    name: Validate inputs
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate platforms input
+        env:
+          PLATFORMS: ${{ inputs.platforms }}
+        run: |
+          known="linux-x86_64 linux-aarch64 macos-arm64 windows-x86_64 windows-arm64"
+          [[ "$PLATFORMS" == "all" ]] && exit 0
+          IFS=',' read -ra tokens <<< "$PLATFORMS"
+          for t in "${tokens[@]}"; do
+            t="${t// /}"
+            if [[ -z "$t" || " $known " != *" $t "* ]]; then
+              echo "::error::Unknown platform '$t' (full names only: $known, or 'all')"
+              exit 1
+            fi
+          done
+
   build-linux:
     name: Build ${{ matrix.platform }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
-    if: ${{ inputs.platforms == 'all' || contains(inputs.platforms, 'linux') }}
+    needs: validate-inputs
+    if: ${{ success() && (inputs.platforms == 'all' || contains(inputs.platforms, 'linux')) }}
     strategy:
       fail-fast: false
       matrix:
+        # Keep image digests in sync with the smoke-test matrix below.
         include:
           - platform: linux-x86_64
             runner: ubuntu-latest
@@ -64,6 +88,7 @@ jobs:
             -e IMAGE_DIGEST='${{ matrix.image }}' \
             -e OUTPUT_DIR=/warp/_sdk_assets \
             -e GITHUB_SHA='${{ github.sha }}' \
+            -e CONAN_VERSION -e CMAKE_PIN -e NINJA_PIN \
             '${{ matrix.image }}' bash tools/llvm/ci/build-linux.sh
           df -h /
 
@@ -80,10 +105,12 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 350
     continue-on-error: ${{ matrix.experimental }}
+    needs: validate-inputs
     if: >-
-      ${{ inputs.platforms == 'all'
-          || contains(inputs.platforms, 'macos')
-          || contains(inputs.platforms, 'windows') }}
+      ${{ success()
+          && (inputs.platforms == 'all'
+              || contains(inputs.platforms, 'macos')
+              || contains(inputs.platforms, 'windows')) }}
     strategy:
       fail-fast: false
       matrix:
@@ -112,12 +139,15 @@ jobs:
         if: ${{ matrix.platform == 'windows-x86_64' && env.SKIP_BUILD != '1' }}
         shell: pwsh
         run: |
+          $vswhere = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -property installationPath
+          if (-not $vs) { throw "vswhere found no Visual Studio installation" }
           $installer = "C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe"
-          $vs = "C:\Program Files\Microsoft Visual Studio\2022\Enterprise"
-          Start-Process -Wait -FilePath $installer -ArgumentList `
+          $p = Start-Process -Wait -PassThru -FilePath $installer -ArgumentList `
             "modify", "--installPath", "`"$vs`"", `
             "--add", "Microsoft.VisualStudio.Component.VC.14.29.16.11.x86.x64", `
             "--quiet", "--norestart"
+          if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { throw "vs_installer exited with $($p.ExitCode)" }
 
       - name: Configure Windows environment
         if: ${{ runner.os == 'Windows' && env.SKIP_BUILD != '1' }}
@@ -136,7 +166,7 @@ jobs:
           # macos-15 runners have a Homebrew-managed (PEP 668) Python that
           # rejects bare pip installs; runners are throwaway, so bypass it.
           # The flag is accepted and inert on the Windows runners.
-          python3 -m pip install --break-system-packages "conan==${CONAN_VERSION}" cmake==3.31.6 ninja==1.11.1.4
+          python3 -m pip install --break-system-packages "conan==${CONAN_VERSION}" "cmake==${CMAKE_PIN}" "ninja==${NINJA_PIN}"
 
       - name: Build SDK
         if: ${{ env.SKIP_BUILD != '1' }}
@@ -206,14 +236,18 @@ jobs:
 
   smoke-test:
     name: Smoke test ${{ matrix.platform }}
-    needs: [build-linux, build-native]
-    if: ${{ !cancelled() && (needs.build-linux.result == 'success' || needs.build-native.result == 'success') }}
+    needs: [validate-inputs, build-linux, build-native]
+    if: >-
+      ${{ !cancelled()
+          && needs.validate-inputs.result == 'success'
+          && (needs.build-linux.result == 'success' || needs.build-native.result == 'success') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
+        # Keep image digests in sync with the build-linux matrix above.
         include:
           - platform: linux-x86_64
             runner: ubuntu-latest
@@ -277,6 +311,10 @@ jobs:
       - name: Install uv
         if: ${{ env.SKIP_BUILD != '1' && !startsWith(matrix.platform, 'linux') }}
         uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57  # v8.0.0
+        with:
+          # This workflow runs once or twice a year; caching would only
+          # churn the repository's 10 GB Actions cache quota.
+          enable-cache: false
 
       - name: Build warp-clang against the SDK
         if: ${{ env.SKIP_BUILD != '1' && !startsWith(matrix.platform, 'linux') }}
@@ -286,26 +324,4 @@ jobs:
       - name: Run CPU kernel smoke test
         if: ${{ env.SKIP_BUILD != '1' && !startsWith(matrix.platform, 'linux') }}
         shell: bash
-        run: |
-          cat > _smoke_test.py <<'EOF'
-          import numpy as np
-
-          import warp as wp
-
-
-          @wp.kernel
-          def add_kernel(a: wp.array(dtype=float), b: wp.array(dtype=float), out: wp.array(dtype=float)):
-              tid = wp.tid()
-              out[tid] = a[tid] + b[tid]
-
-
-          with wp.ScopedDevice("cpu"):
-              n = 1024
-              a = wp.array(np.arange(n, dtype=np.float32))
-              b = wp.array(np.ones(n, dtype=np.float32))
-              out = wp.zeros(n, dtype=float)
-              wp.launch(add_kernel, dim=n, inputs=[a, b], outputs=[out])
-              np.testing.assert_allclose(out.numpy(), np.arange(n, dtype=np.float32) + 1.0)
-          print("CPU JIT smoke test passed")
-          EOF
-          uv run _smoke_test.py
+        run: uv run tools/llvm/ci/smoke_test.py

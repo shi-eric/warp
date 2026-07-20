@@ -42,25 +42,6 @@ assert not offenders, f"glibc symbols above {ceiling}: {sorted(offenders)}"
 print(f"glibc ceiling OK (max allowed {ceiling})")
 EOF
 
-cat > _smoke_test.py <<'PYEOF'
-import numpy as np
-
-import warp as wp
-
-
-@wp.kernel
-def add_kernel(a: wp.array(dtype=float), b: wp.array(dtype=float), out: wp.array(dtype=float)):
-    tid = wp.tid()
-    out[tid] = a[tid] + b[tid]
-
-
-with wp.ScopedDevice("cpu"):
-    n = 1024
-    a = wp.array(np.arange(n, dtype=np.float32))
-    b = wp.array(np.ones(n, dtype=np.float32))
-    out = wp.zeros(n, dtype=float)
-    wp.launch(add_kernel, dim=n, inputs=[a, b], outputs=[out])
-    np.testing.assert_allclose(out.numpy(), np.arange(n, dtype=np.float32) + 1.0)
-print("CPU JIT smoke test passed")
-PYEOF
-"$PYTHON" _smoke_test.py
+# Python puts the script's directory, not the cwd, on sys.path; point it
+# at the repo root so the in-tree warp package is importable.
+PYTHONPATH="$PWD" "$PYTHON" tools/llvm/ci/smoke_test.py

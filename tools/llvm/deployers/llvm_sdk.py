@@ -27,12 +27,8 @@ def deploy(graph, output_folder, **kwargs):
         if os.path.exists(sdk_root):
             shutil.rmtree(sdk_root)
 
-        shutil.copytree(
-            os.path.join(package_folder, "include"), os.path.join(sdk_root, "include")
-        )
-        shutil.copytree(
-            os.path.join(package_folder, "licenses"), os.path.join(sdk_root, "licenses")
-        )
+        shutil.copytree(os.path.join(package_folder, "include"), os.path.join(sdk_root, "include"))
+        shutil.copytree(os.path.join(package_folder, "licenses"), os.path.join(sdk_root, "licenses"))
 
         lib_src = os.path.join(package_folder, "lib")
         lib_dst = os.path.join(sdk_root, "lib")

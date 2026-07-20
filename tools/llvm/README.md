@@ -27,8 +27,11 @@ manylinux image, pinned by digest in `.github/workflows/build-llvm-sdk.yml`):
     docker run --rm -v "$PWD:/warp" -w /warp \
       -e LLVM_VERSION=21.1.0 -e BUNDLE_REVISION=1 \
       -e PROFILE=linux-x86_64 -e IMAGE_DIGEST=local -e OUTPUT_DIR=/warp/_sdk_assets \
+      -e CONAN_VERSION=2.30.0 -e CMAKE_PIN=3.31.6 -e NINJA_PIN=1.11.1.4 \
       quay.io/pypa/manylinux_2_28_x86_64@sha256:a61875a2f84cab7df8de222ff12cabc08ff86eb4ad402ac90ba7bdaed9600cca \
       bash tools/llvm/ci/build-linux.sh
+
+Keep the pin values (CONAN_VERSION, CMAKE_PIN, NINJA_PIN) in sync with the workflow's env block.
 
 ### windows-arm64
 

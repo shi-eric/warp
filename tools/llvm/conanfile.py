@@ -55,8 +55,8 @@ class ClangWarp(ConanFile):
     topics = ("llvm", "clang", "jit", "warp")
 
     settings = "os", "arch", "compiler", "build_type"
-    options = {"targets": [None, "ANY"]}
-    default_options = {"targets": None}  # None -> host backend + NVPTX
+    options = {"targets": [None, "ANY"]}  # noqa: RUF012 -- Conan option declarations are class-level dicts
+    default_options = {"targets": None}  # noqa: RUF012 -- None -> host backend + NVPTX
 
     no_copy_source = True
 
@@ -85,9 +85,7 @@ class ClangWarp(ConanFile):
 
         if self.settings.os == "Linux":
             if self.settings.compiler != "gcc":
-                raise ConanInvalidConfiguration(
-                    "Linux SDKs must be built with GCC (the manylinux toolchain)"
-                )
+                raise ConanInvalidConfiguration("Linux SDKs must be built with GCC (the manylinux toolchain)")
             if self.settings.compiler.libcxx != "libstdc++":
                 raise ConanInvalidConfiguration(
                     "Linux SDKs require compiler.libcxx=libstdc++ (pre-C++11 ABI) so the "
@@ -95,17 +93,13 @@ class ClangWarp(ConanFile):
                 )
 
         if self.settings.os == "Macos" and not self.settings.get_safe("os.version"):
-            raise ConanInvalidConfiguration(
-                "macOS SDKs must pin os.version (the deployment target)"
-            )
+            raise ConanInvalidConfiguration("macOS SDKs must pin os.version (the deployment target)")
 
         if self.settings.os == "Windows":
             if not is_msvc(self):
                 raise ConanInvalidConfiguration("Windows SDKs must be built with MSVC")
             if self.settings.compiler.runtime != "static":
-                raise ConanInvalidConfiguration(
-                    "Windows SDKs must use the static CRT (compiler.runtime=static)"
-                )
+                raise ConanInvalidConfiguration("Windows SDKs must use the static CRT (compiler.runtime=static)")
             msvc_version = str(self.settings.compiler.version)
             if self.settings.arch == "x86_64" and msvc_version != "192":
                 raise ConanInvalidConfiguration(
@@ -114,9 +108,7 @@ class ClangWarp(ConanFile):
                     "newer toolset would break Warp's documented Visual Studio 2019 floor"
                 )
             if self.settings.arch == "armv8" and Version(msvc_version) < "193":
-                raise ConanInvalidConfiguration(
-                    "windows-arm64 SDKs require the v143 toolset or newer"
-                )
+                raise ConanInvalidConfiguration("windows-arm64 SDKs require the v143 toolset or newer")
 
     def _check_build_tool(self, tool, min_version):
         """Fail early if a system build tool is missing or too old.
@@ -127,13 +119,12 @@ class ClangWarp(ConanFile):
         """
         path = shutil.which(tool)
         if path is None:
-            raise ConanException(
-                f"{tool} not found on PATH; install it first (e.g. pip install {tool})"
-            )
+            raise ConanException(f"{tool} not found on PATH; install it first (e.g. pip install {tool})")
         out = subprocess.check_output([tool, "--version"], text=True)
         digits = next((tok for tok in out.split() if tok[0].isdigit()), None)
         if digits is None:
-            raise ConanException(f"could not parse {tool} version from: {out.splitlines()[0]!r}")
+            first_line = out.splitlines()[0] if out else ""
+            raise ConanException(f"could not parse {tool} version from: {first_line!r}")
         found = tuple(int(p) for p in digits.split(".")[:2])
         if found < min_version:
             wanted = ".".join(str(p) for p in min_version)
@@ -165,8 +156,7 @@ class ClangWarp(ConanFile):
         if self.settings.os == "Windows" and str(self.settings.arch) == "armv8":
             return "aarch64-pc-windows-msvc"
         raise ConanInvalidConfiguration(
-            f"clang-warp cross builds only support Windows armv8 targets, "
-            f"got {self.settings.os}/{self.settings.arch}"
+            f"clang-warp cross builds only support Windows armv8 targets, got {self.settings.os}/{self.settings.arch}"
         )
 
     def _native_tools_bindir(self):
@@ -177,8 +167,7 @@ class ClangWarp(ConanFile):
         cross_vcvars = os.path.join(self.generators_folder, "conanvcvars.bat")
         if not os.path.exists(cross_vcvars):
             raise ConanException(
-                "conanvcvars.bat not found; cross builds require an MSVC profile pair "
-                "(see tools/llvm/README.md)"
+                "conanvcvars.bat not found; cross builds require an MSVC profile pair (see tools/llvm/README.md)"
             )
         content = load(self, cross_vcvars)
         if "amd64_arm64" not in content:
@@ -253,6 +242,7 @@ class ClangWarp(ConanFile):
             "LLVM_TOOL_REMARKS_SHLIB_BUILD": False,
             "CLANG_BUILD_TOOLS": False,
             "CLANG_PLUGIN_SUPPORT": False,
+            # TODO: drop once 21.x retires; deprecated in LLVM 22 (ARCMigrate removed).
             "CLANG_ENABLE_ARCMT": False,
             "CLANG_ENABLE_STATIC_ANALYZER": False,
             "CLANG_TOOL_LIBCLANG_BUILD": False,
@@ -315,5 +305,12 @@ class ClangWarp(ConanFile):
             self.cpp_info.defines = ["_GLIBCXX_USE_CXX11_ABI=0"]
         elif self.settings.os == "Windows":
             self.cpp_info.system_libs = [
-                "version", "ws2_32", "ntdll", "advapi32", "ole32", "psapi", "shell32", "uuid",
+                "version",
+                "ws2_32",
+                "ntdll",
+                "advapi32",
+                "ole32",
+                "psapi",
+                "shell32",
+                "uuid",
             ]

@@ -26,6 +26,7 @@ int main() {
 
     // The SDK must include the NVPTX backend (Warp emits PTX through it).
     std::string error;
+    // TODO: switch to the Triple overload once 21.x retires (StringRef overload deprecated in LLVM 22).
     if (!llvm::TargetRegistry::lookupTarget("nvptx64-nvidia-cuda", error)) {
         std::fprintf(stderr, "NVPTX backend missing: %s\n", error.c_str());
         return 1;

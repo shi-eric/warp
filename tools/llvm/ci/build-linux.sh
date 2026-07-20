@@ -4,17 +4,28 @@
 #
 # Runs inside a manylinux container: build, deploy, package, and check one
 # Linux LLVM SDK. Required env: LLVM_VERSION, BUNDLE_REVISION, PROFILE
-# (e.g. linux-x86_64), IMAGE_DIGEST, OUTPUT_DIR (host-mounted).
+# (e.g. linux-x86_64), IMAGE_DIGEST, OUTPUT_DIR (host-mounted),
+# CONAN_VERSION, CMAKE_PIN, NINJA_PIN.
 set -euo pipefail
 
-CONAN_VERSION=2.30.0
+: "${CONAN_VERSION:?CONAN_VERSION must be set}"
+: "${CMAKE_PIN:?CMAKE_PIN must be set}"
+: "${NINJA_PIN:?NINJA_PIN must be set}"
 
 # pipx puts console scripts on ~/.local/bin regardless of which Python the
 # manylinux image exposes; plain pip's script location varies by image.
 pipx install "conan==${CONAN_VERSION}"
-pipx install cmake==3.31.6
-pipx install ninja==1.11.1.4
+pipx install "cmake==${CMAKE_PIN}"
+pipx install "ninja==${NINJA_PIN}"
 export PATH="$HOME/.local/bin:$PATH"
+
+profile_gcc=$(sed -n 's/^compiler\.version=//p' "tools/llvm/profiles/${PROFILE}")
+actual_gcc=$(gcc -dumpversion | cut -d. -f1)
+if [[ "$profile_gcc" != "$actual_gcc" ]]; then
+  echo "FAIL: profile ${PROFILE} pins gcc ${profile_gcc} but the container ships gcc ${actual_gcc}" >&2
+  echo "Update the profile (and the asset-name ABI segment) together with the image digest." >&2
+  exit 1
+fi
 
 conan profile detect --force
 conan create tools/llvm --version "${LLVM_VERSION}" \
