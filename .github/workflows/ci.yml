@@ -50,6 +50,7 @@ on:
 
 env:
   PYTHONFAULTHANDLER: "1" # Dump tracebacks on fatal signals (SIGSEGV, SIGABRT, etc.)
+  WARP_TEST_DIAGNOSTICS_DIR: test-diagnostics
 
 jobs:
   prepare-build-metadata:
@@ -696,6 +697,17 @@ jobs:
           show: "fail"
         if: always()
 
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: test-diagnostics-cpu-${{ matrix.platform }}
+          path: |
+            rspec.xml
+            test-diagnostics/
+          if-no-files-found: ignore
+          retention-days: ${{ github.repository == 'NVIDIA/warp' && 7 || 1 }}
+
   test-warp-debug:
     if: github.event_name != 'schedule' || github.repository == 'NVIDIA/warp'
     runs-on: ubuntu-24.04
@@ -733,6 +745,17 @@ jobs:
           paths: "rspec.xml"
           show: "fail"
         if: always()
+
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: test-diagnostics-debug
+          path: |
+            rspec.xml
+            test-diagnostics/
+          if-no-files-found: ignore
+          retention-days: ${{ github.repository == 'NVIDIA/warp' && 7 || 1 }}
 
   # Compute whether the changes on a pull-request/* branch touch files relevant
   # to GPU testing or to doctest. Always runs (cheap). Downstream jobs read the
@@ -895,6 +918,17 @@ jobs:
           show: "fail"
         if: always()
 
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: test-diagnostics-gpu-${{ matrix.gpu-name }}
+          path: |
+            rspec.xml
+            test-diagnostics/
+          if-no-files-found: ignore
+          retention-days: ${{ github.repository == 'NVIDIA/warp' && 7 || 1 }}
+
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
         continue-on-error: true  # codecov upload is best-effort; do not fail the job on upload errors.
@@ -978,6 +1012,17 @@ jobs:
           paths: "rspec.xml"
           show: "fail"
         if: always()
+
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: test-diagnostics-gpu-gb300
+          path: |
+            rspec.xml
+            test-diagnostics/
+          if-no-files-found: ignore
+          retention-days: ${{ github.repository == 'NVIDIA/warp' && 7 || 1 }}
 
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
@@ -1076,6 +1121,17 @@ jobs:
           paths: "rspec.xml"
           show: "fail"
         if: always()
+
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: test-diagnostics-gpu-python314t
+          path: |
+            rspec.xml
+            test-diagnostics/
+          if-no-files-found: ignore
+          retention-days: ${{ github.repository == 'NVIDIA/warp' && 7 || 1 }}
 
   # Test against the latest MuJoCo Warp without making upstream failures block CI.
   # Run after the free-threaded test to avoid competing for RTX PRO 6000 capacity.
@@ -1243,6 +1299,17 @@ jobs:
           show: "fail"
         if: always()
 
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: test-diagnostics-gpu-mgpu-python310
+          path: |
+            rspec.xml
+            test-diagnostics/
+          if-no-files-found: ignore
+          retention-days: ${{ github.repository == 'NVIDIA/warp' && 7 || 1 }}
+
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
         continue-on-error: true  # codecov upload is best-effort; do not fail the job on upload errors.
@@ -1317,6 +1384,17 @@ jobs:
           paths: "rspec.xml"
           show: "fail"
         if: always()
+
+      - name: Upload test diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: test-diagnostics-gpu-windows
+          path: |
+            rspec.xml
+            test-diagnostics/
+          if-no-files-found: ignore
+          retention-days: ${{ github.repository == 'NVIDIA/warp' && 7 || 1 }}
 
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}

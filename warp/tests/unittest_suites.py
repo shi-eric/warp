@@ -41,7 +41,7 @@ def auto_discover_suite(loader=unittest.defaultTestLoader, pattern="test*.py"):
 def _iter_class_suites(test_suite):
     """Iterate over class-level test suites that contain test cases.
 
-    Adapt this helper from ``unittest_parallel.py``.
+    Adapt this helper from the original ``unittest-parallel`` runner.
     """
     has_cases = any(isinstance(suite, unittest.TestCase) for suite in test_suite)
     if has_cases:
@@ -984,7 +984,7 @@ def debug_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader):
 
 # Registry of named test-suite factories keyed by the ``--suite`` value that
 # selects them. This is the single source of truth for the runner's suite
-# choices: ``unittest_parallel`` derives its accepted ``--suite`` values from
+# choices: Warp's test runner derives its accepted ``--suite`` values from
 # these keys, so a choice cannot be offered without a factory behind it. The
 # "autodetect" special mode is intentionally absent; it discovers tests
 # dynamically from a file pattern rather than resolving a fixed factory here.
