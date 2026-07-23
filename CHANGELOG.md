@@ -57,6 +57,8 @@
 
 ### Fixed
 
+- Reject zero-step array slices instead of leaking an internal assertion or treating them as integer indices
+  ([GH-1684](https://github.com/NVIDIA/warp/issues/1684)).
 - Fix CPU precompiled headers not being reused when Warp is built against LLVM 22, avoiding repeated full kernel
   compilation ([GH-1658](https://github.com/NVIDIA/warp/issues/1658)).
 - Fix CPU kernel compilation failures for power-of-two exponentiation on some Windows on Arm systems

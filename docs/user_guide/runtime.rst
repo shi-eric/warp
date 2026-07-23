@@ -204,6 +204,12 @@ To create an array slice, use the following syntax, where the number of indices 
 Slice operators can be concatenated, e.g.: ``s = array[i][j][k]``. Slices can be passed to :func:`wp.func <warp.func>` user functions provided
 the function also declares the expected array dimension. Currently, only single-index slicing is supported.
 
+Unlike slices of fixed-size values, array-view ``start``, ``stop``, and
+``step`` components may be runtime expressions because the resulting shape and
+strides are stored in the runtime array descriptor. A slice step of zero is
+invalid: a compile-time zero raises a code-generation error, while a zero
+computed at runtime terminates kernel execution.
+
 The following construction methods are provided for allocating zero-initialized and empty (non-initialized) arrays:
 
 * :func:`wp.zeros() <warp.zeros>`
@@ -1059,8 +1065,9 @@ Indexing and slicing for vectors, matrices, quaternions, and transforms, follow 
 
 Negative indices are wrapped around, such that ``-1`` refers to the last element. Slices always create new copies.
 
-Inside kernels, the ``start / stop / step`` values of a slice must be **compile-time constants**.  Simple element indexing (``v[i]``, ``m[i, j]``) may use run-time
-expressions.
+For these fixed-size types, the ``start / stop / step`` values of a slice must
+be **compile-time constants**. Simple element indexing (``v[i]``, ``m[i, j]``)
+may use runtime expressions.
 
 
 Unpacking
