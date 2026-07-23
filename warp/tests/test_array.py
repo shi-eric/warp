@@ -3956,6 +3956,41 @@ cuda_devices = get_cuda_test_devices()
 
 
 class TestArray(unittest.TestCase):
+    def test_literal_zero_step_slice_in_kernel(self):
+        @wp.kernel(module="unique")
+        def slice_zero_1d(a: wp.array[int]):
+            view = a[0:2:0]
+
+        @wp.kernel(module="unique")
+        def slice_zero_2d(a: wp.array2d[int]):
+            view = a[0:2:0]
+
+        @wp.kernel(module="unique")
+        def slice_zero_3d(a: wp.array3d[int]):
+            view = a[0:2:0]
+
+        @wp.kernel(module="unique")
+        def slice_zero_4d(a: wp.array4d[int]):
+            view = a[0:2:0]
+
+        cases = (
+            ("1d", slice_zero_1d, wp.zeros(2, dtype=int, device="cpu")),
+            ("2d", slice_zero_2d, wp.zeros((2, 2), dtype=int, device="cpu")),
+            ("3d", slice_zero_3d, wp.zeros((2, 2, 2), dtype=int, device="cpu")),
+            ("4d", slice_zero_4d, wp.zeros((2, 2, 2, 2), dtype=int, device="cpu")),
+        )
+
+        for name, kernel, array in cases:
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(wp.WarpCodegenValueError, "Slice step cannot be zero"):
+                    wp.launch(kernel, dim=1, inputs=[array], device="cpu")
+
+    def test_zero_step_slice_at_python_scope(self):
+        array = wp.zeros(4, dtype=int, device="cpu")
+
+        with self.assertRaisesRegex(ValueError, "slice step cannot be zero"):
+            _ = array[::0]
+
     def test_array_new_del(self):
         # test the scenario in which an array instance is created but not initialized before gc
         instance = wp.array.__new__(wp.array)

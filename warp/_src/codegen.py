@@ -4376,6 +4376,8 @@ class Adjoint:
         start = SLICE_BEGIN if node.lower is None else adj.eval(node.lower)
         stop = SLICE_END if node.upper is None else adj.eval(node.upper)
         step = 1 if node.step is None else adj.eval(node.step)
+        if isinstance(step, Var) and step.constant == 0:
+            raise WarpCodegenValueError("Slice step cannot be zero.")
         return adj.add_builtin_call("slice", (start, stop, step))
 
     def store_ref_param_value(adj, name, value, *, augmented=False):
