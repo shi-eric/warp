@@ -530,6 +530,9 @@ point masks, CPU execution, CUDA graph-capturable allocation and rebuilding, and
 that restricts traversal to points sharing the requested group id. Use
 <code class="docutils literal notranslate"><span class="pre">wp.HashGrid.reserve(num_points,</span> <span class="pre">with_groups=True)</span></code> to record grouped rebuilds inside a CUDA graph without a
 warm-up build (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1579">GH-1579</a>).</p></li>
+<li><p>Add live CPU graph capture and replay support for <code class="docutils literal notranslate"><span class="pre">wp.HashGrid.build()</span></code>. Each replay rebuilds the grid from current
+point and optional group data. Saveable captures remain unsupported until <code class="docutils literal notranslate"><span class="pre">wp.HashGrid</span></code> resources can be serialized
+(<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1664">GH-1664</a>).</p></li>
 <li><p>Add <code class="docutils literal notranslate"><span class="pre">wp.cuda_profiler_start()</span></code>, <code class="docutils literal notranslate"><span class="pre">wp.cuda_profiler_stop()</span></code>, and the <code class="docutils literal notranslate"><span class="pre">wp.ScopedCudaProfiler</span></code> context manager to
 control CUDA profiler data collection from Python (equivalent to <code class="docutils literal notranslate"><span class="pre">cuProfilerStart</span></code>/<code class="docutils literal notranslate"><span class="pre">cuProfilerStop</span></code>) for an
 external profiler’s capture range. They accept an optional <code class="docutils literal notranslate"><span class="pre">device</span></code> argument and act on that device’s current CUDA
@@ -542,6 +545,12 @@ context (<a class="reference external" href="https://github.com/NVIDIA/warp/issu
 graphs recompute them from current inputs on CPU and CUDA (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1663">GH-1663</a>).</p></li>
 <li><p>Add CPU support for <code class="docutils literal notranslate"><span class="pre">wp.jax_kernel()</span></code> and <code class="docutils literal notranslate"><span class="pre">wp.jax_callable()</span></code> FFI calls, with automatic dispatch between CPU and
 CUDA based on the device selected by JAX (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1661">GH-1661</a>).</p></li>
+<li><p><strong>Experimental:</strong> Extend APIC graph capture and replay on CPU so that <code class="docutils literal notranslate"><span class="pre">wp.Bvh.refit()</span></code> and <code class="docutils literal notranslate"><span class="pre">wp.Bvh.rebuild()</span></code>
+called during a capture are recorded and replayed against the current bounds, instead of running once at capture
+time and leaving replay to query a stale BVH. Such captures are replay-only; <code class="docutils literal notranslate"><span class="pre">capture_save()</span></code> rejects them because
+the BVH handle cannot be serialized (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1665">GH-1665</a>).</p></li>
+<li><p>Add an optional <code class="docutils literal notranslate"><span class="pre">block_dim</span></code> argument to <code class="docutils literal notranslate"><span class="pre">wp.jax_kernel()</span></code> for selecting the CUDA thread-block size, including for
+tile kernels and their generated adjoint launches (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1436">GH-1436</a>).</p></li>
 </ul>
 </section>
 <section id="removed">
@@ -550,6 +559,10 @@ CUDA based on the device selected by JAX (<a class="reference external" href="ht
 <section id="deprecated">
 <h3>Deprecated<a class="headerlink" href="#deprecated" title="Link to this heading">#</a></h3>
 <ul class="simple">
+<li><p>Defer removal of the deprecated <code class="docutils literal notranslate"><span class="pre">warp.jax_experimental</span></code> namespace, its legacy custom-call <code class="docutils literal notranslate"><span class="pre">jax_kernel()</span></code>,
+and its graph-cache getter and setter APIs from Warp 1.16 to Warp 1.18, allowing more time to migrate.</p></li>
+<li><p>Deprecate <code class="docutils literal notranslate"><span class="pre">warp.sparse.BsrMatrix.copy_nnz_async()</span></code>; use <code class="docutils literal notranslate"><span class="pre">warp.sparse.BsrMatrix.notify_nnz_changed()</span></code> instead
+(<a class="reference external" href="https://github.com/NVIDIA/warp/issues/987">GH-987</a>).</p></li>
 <li><p>Deprecate the per-environment sequence form of <code class="docutils literal notranslate"><span class="pre">warp.fem.Nanogrid.from_environment_voxels()</span></code> and
 <code class="docutils literal notranslate"><span class="pre">warp.fem.AdaptiveNanogrid.from_environment_voxels()</span></code>; pass flat <code class="docutils literal notranslate"><span class="pre">points</span></code>, <code class="docutils literal notranslate"><span class="pre">cell_levels</span></code> where applicable,
 <code class="docutils literal notranslate"><span class="pre">point_envs</span></code>, and <code class="docutils literal notranslate"><span class="pre">env_count</span></code> instead (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1606">GH-1606</a>).</p></li>
@@ -569,6 +582,10 @@ documentation (<a class="reference external" href="https://github.com/NVIDIA/war
 Language Reference and API Reference closer to the User Guide, and consolidate memory-management guidance.</p></li>
 <li><p>Speed up redeclaring kernels created by factory functions
 (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1486">GH-1486</a>).</p></li>
+<li><p>Remove <code class="docutils literal notranslate"><span class="pre">vec2h</span></code>, <code class="docutils literal notranslate"><span class="pre">vec2f</span></code>, and <code class="docutils literal notranslate"><span class="pre">vec2d</span></code> (complex) from the documented <code class="docutils literal notranslate"><span class="pre">wp.tile_matmul()</span></code> dtypes. Complex tiles were
+never accepted by the builtin’s overload, so the listing advertised support that did not exist. <code class="docutils literal notranslate"><span class="pre">wp.tile_matmul()</span></code>
+now raises an actionable error for complex tiles instead of an opaque overload-resolution failure
+(<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1682">GH-1682</a>).</p></li>
 </ul>
 </section>
 <section id="fixed">
@@ -616,6 +633,11 @@ needs more shared memory than the forward, which could cause an illegal memory a
 and a backward-enabled kernel in the same module.</p></li>
 <li><p>Fix compilation failures when calling <code class="docutils literal notranslate"><span class="pre">warp.fem.lookup()</span></code> with double-precision (<code class="docutils literal notranslate"><span class="pre">wp.float64</span></code>) geometries
 (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1660">GH-1660</a>).</p></li>
+<li><p>Fix <code class="docutils literal notranslate"><span class="pre">wp.func_grad()</span></code> raising <code class="docutils literal notranslate"><span class="pre">KeyError:</span> <span class="pre">'output_arch'</span></code> when the function being given a custom gradient
+uses <code class="docutils literal notranslate"><span class="pre">wp.tile_matmul()</span></code> or other MathDx tile built-ins (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1668">GH-1668</a>).</p></li>
+<li><p>Fix <code class="docutils literal notranslate"><span class="pre">wp.tile_matmul()</span></code> silently computing incorrect results on the MathDx path for a strided tile operand,
+such as a <code class="docutils literal notranslate"><span class="pre">wp.tile_view()</span></code> into a wider tile (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1667">GH-1667</a>).</p></li>
+<li><p>Fix cuBLASDx errors being reported as cuFFTDx errors.</p></li>
 <li><p>Fix kernel launches using stale deterministic launch metadata after switching a module’s <code class="docutils literal notranslate"><span class="pre">deterministic</span></code> mode,
 which could execute consumed-return counter atomics twice or crash the process
 (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1637">GH-1637</a>).</p></li>
@@ -627,6 +649,14 @@ first re-declared (for example, <code class="docutils literal notranslate"><span
 (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1534">GH-1534</a>).</p></li>
 <li><p>Fix Python-scope calls to user-defined <code class="docutils literal notranslate"><span class="pre">&#64;wp.func</span></code> functions with <code class="docutils literal notranslate"><span class="pre">wp.Function</span></code> parameters, which previously rejected
 Warp function targets during argument type inference (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1648">GH-1648</a>).</p></li>
+<li><p>Fix freeing arrays allocated during graph capture while a <code class="docutils literal notranslate"><span class="pre">wp.capture_if()</span></code> or <code class="docutils literal notranslate"><span class="pre">wp.capture_while()</span></code> body graph is being captured
+(<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1641">GH-1641</a>).</p></li>
+<li><p>Fix Jacobian plotting for Python functions and typed Warp kernels in <code class="docutils literal notranslate"><span class="pre">wp.autograd.jacobian()</span></code>,
+<code class="docutils literal notranslate"><span class="pre">wp.autograd.jacobian_fd()</span></code>, and <code class="docutils literal notranslate"><span class="pre">wp.autograd.gradcheck()</span></code>
+(<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1672">GH-1672</a>).</p></li>
+<li><p>Fix <code class="docutils literal notranslate"><span class="pre">SquareNedelecFirstKindShapeFunctions.make_node_coords_in_element()</span></code> and
+<code class="docutils literal notranslate"><span class="pre">SquareRaviartThomasShapeFunctions.make_node_coords_in_element()</span></code> producing device functions that return <code class="docutils literal notranslate"><span class="pre">None</span></code>
+instead of node coordinates in Warp FEM kernels (<a class="reference external" href="https://github.com/NVIDIA/warp/issues/1685">GH-1685</a>).</p></li>
 </ul>
 </section>
 <section id="documentation">
