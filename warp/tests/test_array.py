@@ -1,6 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import subprocess
+import sys
 import unittest
 from functools import cache
 from typing import Any
@@ -3567,6 +3569,74 @@ def test_array2d_slicing(test, device):
     wp.launch(test_array2d_slicing_kernel, dim=1, inputs=(arr,), device=device)
 
 
+@wp.kernel(module="unique")
+def dynamic_array_slice_kernel(
+    array: wp.array2d[int],
+    start: int,
+    stop: int,
+    step: int,
+    output: wp.array[int],
+):
+    view = array[start:stop:step, 1]
+    output[0] = view.shape[0]
+    output[1] = view[0]
+    output[2] = view[view.shape[0] - 1]
+
+
+def test_dynamic_array_slice(test, device):
+    array = wp.array(tuple(range(18)), dtype=int, shape=(6, 3), device=device)
+    cases = (
+        ("positive", 1, 6, 2, np.array([3, 4, 16], dtype=np.int32)),
+        ("negative", 5, 0, -2, np.array([3, 16, 4], dtype=np.int32)),
+    )
+
+    for name, start, stop, step, expected in cases:
+        with test.subTest(name=name):
+            output = wp.empty(3, dtype=int, device=device)
+            wp.launch(
+                dynamic_array_slice_kernel,
+                dim=1,
+                inputs=[array, start, stop, step, output],
+                device=device,
+            )
+            np.testing.assert_array_equal(output.numpy(), expected)
+
+
+def _trigger_runtime_zero_step(device_alias: str, mode: str):
+    wp.config.cache_kernels = False
+    wp.config.mode = mode
+    wp.config.verify_cuda = True
+    with wp.ScopedDevice(device_alias):
+        array = wp.array(tuple(range(18)), dtype=int, shape=(6, 3))
+        output = wp.empty(3, dtype=int)
+        wp.launch(dynamic_array_slice_kernel, dim=1, inputs=[array, 0, 6, 0, output])
+        wp.synchronize_device()
+
+
+def _run_runtime_zero_step_subprocess(device_alias: str, mode: str, timeout: int = 120):
+    setup_code = ""
+    if sys.platform == "win32":
+        setup_code = (
+            "import ctypes;"
+            "SEM_FAILCRITICALERRORS=0x0001;"
+            "SEM_NOGPFAULTERRORBOX=0x0002;"
+            "ctypes.windll.kernel32.SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);"
+        )
+
+    code = (
+        f"{setup_code}"
+        "from warp.tests.test_array import _trigger_runtime_zero_step;"
+        f"_trigger_runtime_zero_step({device_alias!r}, {mode!r})"
+    )
+    return subprocess.run(
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
 @wp.kernel
 def test_array3d_slicing_kernel(arr: wp.array3d[int]):
     sub = arr[-1:]
@@ -3956,6 +4026,14 @@ cuda_devices = get_cuda_test_devices()
 
 
 class TestArray(unittest.TestCase):
+    def test_array_runtime_zero_step(self):
+        for device in devices:
+            for mode in ("release", "debug"):
+                with self.subTest(device=device.alias, mode=mode):
+                    result = _run_runtime_zero_step_subprocess(device.alias, mode)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertRegex(result.stdout + result.stderr, "slice step cannot be zero")
+
     def test_literal_zero_step_slice_in_kernel(self):
         @wp.kernel(module="unique")
         def slice_zero_1d(a: wp.array[int]):
@@ -4134,6 +4212,7 @@ add_function_test(TestArray, "test_array1d_slicing", test_array1d_slicing, devic
 add_function_test(TestArray, "test_array2d_slicing", test_array2d_slicing, devices=devices)
 add_function_test(TestArray, "test_array3d_slicing", test_array3d_slicing, devices=devices)
 add_function_test(TestArray, "test_array4d_slicing", test_array4d_slicing, devices=devices)
+add_function_test(TestArray, "test_dynamic_array_slice", test_dynamic_array_slice, devices=devices)
 
 add_function_test(TestArray, "test_graph_fill_vecmat", test_graph_fill_vecmat, devices=cuda_devices)
 
