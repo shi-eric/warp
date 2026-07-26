@@ -1989,48 +1989,50 @@ def overload(kernel: Kernel | Callable, arg_types: dict[str, Any] | list[Any] | 
 builtin_functions: dict[str, Function] = {}
 _UNSET_COMPILE_FAMILY = object()
 _compile_family_schema_hash: bytes | None = None
+_compile_family_schema_lock = threading.RLock()
 
 
 def get_compile_family_schema_hash() -> bytes:
     """Return a canonical digest of compile-family and builtin metadata."""
     global _compile_family_schema_hash
 
-    if _compile_family_schema_hash is None:
-        builtin_records = []
-        for key, func in builtin_functions.items():
-            if not hasattr(func, "overloads"):
-                continue
-            for overload in func.overloads:
-                builtin_records.append(
-                    (
-                        key,
-                        str(overload.signature),
-                        overload.native_func or "",
-                        overload.compile_family.name if overload.compile_family else "CORE",
+    with _compile_family_schema_lock:
+        if _compile_family_schema_hash is None:
+            builtin_records = []
+            for key, func in builtin_functions.items():
+                if not hasattr(func, "overloads"):
+                    continue
+                for overload in func.overloads:
+                    builtin_records.append(
+                        (
+                            key,
+                            str(overload.signature),
+                            overload.native_func or "",
+                            overload.compile_family.name if overload.compile_family else "CORE",
+                        )
                     )
-                )
 
-        document = {
-            "families": [
-                {
-                    "name": family.name,
-                    "macro": family.macro,
-                    "source_patterns": list(family.source_patterns),
-                }
-                for family in warp._src.codegen.CompileFamily
-            ],
-            "generic_types": sorted(
-                (name, family.name) for name, family in warp._src.codegen._GENERIC_TYPE_FAMILIES.items()
-            ),
-            "scalar_types": sorted(
-                (name, family.name) for name, family in warp._src.codegen._SCALAR_TYPE_FAMILIES.items()
-            ),
-            "builtins": sorted(builtin_records),
-        }
-        serialized = json.dumps(document, sort_keys=True, separators=(",", ":"))
-        _compile_family_schema_hash = hashlib.sha256(serialized.encode("utf-8")).digest()
+            document = {
+                "families": [
+                    {
+                        "name": family.name,
+                        "macro": family.macro,
+                        "source_patterns": list(family.source_patterns),
+                    }
+                    for family in warp._src.codegen.CompileFamily
+                ],
+                "generic_types": sorted(
+                    (name, family.name) for name, family in warp._src.codegen._GENERIC_TYPE_FAMILIES.items()
+                ),
+                "scalar_types": sorted(
+                    (name, family.name) for name, family in warp._src.codegen._SCALAR_TYPE_FAMILIES.items()
+                ),
+                "builtins": sorted(builtin_records),
+            }
+            serialized = json.dumps(document, sort_keys=True, separators=(",", ":"))
+            _compile_family_schema_hash = hashlib.sha256(serialized.encode("utf-8")).digest()
 
-    return _compile_family_schema_hash
+        return _compile_family_schema_hash
 
 
 def get_generic_vtypes():
@@ -2147,6 +2149,11 @@ def add_builtin(
 
     if defaults is None:
         defaults = {}
+
+    if key not in builtin_functions and export and hasattr(warp, key):
+        # Overload stubs exist only for auto-complete and may be replaced.
+        if getattr(warp, key).__name__ != "_overload_dummy":
+            raise RuntimeError(f"Trying to register builtin function '{key}' that would overwrite existing object.")
 
     # Add specialized versions of this builtin if it's generic by matching arguments against
     # hard coded types. We do this so you can use hard coded warp types outside kernels:
@@ -2292,18 +2299,11 @@ def add_builtin(
         # export means the function will be added to the `warp` module namespace
         # so that users can call it directly from the Python interpreter
         if export:
-            if hasattr(warp, key):
-                # check that we haven't already created something at this location
-                # if it's just an overload stub for auto-complete then overwrite it
-                if getattr(warp, key).__name__ != "_overload_dummy":
-                    raise RuntimeError(
-                        f"Trying to register builtin function '{key}' that would overwrite existing object."
-                    )
-
             setattr(warp, key, func)
 
     global _compile_family_schema_hash
-    _compile_family_schema_hash = None
+    with _compile_family_schema_lock:
+        _compile_family_schema_hash = None
 
     return func
 

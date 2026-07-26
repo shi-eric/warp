@@ -3,11 +3,13 @@
 
 import glob
 import os
+import threading
 import unittest
 from pathlib import Path
 from unittest import mock
 
 import warp as wp
+import warp._src.context as context
 from warp._src.codegen import CompileFamily, emit_compile_family_macros, scan_source_for_families
 from warp._src.context import (
     ModuleBuilder,
@@ -54,6 +56,111 @@ class TestCompileGuards(unittest.TestCase):
         module_after = module.get_module_hash()
         self.assertNotEqual(before, after)
         self.assertNotEqual(module_before, module_after)
+
+    def test_failed_builtin_registration_preserves_schema(self):
+        key = "_test_schema_namespace_collision"
+
+        def occupied_namespace():
+            pass
+
+        before = get_compile_family_schema_hash()
+        setattr(wp, key, occupied_namespace)
+        try:
+            with self.assertRaises(RuntimeError):
+                add_builtin(
+                    key,
+                    input_types={},
+                    value_type=int,
+                    compile_family=CompileFamily.VECTOR,
+                    hidden=True,
+                )
+
+            self.assertNotIn(key, builtin_functions)
+            self.assertEqual(before, get_compile_family_schema_hash())
+        finally:
+            builtin_functions.pop(key, None)
+            delattr(wp, key)
+            context._compile_family_schema_hash = None
+
+        self.assertEqual(before, get_compile_family_schema_hash())
+
+    def test_concurrent_registration_cannot_publish_stale_schema(self):
+        key = "_test_schema_concurrent_registration"
+        snapshot_ready = threading.Event()
+        release_snapshot = threading.Event()
+        thread_errors = []
+
+        class CoordinatedRLock:
+            def __init__(self):
+                self.lock = threading.RLock()
+                self.acquire_count = 0
+                self.count_lock = threading.Lock()
+
+            def __enter__(self):
+                with self.count_lock:
+                    self.acquire_count += 1
+                    acquire_count = self.acquire_count
+                if acquire_count == 2:
+                    release_snapshot.set()
+                self.lock.acquire()
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                self.lock.release()
+
+        coordinated_lock = CoordinatedRLock()
+        original_dumps = context.json.dumps
+
+        def blocking_dumps(*args, **kwargs):
+            snapshot_ready.set()
+            release_snapshot.wait()
+            return original_dumps(*args, **kwargs)
+
+        def compute_schema_hash():
+            try:
+                get_compile_family_schema_hash()
+            except BaseException as error:
+                thread_errors.append(error)
+
+        def register_builtin():
+            try:
+                add_builtin(
+                    key,
+                    input_types={},
+                    value_type=int,
+                    compile_family=CompileFamily.VECTOR,
+                    hidden=True,
+                    export=False,
+                )
+            except BaseException as error:
+                thread_errors.append(error)
+            finally:
+                release_snapshot.set()
+
+        context._compile_family_schema_hash = None
+        try:
+            with (
+                mock.patch.object(context, "_compile_family_schema_lock", coordinated_lock, create=True),
+                mock.patch.object(context.json, "dumps", side_effect=blocking_dumps),
+            ):
+                hash_thread = threading.Thread(target=compute_schema_hash)
+                hash_thread.start()
+                snapshot_ready.wait()
+
+                registration_thread = threading.Thread(target=register_builtin)
+                registration_thread.start()
+
+                hash_thread.join()
+                registration_thread.join()
+
+            self.assertEqual(thread_errors, [])
+            published = get_compile_family_schema_hash()
+            context._compile_family_schema_hash = None
+            rebuilt = get_compile_family_schema_hash()
+            self.assertEqual(published, rebuilt)
+        finally:
+            builtin_functions.pop(key, None)
+            context._compile_family_schema_hash = None
 
     def test_add_builtin_requires_explicit_family(self):
         """Catch builtin registrations that silently omit compile-family metadata."""
