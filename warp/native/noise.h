@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "mat.h"
 #include "rand.h"
 #include "vec.h"
 
@@ -512,7 +513,8 @@ noise_level_compose(const noise_level_t<N>& A, const noise_level_t<N>& B, unsign
     return F;
 }
 
-inline CUDA_CALLABLE mat22 noise_2d_hessian(uint32 state, int x0, int y0, int x1, int y1, float dx, float dy)
+inline CUDA_CALLABLE mat_t<2, 2, float>
+noise_2d_hessian(uint32 state, int x0, int y0, int x1, int y1, float dx, float dy)
 {
     vec2 g00 = random_gradient_2d(state, x0, y0);
     vec2 g10 = random_gradient_2d(state, x1, y0);
@@ -534,7 +536,7 @@ inline CUDA_CALLABLE mat22 noise_2d_hessian(uint32 state, int x0, int y0, int x1
     return N.hess;
 }
 
-inline CUDA_CALLABLE mat33
+inline CUDA_CALLABLE mat_t<3, 3, float>
 noise_3d_hessian(uint32 state, int x0, int y0, int z0, int x1, int y1, int z1, float dx, float dy, float dz)
 {
     vec3 g000 = random_gradient_3d(state, x0, y0, z0);
@@ -572,7 +574,7 @@ noise_3d_hessian(uint32 state, int x0, int y0, int z0, int x1, int y1, int z1, f
     return N.hess;
 }
 
-inline CUDA_CALLABLE mat44 noise_4d_hessian(
+inline CUDA_CALLABLE mat_t<4, 4, float> noise_4d_hessian(
     uint32 state, int x0, int y0, int z0, int t0, int x1, int y1, int z1, int t1, float dx, float dy, float dz, float dt
 )
 {
@@ -1013,7 +1015,7 @@ inline CUDA_CALLABLE void adj_curlnoise(
         int x1 = x0 + 1;
         int y1 = y0 + 1;
 
-        mat22 H = noise_2d_hessian(state, x0, y0, x1, y1, dx, dy);
+        mat_t<2, 2, float> H = noise_2d_hessian(state, x0, y0, x1, y1, dx, dy);
         float k = amplitude * freq;
 
         adj_xy[0] += k * (-H.data[1][0] * adj_ret[0] + H.data[0][0] * adj_ret[1]);
@@ -1105,11 +1107,11 @@ inline CUDA_CALLABLE void adj_curlnoise(
         int y1 = y0 + 1;
         int z1 = z0 + 1;
 
-        mat33 H1 = noise_3d_hessian(state, x0, y0, z0, x1, y1, z1, dx, dy, dz);
+        mat_t<3, 3, float> H1 = noise_3d_hessian(state, x0, y0, z0, x1, y1, z1, dx, dy, dz);
         state = rand_init(state, 10019689);
-        mat33 H2 = noise_3d_hessian(state, x0, y0, z0, x1, y1, z1, dx, dy, dz);
+        mat_t<3, 3, float> H2 = noise_3d_hessian(state, x0, y0, z0, x1, y1, z1, dx, dy, dz);
         state = rand_init(state, 13112221);
-        mat33 H3 = noise_3d_hessian(state, x0, y0, z0, x1, y1, z1, dx, dy, dz);
+        mat_t<3, 3, float> H3 = noise_3d_hessian(state, x0, y0, z0, x1, y1, z1, dx, dy, dz);
 
         float k = amplitude * freq;
         for (uint32 c = 0; c < 3; ++c) {
@@ -1203,11 +1205,11 @@ inline CUDA_CALLABLE void adj_curlnoise(
         int z1 = z0 + 1;
         int t1 = t0 + 1;
 
-        mat44 H1 = noise_4d_hessian(state, x0, y0, z0, t0, x1, y1, z1, t1, dx, dy, dz, dt);
+        mat_t<4, 4, float> H1 = noise_4d_hessian(state, x0, y0, z0, t0, x1, y1, z1, t1, dx, dy, dz, dt);
         state = rand_init(state, 10019689);
-        mat44 H2 = noise_4d_hessian(state, x0, y0, z0, t0, x1, y1, z1, t1, dx, dy, dz, dt);
+        mat_t<4, 4, float> H2 = noise_4d_hessian(state, x0, y0, z0, t0, x1, y1, z1, t1, dx, dy, dz, dt);
         state = rand_init(state, 13112221);
-        mat44 H3 = noise_4d_hessian(state, x0, y0, z0, t0, x1, y1, z1, t1, dx, dy, dz, dt);
+        mat_t<4, 4, float> H3 = noise_4d_hessian(state, x0, y0, z0, t0, x1, y1, z1, t1, dx, dy, dz, dt);
 
         float k = amplitude * freq;
         for (uint32 c = 0; c < 4; ++c) {

@@ -141,6 +141,7 @@ add_builtin(
 
 add_builtin(
     "copysign",
+    compile_family=None,
     input_types={"x": Float, "y": Float},
     value_func=sametypes_create_value_func(Float),
     doc="""Return a value with the magnitude of ``x`` and the sign of ``y``.
@@ -444,7 +445,7 @@ add_builtin(
 add_builtin(
     "isfinite",
     compile_family=None,
-    input_types={"a": Scalar},
+    input_types={"a": Float},
     value_type=builtins.bool,
     group="Scalar Math",
     doc="Check if ``a`` is finite.",
@@ -481,7 +482,7 @@ add_builtin(
 add_builtin(
     "isnan",
     compile_family=None,
-    input_types={"a": Scalar},
+    input_types={"a": Float},
     value_type=builtins.bool,
     group="Scalar Math",
     doc="Check if ``a`` is NaN.",
@@ -518,7 +519,7 @@ add_builtin(
 add_builtin(
     "isinf",
     compile_family=None,
-    input_types={"a": Scalar},
+    input_types={"a": Float},
     value_type=builtins.bool,
     group="Scalar Math",
     doc="Check if ``a`` is positive or negative infinity.",
@@ -2674,6 +2675,7 @@ def tile_empty_dispatch_func(arg_types: Mapping[str, type], return_type: Any, ar
 
 add_builtin(
     "tile_empty",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={"shape": tuple[int, ...], "dtype": Any, "storage": str},
     defaults={"storage": "register", "dtype": float},
     value_func=tile_empty_value_func,
@@ -2709,6 +2711,7 @@ add_builtin(
 # overload for scalar shape
 add_builtin(
     "tile_empty",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={"shape": int, "dtype": Any, "storage": str},
     defaults={"storage": "register", "dtype": float},
     value_func=tile_empty_value_func,
@@ -4555,6 +4558,7 @@ def tile_slice_indexed_dispatch_func(arg_types: Mapping[str, type], return_type:
 
 add_builtin(
     "tile_slice_indexed",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={"t": tile(dtype=Any, shape=tuple[int, ...]), "indices": tuple},
     value_func=tile_slice_indexed_value_func,
     dispatch_func=tile_slice_indexed_dispatch_func,
@@ -5378,6 +5382,7 @@ def tile_scatter_add_dispatch_func(input_types, return_type, args):
 
 add_builtin(
     "tile_scatter_add",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={
         "a": tile(dtype=Any, shape=tuple[int, ...]),
         "i": int,
@@ -5433,6 +5438,7 @@ add_builtin(
 )
 add_builtin(
     "tile_scatter_add",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={
         "a": tile(dtype=Any, shape=tuple[int, ...]),
         "i": int,
@@ -5449,6 +5455,7 @@ add_builtin(
 )
 add_builtin(
     "tile_scatter_add",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={
         "a": tile(dtype=Any, shape=tuple[int, ...]),
         "i": int,
@@ -5466,6 +5473,7 @@ add_builtin(
 )
 add_builtin(
     "tile_scatter_add",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={
         "a": tile(dtype=Any, shape=tuple[int, ...]),
         "i": int,
@@ -5511,6 +5519,7 @@ def tile_scatter_masked_value_func(arg_types, arg_values):
 
 add_builtin(
     "tile_scatter_masked",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={"a": tile(dtype=Any, shape=tuple[int, ...]), "i": int, "value": Any, "has_value": builtins.bool},
     value_func=tile_scatter_masked_value_func,
     doc="""Write a value into a shared-memory tile from the calling thread.
@@ -5550,6 +5559,7 @@ add_builtin(
 )
 add_builtin(
     "tile_scatter_masked",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={
         "a": tile(dtype=Any, shape=tuple[int, ...]),
         "i": int,
@@ -5563,6 +5573,7 @@ add_builtin(
 )
 add_builtin(
     "tile_scatter_masked",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={
         "a": tile(dtype=Any, shape=tuple[int, ...]),
         "i": int,
@@ -5577,6 +5588,7 @@ add_builtin(
 )
 add_builtin(
     "tile_scatter_masked",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={
         "a": tile(dtype=Any, shape=tuple[int, ...]),
         "i": int,
@@ -6048,6 +6060,7 @@ def tile_dot_value_func(arg_types, arg_values):
 
 add_builtin(
     "tile_dot",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={"a": tile(dtype=Any, shape=tuple[int, ...]), "b": tile(dtype=Any, shape=tuple[int, ...])},
     value_func=tile_dot_value_func,
     doc="""Compute the dot product of two tiles.
@@ -6128,6 +6141,7 @@ def tile_axpy_value_func(arg_types, arg_values):
 
 add_builtin(
     "tile_axpy",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={
         "alpha": Any,
         "src": tile(dtype=Any, shape=tuple[int, ...]),
@@ -7918,6 +7932,7 @@ add_builtin(
 
 add_builtin(
     "tile_query_valid",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={"query": BvhQueryTiled},
     value_type=bool,
     group="Tile Primitives",
@@ -7994,6 +8009,7 @@ def tile_stack_dispatch_func(arg_types, return_type, arg_values):
 
 add_builtin(
     "tile_stack",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={"capacity": int, "dtype": Any},
     value_func=tile_stack_value_func,
     dispatch_func=tile_stack_dispatch_func,
@@ -8072,6 +8088,7 @@ def tile_stack_push_dispatch_func(arg_types, return_type, arg_values):
 
 add_builtin(
     "tile_stack_push",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={"s": Any, "value": Any, "has_value": builtins.bool},
     value_func=tile_stack_push_value_func,
     dispatch_func=tile_stack_push_dispatch_func,
@@ -8138,6 +8155,7 @@ def tile_stack_pop_dispatch_func(arg_types, return_type, arg_values):
 
 add_builtin(
     "tile_stack_pop",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={"s": Any},
     value_func=tile_stack_pop_value_func,
     dispatch_func=tile_stack_pop_dispatch_func,
@@ -8207,6 +8225,7 @@ def tile_stack_clear_dispatch_func(arg_types, return_type, arg_values):
 
 add_builtin(
     "tile_stack_clear",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={"s": Any},
     value_func=tile_stack_clear_value_func,
     dispatch_func=tile_stack_clear_dispatch_func,
@@ -8268,6 +8287,7 @@ def tile_stack_count_dispatch_func(arg_types, return_type, arg_values):
 
 add_builtin(
     "tile_stack_count",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={"s": Any},
     value_func=tile_stack_count_value_func,
     dispatch_func=tile_stack_count_dispatch_func,
@@ -9562,6 +9582,7 @@ add_builtin(
 
 add_builtin(
     "tile_query_valid",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={"query": MeshQueryAABBTiled},
     value_type=bool,
     group="Tile Primitives",
@@ -9790,6 +9811,7 @@ def _add_hash_grid_query_builtins(vec_type, scalar_type, query_type, precision_d
 
     add_builtin(
         "hash_grid_query",
+        compile_family=warp._src.codegen.CompileFamily.HASHGRID,
         input_types={"id": uint64, "point": vec_type, "max_dist": scalar_type, "group": int},
         value_type=query_type,
         group="Geometry",
@@ -10679,6 +10701,7 @@ add_builtin(
 
 add_builtin(
     "volume_voxel_count",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
     input_types={"id": uint64},
     value_type=int32,
     group="Volumes",
@@ -10727,6 +10750,7 @@ add_builtin(
 # fp64 overloads for volume transform functions
 add_builtin(
     "volume_index_to_world",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
     input_types={"id": uint64, "uvw": vec3d},
     value_type=vec3d,
     group="Volumes",
@@ -10734,6 +10758,7 @@ add_builtin(
 )
 add_builtin(
     "volume_world_to_index",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
     input_types={"id": uint64, "xyz": vec3d},
     value_type=vec3d,
     group="Volumes",
@@ -10741,6 +10766,7 @@ add_builtin(
 )
 add_builtin(
     "volume_index_to_world_dir",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
     input_types={"id": uint64, "uvw": vec3d},
     value_type=vec3d,
     group="Volumes",
@@ -10748,6 +10774,7 @@ add_builtin(
 )
 add_builtin(
     "volume_world_to_index_dir",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
     input_types={"id": uint64, "xyz": vec3d},
     value_type=vec3d,
     group="Volumes",
@@ -11499,7 +11526,6 @@ add_builtin(
     doc="""Divergence-free vector field based on Perlin noise.
 
     Use the gradient of a Perlin noise function.""",
-    is_differentiable=False,
     compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
@@ -11511,7 +11537,6 @@ add_builtin(
     doc="""Divergence-free vector field based on Perlin noise.
 
     Use the curl of three Perlin noise functions.""",
-    is_differentiable=False,
     compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
@@ -11523,7 +11548,6 @@ add_builtin(
     doc="""Divergence-free vector field based on Perlin noise.
 
     Use the curl of three Perlin noise functions.""",
-    is_differentiable=False,
     compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 
@@ -15780,6 +15804,7 @@ def _tile_matmul_complex_value_func(arg_types, arg_values):
 # raise an actionable message. They are never dispatched -- the value func raises first.
 add_builtin(
     "tile_matmul",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={
         "a": tile(dtype=vector(length=2, dtype=Float), shape=tuple[int, int]),
         "b": tile(dtype=vector(length=2, dtype=Float), shape=tuple[int, int]),
@@ -15797,6 +15822,7 @@ add_builtin(
 
 add_builtin(
     "tile_matmul",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
     input_types={
         "a": tile(dtype=vector(length=2, dtype=Float), shape=tuple[int, int]),
         "b": tile(dtype=vector(length=2, dtype=Float), shape=tuple[int, int]),

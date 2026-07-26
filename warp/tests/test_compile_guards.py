@@ -139,12 +139,18 @@ class TestCompileGuards(unittest.TestCase):
             "warp._src.context.get_compile_family_schema_hash",
             return_value=b"a" * 32,
         ):
-            hash_a = ModuleHasher(module).get_module_hash()
+            hash_a = ModuleHasher(
+                module._get_live_kernels(),
+                module.resolve_options(wp.config),
+            ).get_hash()
         with mock.patch(
             "warp._src.context.get_compile_family_schema_hash",
             return_value=b"b" * 32,
         ):
-            hash_b = ModuleHasher(module).get_module_hash()
+            hash_b = ModuleHasher(
+                module._get_live_kernels(),
+                module.resolve_options(wp.config),
+            ).get_hash()
         self.assertNotEqual(hash_a, hash_b)
 
     def test_registering_builtin_invalidates_cached_module_hash(self):
