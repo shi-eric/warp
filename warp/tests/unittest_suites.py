@@ -320,6 +320,7 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
         TestCodeGen,
         TestCodeGenInstancing,
         TestCompilation,
+        TestCompileGuardCompilation,
         TestCompileGuards,
         TestCompositeComponentAdjoint,
         TestConstants,
