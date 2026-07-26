@@ -5,13 +5,56 @@ import glob
 import os
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import warp as wp
 from warp._src.codegen import CompileFamily, emit_compile_family_macros, scan_source_for_families
-from warp._src.context import ModuleBuilder, add_builtin, builtin_functions
+from warp._src.context import (
+    ModuleBuilder,
+    ModuleHasher,
+    add_builtin,
+    builtin_functions,
+    get_compile_family_schema_hash,
+)
+
+
+@wp.kernel
+def scalar_kernel(values: wp.array(dtype=float)):
+    values[0] = values[0] + 1.0
 
 
 class TestCompileGuards(unittest.TestCase):
+    def test_module_hash_includes_family_schema(self):
+        module = scalar_kernel.module
+        with mock.patch(
+            "warp._src.context.get_compile_family_schema_hash",
+            return_value=b"a" * 32,
+        ):
+            hash_a = ModuleHasher(module).get_module_hash()
+        with mock.patch(
+            "warp._src.context.get_compile_family_schema_hash",
+            return_value=b"b" * 32,
+        ):
+            hash_b = ModuleHasher(module).get_module_hash()
+        self.assertNotEqual(hash_a, hash_b)
+
+    def test_registering_builtin_invalidates_cached_module_hash(self):
+        module = scalar_kernel.module
+        before = get_compile_family_schema_hash()
+        self.assertEqual(before, get_compile_family_schema_hash())
+        module_before = module.get_module_hash()
+        add_builtin(
+            "_test_schema_family",
+            input_types={},
+            value_type=int,
+            compile_family=CompileFamily.VECTOR,
+            hidden=True,
+        )
+        after = get_compile_family_schema_hash()
+        module_after = module.get_module_hash()
+        self.assertNotEqual(before, after)
+        self.assertNotEqual(module_before, module_after)
+
     def test_add_builtin_requires_explicit_family(self):
         """Catch builtin registrations that silently omit compile-family metadata."""
         with self.assertRaises(ValueError):

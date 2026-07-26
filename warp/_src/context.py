@@ -1988,6 +1988,49 @@ def overload(kernel: Kernel | Callable, arg_types: dict[str, Any] | list[Any] | 
 # native functions that are part of the Warp API
 builtin_functions: dict[str, Function] = {}
 _UNSET_COMPILE_FAMILY = object()
+_compile_family_schema_hash: bytes | None = None
+
+
+def get_compile_family_schema_hash() -> bytes:
+    """Return a canonical digest of compile-family and builtin metadata."""
+    global _compile_family_schema_hash
+
+    if _compile_family_schema_hash is None:
+        builtin_records = []
+        for key, func in builtin_functions.items():
+            if not hasattr(func, "overloads"):
+                continue
+            for overload in func.overloads:
+                builtin_records.append(
+                    (
+                        key,
+                        str(overload.signature),
+                        overload.native_func or "",
+                        overload.compile_family.name if overload.compile_family else "CORE",
+                    )
+                )
+
+        document = {
+            "families": [
+                {
+                    "name": family.name,
+                    "macro": family.macro,
+                    "source_patterns": list(family.source_patterns),
+                }
+                for family in warp._src.codegen.CompileFamily
+            ],
+            "generic_types": sorted(
+                (name, family.name) for name, family in warp._src.codegen._GENERIC_TYPE_FAMILIES.items()
+            ),
+            "scalar_types": sorted(
+                (name, family.name) for name, family in warp._src.codegen._SCALAR_TYPE_FAMILIES.items()
+            ),
+            "builtins": sorted(builtin_records),
+        }
+        serialized = json.dumps(document, sort_keys=True, separators=(",", ":"))
+        _compile_family_schema_hash = hashlib.sha256(serialized.encode("utf-8")).digest()
+
+    return _compile_family_schema_hash
 
 
 def get_generic_vtypes():
@@ -2259,6 +2302,9 @@ def add_builtin(
 
             setattr(warp, key, func)
 
+    global _compile_family_schema_hash
+    _compile_family_schema_hash = None
+
     return func
 
 
@@ -2497,7 +2543,11 @@ def _verify_library_version(lib, library_name: str, version_symbol: str, expecte
 # using get_hash().  In addition, the ModuleHasher takes care of filtering out
 # duplicate kernels for codegen (see get_unique_kernels()).
 class ModuleHasher:
-    def __init__(self, kernels, options):
+    def __init__(self, kernels, options, compile_family_schema_hash=None):
+        if compile_family_schema_hash is None:
+            compile_family_schema_hash = get_compile_family_schema_hash()
+        self.compile_family_schema_hash = compile_family_schema_hash
+
         # cache function hashes to avoid hashing multiple times
         self.function_hashes = {}  # (function: hash)
 
@@ -2509,6 +2559,8 @@ class ModuleHasher:
 
         # start hashing the module
         ch = hashlib.sha256()
+        ch.update(b"compile-family-schema\0")
+        ch.update(compile_family_schema_hash)
 
         # module grid-stride default; hash_kernel folds each kernel's effective value
         default_grid_stride = options.get("default_grid_stride", False)
@@ -3695,7 +3747,12 @@ class Module:
         """
         block_dim = self.options["block_dim"]
         options = self.resolve_options(warp.config)
-        self.hashers[block_dim] = ModuleHasher(self._get_live_kernels(), options)
+        schema_hash = get_compile_family_schema_hash()
+        self.hashers[block_dim] = ModuleHasher(
+            self._get_live_kernels(),
+            options,
+            compile_family_schema_hash=schema_hash,
+        )
         self.resolved_options[block_dim] = options
         return self.hashers[block_dim].get_hash()
 
@@ -3709,6 +3766,9 @@ class Module:
         if block_dim is None:
             block_dim = self.options["block_dim"]
 
+        schema_hash = get_compile_family_schema_hash()
+        hasher = self.hashers.get(block_dim)
+
         # Both branches below mutate shared ``@wp.func`` adjoint state
         # (``ModuleBuilder`` runs ``adj.build`` to resolve deferred
         # ``wp.static`` expressions; ``ModuleHasher`` reads the
@@ -3718,17 +3778,28 @@ class Module:
         # block. Splitting the lock per stage opens a window where
         # another thread can re-run ``adj.build`` on a shared helper
         # and clobber the state this thread is about to hash.
-        if self.has_unresolved_static_expressions or block_dim not in self.hashers:
+        if (
+            self.has_unresolved_static_expressions
+            or hasher is None
+            or hasher.compile_family_schema_hash != schema_hash
+        ):
             with _codegen_lock:
+                schema_hash = get_compile_family_schema_hash()
+
                 if self.has_unresolved_static_expressions:
                     options = self.resolve_options(warp.config, block_dim=block_dim)
                     builder_options = options | {"output_arch": None, "block_dim": block_dim}
                     _ = ModuleBuilder(self, builder_options)
                     self.has_unresolved_static_expressions = False
 
-                if block_dim not in self.hashers:
+                hasher = self.hashers.get(block_dim)
+                if hasher is None or hasher.compile_family_schema_hash != schema_hash:
                     options = self.resolve_options(warp.config, block_dim=block_dim)
-                    self.hashers[block_dim] = ModuleHasher(self._get_live_kernels(), options)
+                    self.hashers[block_dim] = ModuleHasher(
+                        self._get_live_kernels(),
+                        options,
+                        compile_family_schema_hash=schema_hash,
+                    )
                     self.resolved_options[block_dim] = options
 
         return self.hashers[block_dim].get_hash()
