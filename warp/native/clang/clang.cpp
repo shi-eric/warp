@@ -5,13 +5,12 @@
 #include "../version.h"
 #include <clang/Basic/DiagnosticOptions.h>
 #include <clang/Frontend/CompilerInstance.h>
-#include <clang/Frontend/TextDiagnosticPrinter.h>
 #if LLVM_VERSION_MAJOR >= 18
 #include <llvm/Frontend/Debug/Options.h>
 #else
 #include <llvm/Support/CodeGen.h>
 #endif
-#if LLVM_VERSION_MAJOR == 21
+#if LLVM_VERSION_MAJOR >= 21
 #include <llvm/Support/VirtualFileSystem.h>
 #endif
 #include <cmath>
@@ -243,31 +242,17 @@ static std::unique_ptr<clang::CompilerInstance> create_compiler(
     }
 
 #if LLVM_VERSION_MAJOR >= 21
-    // LLVM 21 stopped heap-allocating DiagnosticOptions: TextDiagnosticPrinter
-    // and DiagnosticsEngine take it by reference and the printer keeps that
-    // reference for its lifetime. Since the printer is transferred to and
-    // outlives create_compiler via the CompilerInstance, bind the reference to
-    // the invocation's options rather than a local that would leave the printer
-    // dangling once this function returns.
-    clang::DiagnosticOptions& diagnostic_options = compiler_instance->getInvocation().getDiagnosticOpts();
-    std::unique_ptr<clang::TextDiagnosticPrinter> text_diagnostic_printer
-        = std::make_unique<clang::TextDiagnosticPrinter>(llvm::errs(), diagnostic_options);
-    clang::IntrusiveRefCntPtr<clang::DiagnosticIDs> diagnostic_ids;
-    std::unique_ptr<clang::DiagnosticsEngine> diagnostic_engine = std::make_unique<clang::DiagnosticsEngine>(
-        diagnostic_ids, diagnostic_options, text_diagnostic_printer.release()
-    );
+    clang::DiagnosticOptions parsing_diagnostic_options;
+    clang::IntrusiveRefCntPtr<clang::DiagnosticsEngine> parsing_diagnostics
+        = clang::CompilerInstance::createDiagnostics(*llvm::vfs::getRealFileSystem(), parsing_diagnostic_options);
 #else
-    clang::IntrusiveRefCntPtr<clang::DiagnosticOptions> diagnostic_options = new clang::DiagnosticOptions();
-    std::unique_ptr<clang::TextDiagnosticPrinter> text_diagnostic_printer
-        = std::make_unique<clang::TextDiagnosticPrinter>(llvm::errs(), &*diagnostic_options);
-    clang::IntrusiveRefCntPtr<clang::DiagnosticIDs> diagnostic_ids;
-    std::unique_ptr<clang::DiagnosticsEngine> diagnostic_engine = std::make_unique<clang::DiagnosticsEngine>(
-        diagnostic_ids, &*diagnostic_options, text_diagnostic_printer.release()
-    );
+    clang::IntrusiveRefCntPtr<clang::DiagnosticOptions> parsing_diagnostic_options = new clang::DiagnosticOptions();
+    clang::IntrusiveRefCntPtr<clang::DiagnosticsEngine> parsing_diagnostics
+        = clang::CompilerInstance::createDiagnostics(&*parsing_diagnostic_options);
 #endif
 
     auto& compiler_invocation = compiler_instance->getInvocation();
-    clang::CompilerInvocation::CreateFromArgs(compiler_invocation, args, *diagnostic_engine);
+    clang::CompilerInvocation::CreateFromArgs(compiler_invocation, args, *parsing_diagnostics);
 
     if (debug) {
 #if LLVM_VERSION_MAJOR >= 18
@@ -303,25 +288,13 @@ static std::unique_ptr<clang::CompilerInstance> create_compiler(
         compiler_instance->getLangOpts().DeclSpecKeyword = 1;  // __declspec
     }
 
-    // For LLVM >= 21, transfer ownership of the DiagnosticConsumer from the
-    // local DiagnosticsEngine to the CompilerInstance so the printer outlives
-    // create_compiler's scope. takeClient() moves the owning unique_ptr out of
-    // the engine; setClient(getClient(), /*ShouldOwnClient=*/false) must NOT be
-    // used for this, because it resets the owning unique_ptr (deleting the
-    // printer) and then stores that freed pointer as the non-owned client,
-    // leaving the CompilerInstance's engine with a dangling consumer that every
-    // compile virtual-calls in FrontendAction::EndSourceFile().
-    // For LLVM < 21, passing nullptr makes createDiagnostics create its own
-    // internal printer (text_diagnostic_printer was already released into
-    // diagnostic_engine above).
 #if LLVM_VERSION_MAJOR >= 22
-    compiler_instance->createDiagnostics(diagnostic_engine->takeClient().release(), true);
+    compiler_instance->createVirtualFileSystem();
+    compiler_instance->createDiagnostics();
 #elif LLVM_VERSION_MAJOR == 21
-    compiler_instance->createDiagnostics(
-        *llvm::vfs::getRealFileSystem(), diagnostic_engine->takeClient().release(), true
-    );
+    compiler_instance->createDiagnostics(*llvm::vfs::getRealFileSystem());
 #else
-    compiler_instance->createDiagnostics(text_diagnostic_printer.get(), false);
+    compiler_instance->createDiagnostics();
 #endif
 
     return compiler_instance;

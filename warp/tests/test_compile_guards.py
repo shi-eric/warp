@@ -19,6 +19,8 @@ from warp._src.context import (
     get_compile_family_schema_hash,
 )
 
+_MISSING = object()
+
 
 @wp.kernel
 def scalar_kernel(values: wp.array(dtype=float)):
@@ -26,6 +28,111 @@ def scalar_kernel(values: wp.array(dtype=float)):
 
 
 class TestCompileGuards(unittest.TestCase):
+    def _assert_dictionary_mutation_waits_for_schema_snapshot(self, register):
+        key = "_test_schema_dictionary_race"
+        traversal_started = threading.Event()
+        release_traversal = threading.Event()
+        traversal_active = threading.Event()
+        mutated_during_traversal = threading.Event()
+        thread_errors = []
+
+        class BlockingRegistry(dict):
+            def items(self):
+                iterator = iter(super().items())
+                first = next(iterator)
+                traversal_active.set()
+                traversal_started.set()
+                release_traversal.wait()
+                try:
+                    yield first
+                    yield from iterator
+                finally:
+                    traversal_active.clear()
+
+            def __setitem__(self, item_key, value):
+                was_traversing = traversal_active.is_set()
+                super().__setitem__(item_key, value)
+                if was_traversing:
+                    mutated_during_traversal.set()
+                    release_traversal.set()
+
+        class CoordinatedRLock:
+            def __init__(self):
+                self.lock = threading.RLock()
+                self.acquire_count = 0
+                self.count_lock = threading.Lock()
+
+            def __enter__(self):
+                with self.count_lock:
+                    self.acquire_count += 1
+                    if self.acquire_count == 2:
+                        release_traversal.set()
+                self.lock.acquire()
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                self.lock.release()
+
+        def compute_schema_hash():
+            try:
+                get_compile_family_schema_hash()
+            except BaseException as error:
+                thread_errors.append(error)
+
+        def mutate_registry():
+            try:
+                register(key)
+            except BaseException as error:
+                thread_errors.append(error)
+
+        original_registry = context.builtin_functions
+        original_schema_hash = context._compile_family_schema_hash
+        context.builtin_functions = BlockingRegistry(original_registry)
+        context._compile_family_schema_hash = None
+        try:
+            with mock.patch.object(context, "_compile_family_schema_lock", CoordinatedRLock()):
+                hash_thread = threading.Thread(target=compute_schema_hash)
+                hash_thread.start()
+                traversal_started.wait()
+
+                mutation_thread = threading.Thread(target=mutate_registry)
+                mutation_thread.start()
+
+                hash_thread.join()
+                mutation_thread.join()
+
+            self.assertEqual(thread_errors, [])
+            self.assertFalse(
+                mutated_during_traversal.is_set(),
+                "Builtin registry changed while the schema snapshot held its lock",
+            )
+        finally:
+            context.builtin_functions = original_registry
+            context._compile_family_schema_hash = original_schema_hash
+
+    def _registration_state(self, key):
+        return (
+            builtin_functions.get(key, _MISSING),
+            getattr(wp, key, _MISSING),
+            context._compile_family_schema_hash,
+        )
+
+    def _restore_registration_state(self, key, state):
+        registry_value, warp_value, schema_hash = state
+        with context._compile_family_schema_lock:
+            if registry_value is _MISSING:
+                builtin_functions.pop(key, None)
+            else:
+                builtin_functions[key] = registry_value
+
+            if warp_value is _MISSING:
+                if hasattr(wp, key):
+                    delattr(wp, key)
+            else:
+                setattr(wp, key, warp_value)
+
+            context._compile_family_schema_hash = schema_hash
+
     def test_module_hash_includes_family_schema(self):
         module = scalar_kernel.module
         with mock.patch(
@@ -41,21 +148,28 @@ class TestCompileGuards(unittest.TestCase):
         self.assertNotEqual(hash_a, hash_b)
 
     def test_registering_builtin_invalidates_cached_module_hash(self):
-        module = scalar_kernel.module
-        before = get_compile_family_schema_hash()
-        self.assertEqual(before, get_compile_family_schema_hash())
-        module_before = module.get_module_hash()
-        add_builtin(
-            "_test_schema_family",
-            input_types={},
-            value_type=int,
-            compile_family=CompileFamily.VECTOR,
-            hidden=True,
-        )
-        after = get_compile_family_schema_hash()
-        module_after = module.get_module_hash()
-        self.assertNotEqual(before, after)
-        self.assertNotEqual(module_before, module_after)
+        key = "_test_schema_family"
+        state_before = self._registration_state(key)
+        try:
+            module = scalar_kernel.module
+            before = get_compile_family_schema_hash()
+            self.assertEqual(before, get_compile_family_schema_hash())
+            module_before = module.get_module_hash()
+            add_builtin(
+                key,
+                input_types={},
+                value_type=int,
+                compile_family=CompileFamily.VECTOR,
+                hidden=True,
+            )
+            after = get_compile_family_schema_hash()
+            module_after = module.get_module_hash()
+            self.assertNotEqual(before, after)
+            self.assertNotEqual(module_before, module_after)
+        finally:
+            self._restore_registration_state(key, state_before)
+
+        self.assertEqual(self._registration_state(key), state_before)
 
     def test_failed_builtin_registration_preserves_schema(self):
         key = "_test_schema_namespace_collision"
@@ -162,6 +276,131 @@ class TestCompileGuards(unittest.TestCase):
             builtin_functions.pop(key, None)
             context._compile_family_schema_hash = None
 
+    def test_add_builtin_waits_for_schema_dictionary_snapshot(self):
+        """Catch dictionary mutation while compile-family schema records are traversed."""
+
+        def register(key):
+            add_builtin(
+                key,
+                input_types={},
+                value_type=int,
+                compile_family=CompileFamily.VECTOR,
+                hidden=True,
+                export=False,
+            )
+
+        self._assert_dictionary_mutation_waits_for_schema_snapshot(register)
+
+    def test_register_api_function_waits_for_schema_dictionary_snapshot(self):
+        """Catch API registration changing dictionary size during a schema snapshot."""
+
+        def register(key):
+            function = type("ApiFunction", (), {})()
+            function.key = key
+            context.register_api_function(function)
+
+        self._assert_dictionary_mutation_waits_for_schema_snapshot(register)
+
+    def test_add_builtin_waits_for_schema_overload_snapshot(self):
+        """Catch builtin overload mutation while schema overload records are traversed."""
+        key = "_test_schema_overload_race"
+        traversal_started = threading.Event()
+        release_traversal = threading.Event()
+        traversal_active = threading.Event()
+        mutated_during_traversal = threading.Event()
+        thread_errors = []
+
+        class BlockingOverloads(list):
+            def __iter__(self):
+                iterator = super().__iter__()
+                first = next(iterator)
+                traversal_active.set()
+                traversal_started.set()
+                release_traversal.wait()
+                try:
+                    yield first
+                    yield from iterator
+                finally:
+                    traversal_active.clear()
+
+            def append(self, value):
+                was_traversing = traversal_active.is_set()
+                super().append(value)
+                if was_traversing:
+                    mutated_during_traversal.set()
+                    release_traversal.set()
+
+        class CoordinatedRLock:
+            def __init__(self):
+                self.lock = threading.RLock()
+                self.acquire_count = 0
+                self.count_lock = threading.Lock()
+
+            def __enter__(self):
+                with self.count_lock:
+                    self.acquire_count += 1
+                    if self.acquire_count == 2:
+                        release_traversal.set()
+                self.lock.acquire()
+                return self
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                self.lock.release()
+
+        def compute_schema_hash():
+            try:
+                get_compile_family_schema_hash()
+            except BaseException as error:
+                thread_errors.append(error)
+
+        def add_overload():
+            try:
+                add_builtin(
+                    key,
+                    input_types={"value": int},
+                    value_type=int,
+                    compile_family=CompileFamily.VECTOR,
+                    hidden=True,
+                    export=False,
+                )
+            except BaseException as error:
+                thread_errors.append(error)
+
+        original_registry = context.builtin_functions
+        original_schema_hash = context._compile_family_schema_hash
+        context.builtin_functions = {}
+        try:
+            head = add_builtin(
+                key,
+                input_types={},
+                value_type=int,
+                compile_family=CompileFamily.VECTOR,
+                hidden=True,
+                export=False,
+            )
+            head.overloads = BlockingOverloads(head.overloads)
+            context._compile_family_schema_hash = None
+
+            with mock.patch.object(context, "_compile_family_schema_lock", CoordinatedRLock()):
+                hash_thread = threading.Thread(target=compute_schema_hash)
+                hash_thread.start()
+                traversal_started.wait()
+
+                mutation_thread = threading.Thread(target=add_overload)
+                mutation_thread.start()
+
+                hash_thread.join()
+                mutation_thread.join()
+
+            self.assertEqual(thread_errors, [])
+            self.assertFalse(
+                mutated_during_traversal.is_set(),
+                "Builtin overloads changed while the schema snapshot held its lock",
+            )
+        finally:
+            context.builtin_functions = original_registry
+            context._compile_family_schema_hash = original_schema_hash
+
     def test_add_builtin_requires_explicit_family(self):
         """Catch builtin registrations that silently omit compile-family metadata."""
         with self.assertRaises(ValueError):
@@ -169,13 +408,65 @@ class TestCompileGuards(unittest.TestCase):
 
     def test_add_builtin_accepts_explicit_none(self):
         """Catch rejection of an explicit unconditional builtin classification."""
-        func = add_builtin(
-            "_test_unconditional_family",
-            input_types={},
-            value_type=int,
-            compile_family=None,
-        )
-        self.assertIsNone(func.compile_family)
+        key = "_test_unconditional_family"
+        state_before = self._registration_state(key)
+        try:
+            func = add_builtin(
+                key,
+                input_types={},
+                value_type=int,
+                compile_family=None,
+            )
+            self.assertIsNone(func.compile_family)
+        finally:
+            self._restore_registration_state(key, state_before)
+
+        self.assertEqual(self._registration_state(key), state_before)
+
+    def test_namespace_collision_without_name_reports_registration_error(self):
+        """Catch namespace-collision formatting that assumes ``__name__`` exists."""
+        key = "_test_schema_nameless_collision"
+        occupied_namespace = object()
+        before = get_compile_family_schema_hash()
+        state_before = self._registration_state(key)
+        setattr(wp, key, occupied_namespace)
+        try:
+            with self.assertRaisesRegex(RuntimeError, "would overwrite existing object"):
+                add_builtin(
+                    key,
+                    input_types={},
+                    value_type=int,
+                    compile_family=CompileFamily.VECTOR,
+                    hidden=True,
+                )
+            self.assertNotIn(key, builtin_functions)
+            self.assertEqual(before, get_compile_family_schema_hash())
+        finally:
+            self._restore_registration_state(key, state_before)
+
+        self.assertEqual(self._registration_state(key), state_before)
+
+    def test_clang_diagnostics_do_not_escape_parse_options(self):
+        """Catch transfer of a diagnostic client backed by function-local options."""
+        clang_source_path = Path(__file__).resolve().parents[1] / "native" / "clang" / "clang.cpp"
+        source = clang_source_path.read_text()
+        function_start = source.index("static std::unique_ptr<clang::CompilerInstance> create_compiler")
+        function_end = source.index("\nstatic bool generate_pch", function_start)
+        create_compiler_source = source[function_start:function_end]
+        self.assertNotIn("diagnostic_engine->getClient()", create_compiler_source)
+
+    def test_llvm22_diagnostics_initialize_virtual_file_system(self):
+        """Catch LLVM 22 diagnostics dereferencing an unset virtual file system."""
+        clang_source_path = Path(__file__).resolve().parents[1] / "native" / "clang" / "clang.cpp"
+        source = clang_source_path.read_text()
+        function_start = source.index("static std::unique_ptr<clang::CompilerInstance> create_compiler")
+        llvm22_start = source.index("#if LLVM_VERSION_MAJOR >= 22", function_start)
+        llvm22_end = source.index("#elif LLVM_VERSION_MAJOR == 21", llvm22_start)
+        llvm22_branch = source[llvm22_start:llvm22_end]
+        create_vfs = llvm22_branch.find("compiler_instance->createVirtualFileSystem()")
+        create_diagnostics = llvm22_branch.find("compiler_instance->createDiagnostics()")
+        self.assertGreaterEqual(create_vfs, 0)
+        self.assertGreater(create_diagnostics, create_vfs)
 
     def test_add_builtin_validates_compile_family(self):
         """Catch non-enum metadata crossing the builtin registration boundary."""
@@ -241,18 +532,23 @@ class TestCompileGuards(unittest.TestCase):
 
     def test_removed_macro_names_are_absent(self):
         """Catch reintroduction of removed Random, Noise, or Float64 guard macros."""
-        root = Path(__file__).resolve().parents[1]
-        paths = (
-            root / "_src" / "codegen.py",
-            root / "_src" / "context.py",
-            root / "_src" / "builtins.py",
-            root / "native" / "builtin.h",
-            root / "native" / "noise.h",
+        warp_root = Path(__file__).resolve().parents[1]
+        production_roots = (
+            warp_root / "_src",
+            warp_root / "native",
         )
-        source = "\n".join(path.read_text() for path in paths)
-        for suffix in ("RAND", "NOISE", "FLOAT64_OPS"):
-            removed_name = "WP_NO_" + suffix
-            self.assertNotIn(removed_name, source)
+        source_suffixes = {".c", ".cc", ".cpp", ".cu", ".cuh", ".h", ".hpp", ".py"}
+        paths = sorted(
+            path
+            for production_root in production_roots
+            for path in production_root.rglob("*")
+            if path.is_file() and path.suffix in source_suffixes
+        )
+        for path in paths:
+            source = path.read_text()
+            for suffix in ("RAND", "NOISE", "FLOAT64_OPS"):
+                removed_name = "WP_NO_" + suffix
+                self.assertNotIn(removed_name, source, f"{removed_name} found in {path.relative_to(warp_root)}")
 
     def test_func_return_type_inspected_for_families(self):
         """Catch function return types bypassing compile-family inspection."""

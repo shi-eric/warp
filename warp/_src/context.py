@@ -2150,11 +2150,6 @@ def add_builtin(
     if defaults is None:
         defaults = {}
 
-    if key not in builtin_functions and export and hasattr(warp, key):
-        # Overload stubs exist only for auto-complete and may be replaced.
-        if getattr(warp, key).__name__ != "_overload_dummy":
-            raise RuntimeError(f"Trying to register builtin function '{key}' that would overwrite existing object.")
-
     # Add specialized versions of this builtin if it's generic by matching arguments against
     # hard coded types. We do this so you can use hard coded warp types outside kernels:
     if export_func is not None:
@@ -2291,18 +2286,23 @@ def add_builtin(
         compile_family=compile_family,
     )
 
-    if key in builtin_functions:
-        builtin_functions[key].add_overload(func)
-    else:
-        builtin_functions[key] = func
-
-        # export means the function will be added to the `warp` module namespace
-        # so that users can call it directly from the Python interpreter
-        if export:
-            setattr(warp, key, func)
-
     global _compile_family_schema_hash
     with _compile_family_schema_lock:
+        if key not in builtin_functions and export and hasattr(warp, key):
+            # Overload stubs exist only for auto-complete and may be replaced.
+            if getattr(getattr(warp, key), "__name__", None) != "_overload_dummy":
+                raise RuntimeError(f"Trying to register builtin function '{key}' that would overwrite existing object.")
+
+        if key in builtin_functions:
+            builtin_functions[key].add_overload(func)
+        else:
+            builtin_functions[key] = func
+
+            # export means the function will be added to the `warp` module namespace
+            # so that users can call it directly from the Python interpreter
+            if export:
+                setattr(warp, key, func)
+
         _compile_family_schema_hash = None
 
     return func
@@ -2320,10 +2320,12 @@ def register_api_function(
         group: Classification used for the documentation.
         hidden: Whether to add that function into the documentation.
     """
-    function.group = group
-    function.hidden = hidden
-
-    builtin_functions[function.key] = function
+    global _compile_family_schema_hash
+    with _compile_family_schema_lock:
+        function.group = group
+        function.hidden = hidden
+        builtin_functions[function.key] = function
+        _compile_family_schema_hash = None
 
 
 # global dictionary of modules
