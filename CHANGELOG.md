@@ -142,6 +142,10 @@
   instead of node coordinates in Warp FEM kernels ([GH-1685](https://github.com/NVIDIA/warp/issues/1685)).
 - Reject malformed APIC `.wrp` memory sections containing duplicate region IDs
   or out-of-bounds initial data during graph loading.
+- Report the shared memory a tile kernel can actually use when its request does not fit, rather than the device
+  maximum, which could name a limit larger than the request it rejected. A kernel that cannot launch for this reason
+  now raises an error naming the shortfall and `block_dim` on every launch, instead of warning once and then failing
+  with a generic CUDA error ([GH-1701](https://github.com/NVIDIA/warp/issues/1701)).
 
 ### Documentation
 

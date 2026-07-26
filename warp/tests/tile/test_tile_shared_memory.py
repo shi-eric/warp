@@ -1,11 +1,18 @@
 # SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import contextlib
+import io
+import re
 import unittest
+import warnings
+from unittest import mock
 
 import numpy as np
 
 import warp as wp
+import warp._src.context as warp_context
+from warp._src.context import _smem_shortfall_clause
 from warp.tests.unittest_utils import *
 
 
@@ -79,6 +86,329 @@ def test_tile_shared_mem_large(test, device):
 
     assert hooks.forward_smem_bytes == expected_forward_bytes
     assert hooks.backward_smem_bytes == expected_backward_bytes
+
+
+# checks that the static shared memory query reports the per-block reservation
+def test_tile_static_shared_memory_query(test, device):
+    DIM_M = 32
+    DIM_N = 32
+
+    BLOCK_DIM = 64
+
+    @wp.kernel(enable_backward=False, module="unique")
+    def compute(out: wp.array2d[float]):
+        t = wp.tile_zeros(shape=(DIM_M, DIM_N), dtype=float, storage="shared")
+        wp.tile_store(out, t)
+
+    out = wp.zeros((DIM_M, DIM_N), dtype=float, device=device)
+    wp.launch_tiled(compute, dim=[1], inputs=[out], block_dim=BLOCK_DIM, device=device)
+
+    module_exec = compute.module.load(device, BLOCK_DIM)
+    hooks = module_exec.get_kernel_hooks(compute)
+
+    static_bytes = warp_context.runtime.core.wp_cuda_get_kernel_static_shared_memory(device.context, hooks.forward)
+
+    # every tile kernel reserves at least one unsigned int per thread for smem_base
+    # (warp/native/tile.h); kernels pulling in tile_cholesky.h, bvh.h, tile_mesh.h, or
+    # tile_radix_sort.h reserve more on top of that
+    test.assertGreaterEqual(static_bytes, 4 * BLOCK_DIM)
+    test.assertLess(static_bytes, device.max_shared_memory_per_block)
+
+    # a null kernel handle reports failure rather than a plausible-looking zero
+    test.assertEqual(warp_context.runtime.core.wp_cuda_get_kernel_static_shared_memory(device.context, None), -1)
+
+
+@contextlib.contextmanager
+def quiet_native_errors():
+    """Silence the native library's stderr echo of an expected CUDA error.
+
+    The echo comes from C, so ``contextlib.redirect_stderr`` cannot intercept it. The error
+    string itself is still recorded, so callers of ``get_error_string()`` are unaffected.
+    """
+    saved = warp_context.runtime.core.wp_is_error_output_enabled()
+    warp_context.runtime.core.wp_set_error_output_enabled(False)
+    try:
+        yield
+    finally:
+        warp_context.runtime.core.wp_set_error_output_enabled(saved)
+
+
+# checks that the over-budget warning names a maximum the kernel can actually reach
+def test_tile_shared_mem_overflow_message(test, device):
+    BLOCK_DIM = 64
+
+    # A request of the full device maximum cannot fit, because every tile kernel also
+    # reserves static shared memory. Sizing from the device keeps this true on every
+    # architecture, where the maximum ranges from 101,376 to 232,448 bytes.
+    TILE_N = device.max_shared_memory_per_block // 4
+
+    @wp.kernel(enable_backward=False, module="unique")
+    def compute(out: wp.array[float]):
+        t = wp.tile_zeros(shape=TILE_N, dtype=float, storage="shared")
+        wp.tile_store(out, t)
+
+    out = wp.zeros(TILE_N, dtype=float, device=device)
+
+    # Warp's default logger routes warnings through its own showwarning, so capture
+    # stderr rather than warnings.catch_warnings(record=True), which never sees them.
+    with warnings.catch_warnings(), contextlib.redirect_stderr(io.StringIO()) as stderr:
+        warnings.simplefilter("always")
+        module_exec = compute.module.load(device, BLOCK_DIM)
+        hooks = module_exec.get_kernel_hooks(compute)
+
+    messages = [line for line in stderr.getvalue().splitlines() if "shared memory" in line]
+    test.assertEqual(len(messages), 1, f"expected one shared memory warning, got {messages}")
+    warning = messages[0]
+
+    test.assertIn("(forward)", warning)
+    test.assertIn(f"block_dim={BLOCK_DIM}", warning)
+    test.assertIn(f"requests {hooks.forward_smem_bytes} bytes", warning)
+
+    # the reported maximum must be the budget the kernel can reach, not the device limit
+    available = int(re.search(r"only (\d+) bytes are available", warning).group(1))
+    static = int(re.search(r"minus (\d+) bytes of static", warning).group(1))
+    test.assertGreater(static, 0)
+    test.assertEqual(available, device.max_shared_memory_per_block - static)
+    test.assertLess(available, hooks.forward_smem_bytes)
+
+    test.assertIsNotNone(hooks.forward_smem_error)
+    # Verify that the stored error is the clause fragment, not the entire warning line.
+    # A regression storing the full warning would pass this test gate and produce doubled messages.
+    test.assertTrue(hooks.forward_smem_error.startswith("but only "))
+    test.assertNotIn("Failed to configure", hooks.forward_smem_error)
+    test.assertIsNone(hooks.backward_smem_error)
+
+    # every launch reports the shortfall, not just the first: the warning above fires once
+    # because get_kernel_hooks caches, so the error is the only diagnostic from launch two on
+    for attempt in range(2):
+        with quiet_native_errors(), test.assertRaises(RuntimeError) as raised:
+            wp.launch_tiled(compute, dim=[1], inputs=[out], block_dim=BLOCK_DIM, device=device)
+
+        message = str(raised.exception)
+        test.assertIn("forward kernel requests", message, f"attempt {attempt}")
+        test.assertIn("dynamic shared memory", message, f"attempt {attempt}")
+        test.assertIn(f"block_dim={BLOCK_DIM}", message, f"attempt {attempt}")
+        test.assertIn("tile-shared-memory-budget", message, f"attempt {attempt}")
+        test.assertNotIn("invalid argument", message, f"attempt {attempt}")
+
+
+# checks that a forward kernel that fits is not blamed for a backward kernel that does not
+def test_tile_shared_mem_backward_overflow_message(test, device):
+    BLOCK_DIM = 64
+
+    # The backward kernel needs twice the owning-tile bytes (Adjoint.get_total_required_shared_backward),
+    # so 60% of the device maximum fits going forward and overflows coming back.
+    TILE_N = int(device.max_shared_memory_per_block * 0.6) // 4
+
+    @wp.kernel(module="unique")
+    def compute(inp: wp.array[float], out: wp.array[float]):
+        t = wp.tile_load(inp, shape=TILE_N, storage="shared")
+        wp.tile_store(out, t)
+
+    inp = wp.ones(TILE_N, dtype=float, requires_grad=True, device=device)
+    out = wp.zeros(TILE_N, dtype=float, requires_grad=True, device=device)
+
+    with warnings.catch_warnings(), contextlib.redirect_stderr(io.StringIO()) as stderr:
+        warnings.simplefilter("always")
+        module_exec = compute.module.load(device, BLOCK_DIM)
+        hooks = module_exec.get_kernel_hooks(compute)
+
+    # the premise of this test: forward fits, backward is exactly twice as large
+    test.assertEqual(hooks.backward_smem_bytes, 2 * hooks.forward_smem_bytes)
+    test.assertIsNone(hooks.forward_smem_error)
+    test.assertIsNotNone(hooks.backward_smem_error)
+    # Verify that the stored error is the clause fragment, not the entire warning line.
+    # A regression storing the full warning would pass this test gate and produce doubled messages.
+    test.assertTrue(hooks.backward_smem_error.startswith("but only "))
+    test.assertNotIn("Failed to configure", hooks.backward_smem_error)
+
+    messages = [line for line in stderr.getvalue().splitlines() if "shared memory" in line]
+    test.assertEqual(len(messages), 1, f"expected one shared memory warning, got {messages}")
+    test.assertIn("(backward)", messages[0])
+
+    # the forward kernel still runs
+    wp.launch_tiled(compute, dim=[1], inputs=[inp], outputs=[out], block_dim=BLOCK_DIM, device=device)
+    assert_np_equal(out.numpy(), np.ones(TILE_N, dtype=np.float32))
+
+    # only the backward kernel fails, and it says why
+    tape = wp.Tape()
+    with tape:
+        wp.launch_tiled(compute, dim=[1], inputs=[inp], outputs=[out], block_dim=BLOCK_DIM, device=device)
+
+    out.grad = wp.ones(TILE_N, dtype=float, device=device)
+    with quiet_native_errors(), test.assertRaises(RuntimeError) as raised:
+        tape.backward()
+
+    message = str(raised.exception)
+    test.assertIn("backward kernel requests", message)
+    test.assertIn("dynamic shared memory", message)
+    test.assertNotIn("invalid argument", message)
+
+
+# checks that an unreadable static size leaves the warning generic instead of naming a wrong budget
+def test_tile_shared_mem_unknown_static_message(test, device):
+    BLOCK_DIM = 64
+
+    # same over-budget request as test_tile_shared_mem_overflow_message, so the configure
+    # call genuinely fails; only the static shared memory query is faulted
+    TILE_N = device.max_shared_memory_per_block // 4
+
+    @wp.kernel(enable_backward=False, module="unique")
+    def compute(out: wp.array[float]):
+        t = wp.tile_zeros(shape=TILE_N, dtype=float, storage="shared")
+        wp.tile_store(out, t)
+
+    out = wp.zeros(TILE_N, dtype=float, device=device)
+
+    # this kernel is unique to this test, so its hooks are resolved for the first time inside
+    # the patch; a cached ModuleExec would skip the configure path and assert nothing
+    with (
+        mock.patch.object(
+            warp_context.runtime.core, "wp_cuda_get_kernel_static_shared_memory", return_value=-1
+        ) as static_query,
+        warnings.catch_warnings(),
+        contextlib.redirect_stderr(io.StringIO()) as stderr,
+    ):
+        warnings.simplefilter("always")
+        module_exec = compute.module.load(device, BLOCK_DIM)
+        hooks = module_exec.get_kernel_hooks(compute)
+
+    # the premise of this test: the configure failed and the static size came back unknown
+    test.assertEqual(static_query.call_count, 1)
+
+    messages = [line for line in stderr.getvalue().splitlines() if "shared memory" in line]
+    test.assertEqual(len(messages), 1, f"expected one shared memory warning, got {messages}")
+    warning = messages[0]
+
+    test.assertIn(f"Failed to configure {hooks.forward_smem_bytes} bytes", warning)
+    test.assertIn("(forward)", warning)
+
+    # with no static size there is no budget to report, so the warning must not name one
+    test.assertNotIn("bytes are available", warning)
+    test.assertNotIn("block_dim=", warning)
+
+    # and nothing is retained for the launch failure to blame on shared memory
+    test.assertIsNone(hooks.forward_smem_error)
+    test.assertIsNone(hooks.backward_smem_error)
+
+
+# checks that a launch failure with no recorded shortfall keeps the generic CUDA error
+def test_tile_shared_mem_launch_error_without_shortfall(test, device):
+    BLOCK_DIM = 64
+
+    # same over-budget request as test_tile_shared_mem_overflow_message, so the configure
+    # genuinely fails and every launch fails with it; faulting only the static shared memory
+    # query leaves no shortfall clause, which is also what an unrelated driver failure looks like
+    TILE_N = device.max_shared_memory_per_block // 4
+
+    @wp.kernel(enable_backward=False, module="unique")
+    def compute(out: wp.array[float]):
+        t = wp.tile_zeros(shape=TILE_N, dtype=float, storage="shared")
+        wp.tile_store(out, t)
+
+    out = wp.zeros(TILE_N, dtype=float, device=device)
+
+    # this kernel is unique to this test, so its hooks are resolved for the first time inside
+    # the patch; a cached ModuleExec would skip the configure path and assert nothing
+    with (
+        mock.patch.object(
+            warp_context.runtime.core, "wp_cuda_get_kernel_static_shared_memory", return_value=-1
+        ) as static_query,
+        warnings.catch_warnings(),
+        contextlib.redirect_stderr(io.StringIO()),
+    ):
+        warnings.simplefilter("always")
+        module_exec = compute.module.load(device, BLOCK_DIM)
+        hooks = module_exec.get_kernel_hooks(compute)
+
+    # the premise of this test: the configure failed and left nothing to blame on shared memory
+    test.assertEqual(static_query.call_count, 1)
+    test.assertIsNone(hooks.forward_smem_error)
+
+    # the launch fails, and the driver's own error is reported unembellished
+    with quiet_native_errors(), test.assertRaises(RuntimeError) as raised:
+        wp.launch_tiled(compute, dim=[1], inputs=[out], block_dim=BLOCK_DIM, device=device)
+
+    message = str(raised.exception)
+    test.assertIn("Error launching kernel", message)
+    test.assertIn("invalid argument", message)
+    test.assertNotIn("dynamic shared memory", message)
+    test.assertNotIn("bytes are available", message)
+    test.assertNotIn("tile-shared-memory-budget", message)
+
+
+# checks that a failed occupancy query explains an over-budget kernel too
+def test_tile_shared_mem_occupancy_query_message(test, device):
+    TILE_N = device.max_shared_memory_per_block // 4
+
+    @wp.kernel(enable_backward=False, module="unique")
+    def compute(out: wp.array[float]):
+        t = wp.tile_zeros(shape=TILE_N, dtype=float, storage="shared")
+        wp.tile_store(out, t)
+
+    # get_suggested_block_size loads at the module's default block_dim, so resolve the hooks the
+    # same way here and swallow the load-time warning
+    with warnings.catch_warnings(), contextlib.redirect_stderr(io.StringIO()):
+        warnings.simplefilter("always")
+        hooks = compute.module.load(device).get_kernel_hooks(compute)
+
+    test.assertIsNotNone(hooks.forward_smem_error)
+
+    # cuOccupancyMaxPotentialBlockSize reports success with a block size of zero on some drivers
+    # rather than failing, so fault the query itself to reach the failure branch
+    with (
+        mock.patch.object(warp_context.runtime.core, "wp_cuda_get_suggested_block_size", return_value=False),
+        test.assertRaises(RuntimeError) as raised,
+    ):
+        wp.get_suggested_block_size(compute, device=device)
+
+    message = str(raised.exception)
+    test.assertIn("CUDA occupancy query failed", message)
+    test.assertIn(f"forward kernel requests {hooks.forward_smem_bytes} bytes", message)
+    test.assertIn(hooks.forward_smem_error, message)
+    test.assertIn("tile-shared-memory-budget", message)
+
+
+# checks that deterministic mode's separate launch path explains an over-budget kernel too
+def test_tile_shared_mem_deterministic_launch_message(test, device):
+    BLOCK_DIM = 64
+
+    TILE_N = device.max_shared_memory_per_block // 4
+
+    # The scatter atomic is what routes this launch through launch_deterministic, which owns a
+    # launch site of its own. Setting the mode per module keeps it off warp.config.
+    @wp.kernel(
+        enable_backward=False,
+        module="unique",
+        module_options={"deterministic": wp.DeterministicMode.RUN_TO_RUN},
+    )
+    def compute(out: wp.array[float], dest: wp.array[int], acc: wp.array[float]):
+        t = wp.tile_zeros(shape=TILE_N, dtype=float, storage="shared")
+        wp.tile_store(out, t)
+        wp.atomic_add(acc, dest[0], 1.0)
+
+    out = wp.zeros(TILE_N, dtype=float, device=device)
+    dest = wp.zeros(1, dtype=int, device=device)
+    acc = wp.zeros(1, dtype=float, device=device)
+
+    with warnings.catch_warnings(), contextlib.redirect_stderr(io.StringIO()):
+        warnings.simplefilter("always")
+        hooks = compute.module.load(device, BLOCK_DIM).get_kernel_hooks(compute)
+
+    # the premise of this test: the request is over budget, and launch() dispatches on exactly
+    # these two conditions, so meeting them is what proves the deterministic path is taken
+    test.assertIsNotNone(hooks.forward_smem_error)
+    test.assertIsNotNone(hooks.det_launch_meta)
+    test.assertTrue(hooks.det_launch_meta.needs_deterministic)
+
+    with quiet_native_errors(), test.assertRaises(RuntimeError) as raised:
+        wp.launch_tiled(compute, dim=[1], inputs=[out, dest, acc], block_dim=BLOCK_DIM, device=device)
+
+    message = str(raised.exception)
+    test.assertIn("forward kernel requests", message)
+    test.assertIn(hooks.forward_smem_error, message)
+    test.assertIn("tile-shared-memory-budget", message)
+    test.assertNotIn("invalid argument", message)
 
 
 # checks that we can configure dynamic shared memory during graph capture
@@ -967,6 +1297,12 @@ add_function_test(
 add_function_test(
     TestTileSharedMemory, "test_tile_shared_mem_large", test_tile_shared_mem_large, devices=devices, check_output=False
 )
+add_function_test(
+    TestTileSharedMemory,
+    "test_tile_static_shared_memory_query",
+    test_tile_static_shared_memory_query,
+    devices=devices,
+)
 add_function_test(TestTileSharedMemory, "test_tile_shared_mem_graph", test_tile_shared_mem_graph, devices=devices)
 add_function_test(TestTileSharedMemory, "test_tile_shared_mem_func", test_tile_shared_mem_func, devices=devices)
 add_function_test(TestTileSharedMemory, "test_tile_shared_non_aligned", test_tile_shared_non_aligned, devices=devices)
@@ -1081,6 +1417,65 @@ add_function_test(
     test_tile_custom_grad_shared_forward,
     devices=devices,
 )
+add_function_test(
+    TestTileSharedMemory,
+    "test_tile_shared_mem_overflow_message",
+    test_tile_shared_mem_overflow_message,
+    devices=devices,
+)
+add_function_test(
+    TestTileSharedMemory,
+    "test_tile_shared_mem_backward_overflow_message",
+    test_tile_shared_mem_backward_overflow_message,
+    devices=devices,
+)
+add_function_test(
+    TestTileSharedMemory,
+    "test_tile_shared_mem_unknown_static_message",
+    test_tile_shared_mem_unknown_static_message,
+    devices=devices,
+)
+add_function_test(
+    TestTileSharedMemory,
+    "test_tile_shared_mem_launch_error_without_shortfall",
+    test_tile_shared_mem_launch_error_without_shortfall,
+    devices=devices,
+)
+add_function_test(
+    TestTileSharedMemory,
+    "test_tile_shared_mem_occupancy_query_message",
+    test_tile_shared_mem_occupancy_query_message,
+    devices=devices,
+)
+add_function_test(
+    TestTileSharedMemory,
+    "test_tile_shared_mem_deterministic_launch_message",
+    test_tile_shared_mem_deterministic_launch_message,
+    devices=devices,
+)
+
+
+class TestTileSharedMemoryMessages(unittest.TestCase):
+    """Message formatting for over-budget shared memory requests, independent of any device."""
+
+    def test_clause_reports_budget_net_of_static_reservation(self):
+        clause = _smem_shortfall_clause(block_dim=256, requested=101120, static=1024, device_max=101376)
+
+        self.assertEqual(
+            clause,
+            "but only 100352 bytes are available at block_dim=256 (device limit 101376 bytes, "
+            "minus 1024 bytes of static shared memory this kernel reserves)",
+        )
+
+    def test_clause_none_when_request_fits(self):
+        # The same 101120 byte request that overflows at block_dim=256 fits at block_dim=64,
+        # where the static reservation is 256 bytes rather than 1024. cuFuncSetAttribute can
+        # fail for reasons other than overflow, and those must not be blamed on shared memory.
+        self.assertIsNone(_smem_shortfall_clause(block_dim=64, requested=101120, static=256, device_max=101376))
+
+    def test_clause_none_when_static_query_failed(self):
+        self.assertIsNone(_smem_shortfall_clause(block_dim=256, requested=101120, static=-1, device_max=101376))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2, failfast=True)
