@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "rand.h"
 #include "vec.h"
 
 #ifndef M_PI_F

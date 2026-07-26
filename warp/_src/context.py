@@ -256,14 +256,14 @@ class Function:
         skip_adding_overload: bool = False,
         require_original_output_arg: bool = False,
         scope_locals: dict[str, Any] | None = None,
-        compile_guard=None,
+        compile_family: warp._src.codegen.CompileFamily | None = None,
     ):
         if code_transformers is None:
             code_transformers = []
 
         self.func = func  # points to Python function decorated with @wp.func, may be None for builtins
         self.key = key
-        self.compile_guard = compile_guard
+        self.compile_family = compile_family
         self.namespace = namespace
         self.value_type = value_type
         self.value_func = value_func  # a function that takes a list of args and a list of templates and returns the value type, e.g.: load(array, index) returns the type of value being loaded
@@ -1987,6 +1987,7 @@ def overload(kernel: Kernel | Callable, arg_types: dict[str, Any] | list[Any] | 
 
 # native functions that are part of the Warp API
 builtin_functions: dict[str, Function] = {}
+_UNSET_COMPILE_FAMILY = object()
 
 
 def get_generic_vtypes():
@@ -2028,7 +2029,7 @@ def add_builtin(
     native_func: str | None = None,
     defaults: dict[str, Any] | None = None,
     require_original_output_arg: bool = False,
-    compile_guard: str | None = None,
+    compile_family: warp._src.codegen.CompileFamily | None | object = _UNSET_COMPILE_FAMILY,
 ):
     """Main entry point to register a new built-in function.
 
@@ -2079,12 +2080,13 @@ def add_builtin(
         require_original_output_arg: Used during the codegen stage to
             specify whether an adjoint parameter corresponding to the return
             value should be included in the signature of the backward function.
-        compile_guard: ``WP_NO_XXX`` guard string indicating which C++
-            header this builtin requires. ``None`` (default) means always
-            included. Validated against ``VALID_COMPILE_GUARDS``.
+        compile_family: Positive native feature family required by this
+            builtin. Explicit ``None`` means the builtin is unconditional.
     """
-    if compile_guard not in warp._src.codegen.VALID_COMPILE_GUARDS:
-        raise ValueError(f"add_builtin({key!r}): compile_guard={compile_guard!r} is not in VALID_COMPILE_GUARDS")
+    if compile_family is _UNSET_COMPILE_FAMILY:
+        raise ValueError(f"add_builtin({key!r}) requires compile_family")
+    if compile_family is not None and not isinstance(compile_family, warp._src.codegen.CompileFamily):
+        raise ValueError(f"add_builtin({key!r}): compile_family must be CompileFamily or None")
 
     if input_types is None:
         input_types = {}
@@ -2194,7 +2196,7 @@ def add_builtin(
                 # finally we can generate a function call for these concrete types:
                 add_builtin(
                     key,
-                    compile_guard=compile_guard,
+                    compile_family=compile_family,
                     input_types=concrete_arg_types,
                     value_type=return_type,
                     value_func=value_func if return_type is Any else None,
@@ -2236,7 +2238,7 @@ def add_builtin(
         native_func=native_func,
         defaults=defaults,
         require_original_output_arg=require_original_output_arg,
-        compile_guard=compile_guard,
+        compile_family=compile_family,
     )
 
     if key in builtin_functions:
@@ -2256,6 +2258,8 @@ def add_builtin(
                     )
 
             setattr(warp, key, func)
+
+    return func
 
 
 def register_api_function(
@@ -2769,7 +2773,7 @@ class ModuleBuilder:
         self.ltoirs = {}  # map from lto symbol to lto binary
         self.ltoirs_decl = {}  # map from lto symbol to lto forward declaration
         self.shared_memory_bytes = {}  # map from lto symbol to shared memory requirements
-        self.required_guards: set[str] = set()
+        self.required_families: set[warp._src.codegen.CompileFamily] = set()
 
         if hasher is None:
             hasher = ModuleHasher(module._get_live_kernels(), options)
@@ -2789,18 +2793,18 @@ class ModuleBuilder:
         # propagate callee replay/reverse shared-memory needs into backward-kernel sizing
         self._propagate_backward_shared_memory()
 
-    def require_guard(self, guard):
-        """Mark a compile guard as needed by this module."""
-        if guard is not None:  # None means always included
-            if guard not in warp._src.codegen.VALID_COMPILE_GUARDS:
-                raise ValueError(f"require_guard: unknown guard {guard!r}")
-            self.required_guards.add(guard)
+    def require_family(self, family: warp._src.codegen.CompileFamily | None) -> None:
+        """Mark a positive compile family as needed by this module."""
+        if family is not None:
+            if not isinstance(family, warp._src.codegen.CompileFamily):
+                raise ValueError(f"require_family: unknown family {family!r}")
+            self.required_families.add(family)
 
-    def _inspect_type_for_guards(self, t):
-        """Inspect a Warp type and mark the features it needs so their guards are not emitted.
+    def _inspect_type_for_families(self, t):
+        """Inspect a Warp type and mark the native families it requires.
 
-        Uses the _GENERIC_TYPE_GUARDS and _SCALAR_TYPE_GUARDS tables from
-        codegen.py so the type-to-guard mapping is defined in one place.
+        Uses the _GENERIC_TYPE_FAMILIES and _SCALAR_TYPE_FAMILIES tables from
+        codegen.py so the type-to-family mapping is defined in one place.
         """
         import warp._src.types as warp_types  # noqa: PLC0415
 
@@ -2811,16 +2815,16 @@ class ModuleBuilder:
 
         # Check generic type string (vec_t, mat_t, quat_t, transform_t)
         generic = getattr(dtype, "_wp_generic_type_str_", None)
-        guard = warp._src.codegen._GENERIC_TYPE_GUARDS.get(generic)
-        if guard is not None:
-            self.require_guard(guard)
+        family = warp._src.codegen._GENERIC_TYPE_FAMILIES.get(generic)
+        if family is not None:
+            self.require_family(family)
 
         # Check scalar type name (float16, float64)
         scalar = getattr(dtype, "_wp_scalar_type_", dtype)
         scalar_name = getattr(scalar, "__name__", None) or getattr(scalar, "_type_", None)
-        guard = warp._src.codegen._SCALAR_TYPE_GUARDS.get(scalar_name)
-        if guard is not None:
-            self.require_guard(guard)
+        family = warp._src.codegen._SCALAR_TYPE_FAMILIES.get(scalar_name)
+        if family is not None:
+            self.require_family(family)
 
     def build_struct_recursive(self, struct: warp._src.codegen.Struct):
         structs = []
@@ -2832,7 +2836,7 @@ class ModuleBuilder:
             structs.append(s)
 
             for var in s.vars.values():
-                self._inspect_type_for_guards(var.type)
+                self._inspect_type_for_families(var.type)
                 if isinstance(var.type, warp._src.codegen.Struct):
                     stack.append(var.type)
                 elif warp._src.types.is_array(var.type) and isinstance(var.type.dtype, warp._src.codegen.Struct):
@@ -2915,9 +2919,9 @@ class ModuleBuilder:
 
         kernel.adj.build(self)
 
-        # Inspect kernel argument types for compile guards
+        # Inspect kernel argument types for compile families
         for arg in kernel.adj.args:
-            self._inspect_type_for_guards(arg.type)
+            self._inspect_type_for_families(arg.type)
 
         if kernel.adj.return_var is not None:
             raise WarpCodegenTypeError(f"'{kernel.key}': {_KERNEL_RETURN_ERROR}")
@@ -2928,12 +2932,12 @@ class ModuleBuilder:
         else:
             func.build(self)
 
-            # Inspect function argument and return types for compile guards
+            # Inspect function argument and return types for compile families
             for arg in func.adj.args:
-                self._inspect_type_for_guards(arg.type)
+                self._inspect_type_for_families(arg.type)
             if func.adj.return_var is not None:
                 for var in func.adj.return_var:
-                    self._inspect_type_for_guards(var.type)
+                    self._inspect_type_for_families(var.type)
 
             # use dict to preserve import order
             self.functions[func] = None
@@ -3134,8 +3138,8 @@ class ModuleBuilder:
         # Safety net: scan source for type patterns that builtin annotations
         # and arg inspection may miss (e.g. user-defined functions that create
         # vec/mat/quat types internally, or types from wp.constant).
-        warp._src.codegen.scan_source_for_guards(source, self.required_guards)
-        compile_guards = warp._src.codegen.compute_compile_guards(self.required_guards)
+        warp._src.codegen.scan_source_for_families(source, self.required_families)
+        compile_family_macros = warp._src.codegen.emit_compile_family_macros(self.required_families)
 
         # When backward mode is disabled for the module AND no kernel
         # overrides it, define WP_NO_BACKWARD so that native headers can
@@ -3145,7 +3149,7 @@ class ModuleBuilder:
             (self.options | k.options).get("enable_backward", True) for k in self.kernels
         )
         if not module_backward and not any_kernel_backward:
-            compile_guards = "#define WP_NO_BACKWARD\n" + compile_guards
+            compile_family_macros = "#define WP_NO_BACKWARD\n" + compile_family_macros
 
         if device == "cpu":
             source = (
@@ -3153,7 +3157,7 @@ class ModuleBuilder:
                 +
                 warp._src.codegen.cpu_module_header.format(
                     block_dim=self.options["block_dim"],
-                    compile_guards=compile_guards,
+                    compile_family_macros=compile_family_macros,
                 )
                 + source
             )
@@ -3163,7 +3167,7 @@ class ModuleBuilder:
                 +
                 warp._src.codegen.cuda_module_header.format(
                     block_dim=self.options["block_dim"],
-                    compile_guards=compile_guards,
+                    compile_family_macros=compile_family_macros,
                 )
                 + source
             )

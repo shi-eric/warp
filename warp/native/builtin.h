@@ -1834,9 +1834,7 @@ DECLARE_ADJOINTS(bfloat16)
 #endif
 #endif
 DECLARE_ADJOINTS(float32)
-#ifndef WP_NO_FLOAT64_OPS
 DECLARE_ADJOINTS(float64)
-#endif
 #endif  // WP_NO_BACKWARD
 
 template <typename C, typename T> CUDA_CALLABLE inline T where(const C& cond, const T& a, const T& b)
@@ -2677,9 +2675,7 @@ DECLARE_INTERP_FWD_FUNCS(bfloat16)
 #endif
 #endif
 DECLARE_INTERP_FWD_FUNCS(float32)
-#ifndef WP_NO_FLOAT64_OPS
 DECLARE_INTERP_FWD_FUNCS(float64)
-#endif
 
 #ifndef WP_NO_BACKWARD
 #ifndef WP_NO_FLOAT16_OPS
@@ -2689,9 +2685,7 @@ DECLARE_INTERP_ADJ_FUNCS(bfloat16)
 #endif
 #endif
 DECLARE_INTERP_ADJ_FUNCS(float32)
-#ifndef WP_NO_FLOAT64_OPS
 DECLARE_INTERP_ADJ_FUNCS(float64)
-#endif
 #endif  // WP_NO_BACKWARD
 
 inline CUDA_CALLABLE void print(const str s) { printf("%s\n", s); }
@@ -2826,10 +2820,8 @@ inline CUDA_CALLABLE void expect_near(const vec3& actual, const vec3& expected, 
 #include "texture.h"
 #endif
 #include "range.h"
-#ifndef WP_NO_RAND
+#ifndef WP_NO_STOCHASTIC
 #include "rand.h"
-#endif
-#ifndef WP_NO_NOISE
 #include "noise.h"
 #endif
 #include "matnn.h"

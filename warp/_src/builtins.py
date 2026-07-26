@@ -10,6 +10,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 import warp._src.build
+import warp._src.codegen
 import warp._src.context
 from warp._src.codegen import Var, get_arg_value
 from warp._src.logger import log_warning
@@ -80,6 +81,7 @@ def static_len_value_func(arg_types: Mapping[str, type], arg_values: Mapping[str
 
 add_builtin(
     "min",
+    compile_family=None,
     input_types={"a": Scalar, "b": Scalar},
     value_func=sametypes_create_value_func(Scalar),
     doc="""Compute the minimum value.
@@ -92,6 +94,7 @@ add_builtin(
 
 add_builtin(
     "max",
+    compile_family=None,
     input_types={"a": Scalar, "b": Scalar},
     value_func=sametypes_create_value_func(Scalar),
     doc="""Compute the maximum value.
@@ -104,6 +107,7 @@ add_builtin(
 
 add_builtin(
     "clamp",
+    compile_family=None,
     input_types={"x": Scalar, "low": Scalar, "high": Scalar},
     value_func=sametypes_create_value_func(Scalar),
     doc="""Clamp the value of ``x`` to the range [low, high].
@@ -116,6 +120,7 @@ add_builtin(
 
 add_builtin(
     "abs",
+    compile_family=None,
     input_types={"x": Scalar},
     value_func=sametypes_create_value_func(Scalar),
     doc="Compute the absolute value of ``x``.",
@@ -123,6 +128,7 @@ add_builtin(
 )
 add_builtin(
     "sign",
+    compile_family=None,
     input_types={"x": Scalar},
     value_func=sametypes_create_value_func(Scalar),
     doc="""Compute the sign of ``x``.
@@ -148,6 +154,7 @@ add_builtin(
 
 add_builtin(
     "step",
+    compile_family=None,
     input_types={"x": Scalar},
     value_func=sametypes_create_value_func(Scalar),
     doc="Compute 1.0 if ``x`` < 0.0, otherwise 0.0.",
@@ -156,6 +163,7 @@ add_builtin(
 )
 add_builtin(
     "nonzero",
+    compile_family=None,
     input_types={"x": Scalar},
     value_func=sametypes_create_value_func(Scalar),
     doc="Compute 1.0 if ``x`` is not equal to zero, otherwise 0.0.",
@@ -165,6 +173,7 @@ add_builtin(
 
 add_builtin(
     "sin",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the sine of ``x`` in radians.",
@@ -172,6 +181,7 @@ add_builtin(
 )
 add_builtin(
     "cos",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the cosine of ``x`` in radians.",
@@ -179,6 +189,7 @@ add_builtin(
 )
 add_builtin(
     "acos",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="""Compute arccos of ``x`` in radians.
@@ -188,6 +199,7 @@ add_builtin(
 )
 add_builtin(
     "asin",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="""Compute arcsin of ``x`` in radians.
@@ -197,6 +209,7 @@ add_builtin(
 )
 add_builtin(
     "sqrt",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the square root of ``x``, where ``x`` is positive.",
@@ -205,6 +218,7 @@ add_builtin(
 )
 add_builtin(
     "cbrt",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the cube root of ``x``.",
@@ -213,6 +227,7 @@ add_builtin(
 )
 add_builtin(
     "tan",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the tangent of ``x`` in radians.",
@@ -220,6 +235,7 @@ add_builtin(
 )
 add_builtin(
     "atan",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the arctangent of ``x`` in radians.",
@@ -227,6 +243,7 @@ add_builtin(
 )
 add_builtin(
     "atan2",
+    compile_family=None,
     input_types={"y": Float, "x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the 2-argument arctangent, atan2, of the point ``(x, y)`` in radians.",
@@ -234,6 +251,7 @@ add_builtin(
 )
 add_builtin(
     "sinh",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the sinh of ``x``.",
@@ -241,6 +259,7 @@ add_builtin(
 )
 add_builtin(
     "cosh",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the cosh of ``x``.",
@@ -248,6 +267,7 @@ add_builtin(
 )
 add_builtin(
     "tanh",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the tanh of ``x``.",
@@ -256,6 +276,7 @@ add_builtin(
 )
 add_builtin(
     "degrees",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Convert ``x`` from radians into degrees.",
@@ -263,6 +284,7 @@ add_builtin(
 )
 add_builtin(
     "radians",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Convert ``x`` from degrees into radians.",
@@ -271,6 +293,7 @@ add_builtin(
 
 add_builtin(
     "log",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the natural logarithm (base-e) of ``x``, where ``x`` is positive.",
@@ -278,6 +301,7 @@ add_builtin(
 )
 add_builtin(
     "log2",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the binary logarithm (base-2) of ``x``, where ``x`` is positive.",
@@ -285,6 +309,7 @@ add_builtin(
 )
 add_builtin(
     "log10",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the common logarithm (base-10) of ``x``, where ``x`` is positive.",
@@ -292,6 +317,7 @@ add_builtin(
 )
 add_builtin(
     "exp",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the value of the exponential function :math:`e^x`.",
@@ -300,6 +326,7 @@ add_builtin(
 )
 add_builtin(
     "pow",
+    compile_family=None,
     input_types={"x": Float, "y": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute ``x`` raised to the power of ``y``.",
@@ -308,6 +335,7 @@ add_builtin(
 )
 add_builtin(
     "erf",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the error function of ``x``.",
@@ -315,6 +343,7 @@ add_builtin(
 )
 add_builtin(
     "erfc",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the complementary error function of ``x``.",
@@ -322,6 +351,7 @@ add_builtin(
 )
 add_builtin(
     "erfinv",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the inverse error function of ``x``.",
@@ -330,6 +360,7 @@ add_builtin(
 )
 add_builtin(
     "erfcinv",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Compute the inverse complementary error function of ``x``.",
@@ -338,6 +369,7 @@ add_builtin(
 )
 add_builtin(
     "round",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     group="Scalar Math",
@@ -351,6 +383,7 @@ add_builtin(
 
 add_builtin(
     "rint",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     group="Scalar Math",
@@ -363,6 +396,7 @@ add_builtin(
 
 add_builtin(
     "trunc",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     group="Scalar Math",
@@ -376,6 +410,7 @@ add_builtin(
 
 add_builtin(
     "floor",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     group="Scalar Math",
@@ -385,6 +420,7 @@ add_builtin(
 
 add_builtin(
     "ceil",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     group="Scalar Math",
@@ -394,6 +430,7 @@ add_builtin(
 
 add_builtin(
     "frac",
+    compile_family=None,
     input_types={"x": Float},
     value_func=sametypes_create_value_func(Float),
     group="Scalar Math",
@@ -406,7 +443,8 @@ add_builtin(
 
 add_builtin(
     "isfinite",
-    input_types={"a": Float},
+    compile_family=None,
+    input_types={"a": Scalar},
     value_type=builtins.bool,
     group="Scalar Math",
     doc="Check if ``a`` is finite.",
@@ -419,7 +457,7 @@ add_builtin(
     group="Vector Math",
     doc="Check if all elements of ``a`` are finite.",
     is_differentiable=False,
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 add_builtin(
     "isfinite",
@@ -428,7 +466,7 @@ add_builtin(
     group="Vector Math",
     doc="Check if all elements of ``a`` are finite.",
     is_differentiable=False,
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 add_builtin(
     "isfinite",
@@ -437,12 +475,13 @@ add_builtin(
     group="Vector Math",
     doc="Check if all elements of ``a`` are finite.",
     is_differentiable=False,
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 add_builtin(
     "isnan",
-    input_types={"a": Float},
+    compile_family=None,
+    input_types={"a": Scalar},
     value_type=builtins.bool,
     group="Scalar Math",
     doc="Check if ``a`` is NaN.",
@@ -455,7 +494,7 @@ add_builtin(
     group="Vector Math",
     doc="Check if any element of ``a`` is NaN.",
     is_differentiable=False,
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 add_builtin(
     "isnan",
@@ -464,7 +503,7 @@ add_builtin(
     group="Vector Math",
     doc="Check if any element of ``a`` is NaN.",
     is_differentiable=False,
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 add_builtin(
     "isnan",
@@ -473,12 +512,13 @@ add_builtin(
     group="Vector Math",
     doc="Check if any element of ``a`` is NaN.",
     is_differentiable=False,
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 add_builtin(
     "isinf",
-    input_types={"a": Float},
+    compile_family=None,
+    input_types={"a": Scalar},
     value_type=builtins.bool,
     group="Scalar Math",
     doc="Check if ``a`` is positive or negative infinity.",
@@ -491,7 +531,7 @@ add_builtin(
     group="Vector Math",
     doc="Check if any element of ``a`` is positive or negative infinity.",
     is_differentiable=False,
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 add_builtin(
     "isinf",
@@ -500,7 +540,7 @@ add_builtin(
     group="Vector Math",
     doc="Check if any element of ``a`` is positive or negative infinity.",
     is_differentiable=False,
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 add_builtin(
     "isinf",
@@ -509,7 +549,7 @@ add_builtin(
     group="Vector Math",
     doc="Check if any element of ``a`` is positive or negative infinity.",
     is_differentiable=False,
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 
@@ -626,7 +666,7 @@ add_builtin(
     value_func=scalar_sametypes_value_func,
     group="Vector Math",
     doc="""Compute the dot product.""",
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 add_builtin(
     "ddot",
@@ -635,7 +675,7 @@ add_builtin(
     value_func=scalar_sametypes_value_func,
     group="Vector Math",
     doc="Compute the double dot product between two matrices.",
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 add_builtin(
@@ -648,7 +688,7 @@ add_builtin(
     Returns:
         The element-wise minimum of ``a`` and ``b``.""",
     group="Vector Math",
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 add_builtin(
     "max",
@@ -660,7 +700,7 @@ add_builtin(
     Returns:
         The element-wise maximum of ``a`` and ``b``.""",
     group="Vector Math",
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 
 add_builtin(
@@ -676,7 +716,7 @@ add_builtin(
     Returns:
         The minimum element of ``a``.""",
     group="Vector Math",
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 add_builtin(
     "max",
@@ -691,7 +731,7 @@ add_builtin(
     Returns:
         The maximum element of ``a``.""",
     group="Vector Math",
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 
 add_builtin(
@@ -704,7 +744,7 @@ add_builtin(
     smallest non-NaN element. If every element is NaN, returns ``0``.""",
     group="Vector Math",
     is_differentiable=False,
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 add_builtin(
     "argmax",
@@ -716,7 +756,7 @@ add_builtin(
     largest non-NaN element. If every element is NaN, returns ``0``.""",
     group="Vector Math",
     is_differentiable=False,
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 
 add_builtin(
@@ -729,7 +769,7 @@ add_builtin(
     Returns:
         The element-wise absolute value of ``x``.""",
     group="Vector Math",
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 
 add_builtin(
@@ -743,7 +783,7 @@ add_builtin(
         -1 for negative elements of ``x`` and 1 otherwise.""",
     group="Vector Math",
     is_differentiable=False,
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 
 
@@ -763,7 +803,7 @@ add_builtin(
     value_func=outer_value_func,
     group="Vector Math",
     doc="Compute the outer product ``a*b^T`` for two vectors.",
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 add_builtin(
@@ -772,7 +812,7 @@ add_builtin(
     value_func=sametypes_create_value_func(vector(length=3, dtype=Scalar)),
     group="Vector Math",
     doc="Compute the cross product of two 3D vectors.",
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 add_builtin(
     "skew",
@@ -784,7 +824,7 @@ add_builtin(
     ),
     group="Vector Math",
     doc="Compute the skew-symmetric 3x3 matrix for a 3D vector ``vec``.",
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 add_builtin(
@@ -796,7 +836,7 @@ add_builtin(
 
     Compute the length of a floating-point vector.""",
     require_original_output_arg=True,
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 add_builtin(
     "length",
@@ -807,7 +847,7 @@ add_builtin(
 
     Compute the length of a quaternion.""",
     require_original_output_arg=True,
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 add_builtin(
     "length_sq",
@@ -817,7 +857,7 @@ add_builtin(
     doc="""Compute the squared length of ``a``.
 
     Compute the squared length of a vector.""",
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 add_builtin(
     "length_sq",
@@ -827,7 +867,7 @@ add_builtin(
     doc="""Compute the squared length of ``a``.
 
     Compute the squared length of a quaternion.""",
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 add_builtin(
     "normalize",
@@ -838,7 +878,7 @@ add_builtin(
 
     If ``length(a)`` is 0, the zero vector is returned.""",
     require_original_output_arg=True,
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 add_builtin(
     "normalize",
@@ -848,7 +888,7 @@ add_builtin(
     doc="""Compute the normalized value of ``a``.
 
     If ``length(a)`` is 0, the zero quaternion is returned.""",
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 
 add_builtin(
@@ -861,7 +901,7 @@ add_builtin(
     ),
     group="Vector Math",
     doc="Compute the transpose of matrix ``a``.",
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 
@@ -879,7 +919,7 @@ add_builtin(
     group="Vector Math",
     doc="""Compute the inverse of matrix ``a``.""",
     require_original_output_arg=True,
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 add_builtin(
@@ -889,7 +929,7 @@ add_builtin(
     group="Vector Math",
     doc="""Compute the inverse of matrix ``a``.""",
     require_original_output_arg=True,
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 add_builtin(
@@ -899,7 +939,7 @@ add_builtin(
     group="Vector Math",
     doc="""Compute the inverse of matrix ``a``.""",
     require_original_output_arg=True,
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 add_builtin(
@@ -913,7 +953,7 @@ add_builtin(
     Falls back to exact inverse on CPU.""",
     require_original_output_arg=True,
     export=False,
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 add_builtin(
@@ -927,7 +967,7 @@ add_builtin(
     Falls back to exact inverse on CPU.""",
     require_original_output_arg=True,
     export=False,
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 add_builtin(
@@ -941,7 +981,7 @@ add_builtin(
     Falls back to exact inverse on CPU.""",
     require_original_output_arg=True,
     export=False,
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 
@@ -958,7 +998,7 @@ add_builtin(
     value_func=determinant_value_func,
     group="Vector Math",
     doc="""Compute the determinant of matrix ``a``.""",
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 add_builtin(
@@ -967,7 +1007,7 @@ add_builtin(
     value_func=determinant_value_func,
     group="Vector Math",
     doc="""Compute the determinant of matrix ``a``.""",
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 add_builtin(
@@ -976,7 +1016,7 @@ add_builtin(
     value_func=determinant_value_func,
     group="Vector Math",
     doc="""Compute the determinant of matrix ``a``.""",
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 
@@ -995,7 +1035,7 @@ add_builtin(
     value_func=trace_value_func,
     group="Vector Math",
     doc="Compute the trace of matrix ``a``.",
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 
@@ -1012,7 +1052,7 @@ add_builtin(
     value_func=diag_value_func,
     group="Vector Math",
     doc="Construct a matrix with the components of vector ``vec`` on the diagonal.",
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 
@@ -1033,7 +1073,7 @@ add_builtin(
     value_func=get_diag_value_func,
     group="Vector Math",
     doc="Extract a vector containing the diagonal elements of square matrix ``mat``.",
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 add_builtin(
@@ -1043,7 +1083,7 @@ add_builtin(
     value_func=sametypes_create_value_func(vector(length=Any, dtype=Scalar)),
     group="Vector Math",
     doc="""Compute the component-wise product of ``a`` and ``b``.""",
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 add_builtin(
     "cw_div",
@@ -1053,7 +1093,7 @@ add_builtin(
     group="Vector Math",
     doc="""Compute the component-wise division of ``a`` by ``b``.""",
     require_original_output_arg=True,
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 
 add_builtin(
@@ -1063,7 +1103,7 @@ add_builtin(
     value_func=sametypes_create_value_func(matrix(shape=(Any, Any), dtype=Scalar)),
     group="Vector Math",
     doc="""Compute the component-wise product of ``a`` and ``b``.""",
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 add_builtin(
     "cw_div",
@@ -1073,7 +1113,7 @@ add_builtin(
     group="Vector Math",
     doc="""Compute the component-wise division of ``a`` by ``b``.""",
     require_original_output_arg=True,
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 
@@ -1083,6 +1123,7 @@ for t in scalar_types_all:
     for u in scalar_types_all:
         add_builtin(
             t.__name__,
+            compile_family=None,
             input_types={"a": u},
             value_type=t,
             doc="",
@@ -1206,7 +1247,7 @@ add_builtin(
     If no arguments are given, the vector is zero-initialized.""",
     group="Vector Math",
     export=False,
-    compile_guard="WP_NO_VEC",
+    compile_family=warp._src.codegen.CompileFamily.VECTOR,
 )
 
 
@@ -1336,7 +1377,7 @@ add_builtin(
     If no positional arguments are given, the matrix is zero-initialized.""",
     group="Vector Math",
     export=False,
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 
@@ -1404,7 +1445,7 @@ add_builtin(
     doc="Construct a matrix with each vector argument as a column.",
     group="Vector Math",
     export=False,
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 add_builtin(
@@ -1418,7 +1459,7 @@ add_builtin(
     doc="Construct a matrix with each vector argument as a row.",
     group="Vector Math",
     export=False,
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 
@@ -1458,7 +1499,7 @@ add_builtin(
     group="Vector Math",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 
@@ -1495,7 +1536,7 @@ add_builtin(
     .. deprecated:: 1.8""",
     group="Vector Math",
     export=False,
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 
 
@@ -1523,7 +1564,7 @@ add_builtin(
     doc="""Compute the SVD of a 3x3 matrix ``A``.
 
     The singular values are returned in ``sigma``, while the left and right basis vectors are returned in ``U`` and ``V``.""",
-    compile_guard="WP_NO_SVD",
+    compile_family=warp._src.codegen.CompileFamily.SVD,
 )
 
 add_builtin(
@@ -1540,7 +1581,7 @@ add_builtin(
     doc="""Compute the SVD of a 3x3 matrix ``A``.
 
     The singular values are returned in ``sigma``, while the left and right basis vectors are returned in ``U`` and ``V``.""",
-    compile_guard="WP_NO_SVD",
+    compile_family=warp._src.codegen.CompileFamily.SVD,
 )
 
 
@@ -1568,7 +1609,7 @@ add_builtin(
     doc="""Compute the SVD of a 2x2 matrix ``A``.
 
     The singular values are returned in ``sigma``, while the left and right basis vectors are returned in ``U`` and ``V``.""",
-    compile_guard="WP_NO_SVD",
+    compile_family=warp._src.codegen.CompileFamily.SVD,
 )
 
 add_builtin(
@@ -1585,7 +1626,7 @@ add_builtin(
     doc="""Compute the SVD of a 2x2 matrix ``A``.
 
     The singular values are returned in ``sigma``, while the left and right basis vectors are returned in ``U`` and ``V``.""",
-    compile_guard="WP_NO_SVD",
+    compile_family=warp._src.codegen.CompileFamily.SVD,
 )
 
 
@@ -1611,7 +1652,7 @@ add_builtin(
     doc="""Compute the QR decomposition of a 3x3 matrix ``A``.
 
     The orthogonal matrix is returned in ``Q``, while the upper triangular matrix is returned in ``R``.""",
-    compile_guard="WP_NO_SVD",
+    compile_family=warp._src.codegen.CompileFamily.SVD,
 )
 
 add_builtin(
@@ -1627,7 +1668,7 @@ add_builtin(
     doc="""Compute the QR decomposition of a 3x3 matrix ``A``.
 
     The orthogonal matrix is returned in ``Q``, while the upper triangular matrix is returned in ``R``.""",
-    compile_guard="WP_NO_SVD",
+    compile_family=warp._src.codegen.CompileFamily.SVD,
 )
 
 
@@ -1650,7 +1691,7 @@ add_builtin(
     doc="""Compute the eigendecomposition of a 3x3 matrix ``A``.
 
     The eigenvectors are returned as the columns of ``Q``, while the corresponding eigenvalues are returned in ``d``.""",
-    compile_guard="WP_NO_SVD",
+    compile_family=warp._src.codegen.CompileFamily.SVD,
 )
 
 add_builtin(
@@ -1666,7 +1707,7 @@ add_builtin(
     doc="""Compute the eigendecomposition of a 3x3 matrix ``A``.
 
     The eigenvectors are returned as the columns of ``Q``, while the corresponding eigenvalues are returned in ``d``.""",
-    compile_guard="WP_NO_SVD",
+    compile_family=warp._src.codegen.CompileFamily.SVD,
 )
 
 # ---------------------------------
@@ -1745,7 +1786,7 @@ add_builtin(
     Zero-initialize the quaternion. Quaternions are laid out as
     ``[ix, iy, iz, r]``, where ``ix``, ``iy``, ``iz`` are the imaginary part, and ``r`` the real part.""",
     export=False,
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "quaternion",
@@ -1760,7 +1801,7 @@ add_builtin(
 
     Use the supplied components (type inferred from component type).""",
     export=False,
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "quaternion",
@@ -1775,7 +1816,7 @@ add_builtin(
 
     Use the supplied vector/scalar (type inferred from scalar type).""",
     export=False,
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 
 add_builtin(
@@ -1791,7 +1832,7 @@ add_builtin(
 
     Convert ``quat`` to the specified ``dtype``.""",
     export=False,
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 
 
@@ -1827,7 +1868,7 @@ add_builtin(
     doc="Construct an identity quaternion with zero imaginary part and real part of 1.0.",
     export=True,
     is_differentiable=False,
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 
 add_builtin(
@@ -1836,7 +1877,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: quaternion(dtype=float_infer_type(arg_types)),
     group="Quaternion Math",
     doc="Construct a quaternion representing a rotation of angle radians around the given axis.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 
 
@@ -1854,7 +1895,7 @@ add_builtin(
     value_func=quat_to_axis_angle_value_func,
     group="Quaternion Math",
     doc="Extract the rotation axis and angle radians a quaternion represents.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 
 add_builtin(
@@ -1864,7 +1905,7 @@ add_builtin(
     group="Quaternion Math",
     doc="Extract the rotation axis and angle radians a quaternion represents.",
     export=False,
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 
 
@@ -1876,7 +1917,7 @@ add_builtin(
     doc="""Construct a quaternion from a matrix.
 
     If the matrix is not a pure rotation, but for example includes scaling or skewing, the result is undefined.""",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "quat_from_matrix",
@@ -1886,7 +1927,7 @@ add_builtin(
     doc="""Construct a quaternion from a matrix.
 
     If the top-left 3x3 block of the matrix is not a pure rotation, but for example includes scaling or skewing, the result is undefined.""",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "quat_rpy",
@@ -1894,7 +1935,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: quaternion(dtype=float_infer_type(arg_types)),
     group="Quaternion Math",
     doc="Construct a quaternion representing a combined roll (z), pitch (x), yaw rotations (y) in radians.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "quat_inverse",
@@ -1902,7 +1943,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: quaternion(dtype=float_infer_type(arg_types)),
     group="Quaternion Math",
     doc="Compute quaternion conjugate.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "quat_rotate",
@@ -1910,7 +1951,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: vector(length=3, dtype=float_infer_type(arg_types)),
     group="Quaternion Math",
     doc="Rotate a vector by a quaternion.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "quat_rotate_inv",
@@ -1918,7 +1959,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: vector(length=3, dtype=float_infer_type(arg_types)),
     group="Quaternion Math",
     doc="Rotate a vector by the inverse of a quaternion.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "quat_slerp",
@@ -1927,7 +1968,7 @@ add_builtin(
     group="Quaternion Math",
     doc="Linearly interpolate between two quaternions.",
     require_original_output_arg=True,
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "quat_to_matrix",
@@ -1935,7 +1976,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: matrix(shape=(3, 3), dtype=float_infer_type(arg_types)),
     group="Quaternion Math",
     doc="Convert a quaternion to a 3x3 rotation matrix.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 
 add_builtin(
@@ -1944,7 +1985,7 @@ add_builtin(
     value_func=float_sametypes_value_func,
     group="Quaternion Math",
     doc="""Compute the dot product.""",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 # ---------------------------------
 # Transformations
@@ -2055,7 +2096,7 @@ add_builtin(
 
     Use translation ``p`` and rotation ``q``.""",
     export=False,
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 
 
@@ -2074,7 +2115,7 @@ add_builtin(
     Build a spatial transform vector from components.""",
     group="Spatial Math",
     export=False,
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 
 
@@ -2110,7 +2151,7 @@ add_builtin(
     doc="Construct an identity transform with zero translation and identity rotation.",
     export=True,
     is_differentiable=False,
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 
 add_builtin(
@@ -2119,7 +2160,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: vector(length=3, dtype=float_infer_type(arg_types)),
     group="Transformations",
     doc="Extract the translational part of transform ``xform``.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "transform_get_rotation",
@@ -2127,7 +2168,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: quaternion(dtype=float_infer_type(arg_types)),
     group="Transformations",
     doc="Extract the rotational part of transform ``xform``.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "transform_set_translation",
@@ -2135,7 +2176,7 @@ add_builtin(
     value_type=None,
     group="Transformations",
     doc="Set the translational part of a transform ``xform``.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "transform_set_rotation",
@@ -2143,7 +2184,7 @@ add_builtin(
     value_type=None,
     group="Transformations",
     doc="Set the rotational part of a transform ``xform``.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 # performs a copy internally if wp.config.enable_vector_component_overwrites is True
 add_builtin(
@@ -2154,7 +2195,7 @@ add_builtin(
     doc="Set the translational part of a transform ``xform``.",
     hidden=True,
     export=False,
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 # performs a copy internally if wp.config.enable_vector_component_overwrites is True
 add_builtin(
@@ -2165,7 +2206,7 @@ add_builtin(
     doc="Set the rotational part of a transform ``xform``.",
     hidden=True,
     export=False,
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "transform_multiply",
@@ -2173,7 +2214,7 @@ add_builtin(
     value_func=lambda arg_types, arg_values: transformation(dtype=float_infer_type(arg_types)),
     group="Transformations",
     doc="Multiply two rigid body transformations together.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "transform_point",
@@ -2183,7 +2224,7 @@ add_builtin(
     doc="""Apply a transform to a point.
 
     Treat the homogeneous coordinate as w=1 (translation and rotation).""",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "transform_point",
@@ -2199,7 +2240,7 @@ add_builtin(
     This is in contrast to some libraries, notably USD, which applies transforms to row vectors, ``y^T = point^T*mat^T``.
     If the transform is coming from a library that uses row-vectors, then users should transpose the transformation
     matrix before calling this method.""",
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 add_builtin(
     "transform_vector",
@@ -2209,7 +2250,7 @@ add_builtin(
     doc="""Apply a transform to a vector.
 
     Treat the homogeneous coordinate as w=0 (rotation only).""",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "transform_vector",
@@ -2225,7 +2266,7 @@ add_builtin(
     This is in contrast to some libraries, notably USD, which applies transforms to row vectors, ``y^T = vec^T*mat^T``.
     If the transform is coming from a library that uses row-vectors, then users should transpose the transformation
     matrix before calling this method.""",
-    compile_guard="WP_NO_MAT",
+    compile_family=warp._src.codegen.CompileFamily.MATRIX,
 )
 add_builtin(
     "transform_inverse",
@@ -2233,7 +2274,7 @@ add_builtin(
     value_func=sametypes_create_value_func(transformation(dtype=Float)),
     group="Transformations",
     doc="Compute the inverse of the transformation ``xform``.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 # ---------------------------------
 # Spatial Math
@@ -2300,7 +2341,7 @@ add_builtin(
 
     Zero-initialize the vector.""",
     export=False,
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 
 
@@ -2317,7 +2358,7 @@ add_builtin(
 
     Use two 3D vectors.""",
     export=False,
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 
 add_builtin(
@@ -2334,7 +2375,7 @@ add_builtin(
 
     Use six scalar values.""",
     export=False,
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 
 
@@ -2345,7 +2386,7 @@ add_builtin(
     group="Spatial Math",
     doc="Construct a 6x6 spatial inertial matrix from two 3x3 diagonal blocks.",
     export=False,
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "spatial_dot",
@@ -2353,7 +2394,7 @@ add_builtin(
     value_func=float_sametypes_value_func,
     group="Spatial Math",
     doc="Compute the dot product of two 6D screw vectors.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "spatial_cross",
@@ -2361,7 +2402,7 @@ add_builtin(
     value_func=sametypes_create_value_func(vector(length=6, dtype=Float)),
     group="Spatial Math",
     doc="Compute the cross product of two 6D screw vectors.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "spatial_cross_dual",
@@ -2369,7 +2410,7 @@ add_builtin(
     value_func=sametypes_create_value_func(vector(length=6, dtype=Float)),
     group="Spatial Math",
     doc="Compute the dual cross product of two 6D screw vectors.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 
 add_builtin(
@@ -2382,7 +2423,7 @@ add_builtin(
     ),
     group="Spatial Math",
     doc="Extract the top (first) part of a 6D screw vector.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 add_builtin(
     "spatial_bottom",
@@ -2394,7 +2435,7 @@ add_builtin(
     ),
     group="Spatial Math",
     doc="Extract the bottom (second) part of a 6D screw vector.",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 
 add_builtin(
@@ -2411,7 +2452,7 @@ add_builtin(
     value_type=None,
     doc="Compute the spatial Jacobian matrix for a kinematic chain.",
     group="Spatial Math",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 
 add_builtin(
@@ -2426,7 +2467,7 @@ add_builtin(
     value_type=None,
     doc="Compute the composite rigid-body mass matrix for a kinematic chain.",
     group="Spatial Math",
-    compile_guard="WP_NO_QUAT",
+    compile_family=warp._src.codegen.CompileFamily.QUATERNION,
 )
 
 # ------------------
@@ -2493,7 +2534,7 @@ add_builtin(
         A zero-initialized tile with shape and data type as specified.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 # overload for scalar shape
@@ -2508,7 +2549,7 @@ add_builtin(
     doc="""Allocate a tile of zero-initialized items.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -2573,7 +2614,7 @@ add_builtin(
         A one-initialized tile with shape and data type as specified.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 # overload for scalar shape
@@ -2587,7 +2628,7 @@ add_builtin(
     doc="""Allocate a tile of one-initialized items.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -2752,7 +2793,7 @@ add_builtin(
         A tile filled with the specified value.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -2767,7 +2808,7 @@ add_builtin(
     doc="""Allocate a tile filled with the specified value.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -2875,7 +2916,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -2890,7 +2931,7 @@ add_builtin(
     doc="""Allocate a tile filled with a value from a specific thread.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -2994,7 +3035,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 # overload for scalar shape
@@ -3008,7 +3049,7 @@ add_builtin(
     doc="""Generate a tile of random integers.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -3061,7 +3102,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 # overload for scalar shape
@@ -3077,7 +3118,7 @@ add_builtin(
     Sample values in the range [min, max).""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -3181,7 +3222,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 # overload for scalar shape
@@ -3195,7 +3236,7 @@ add_builtin(
     doc="""Generate a tile of random floats.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -3248,7 +3289,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 # overload for scalar shape
@@ -3264,7 +3305,7 @@ add_builtin(
     Sample values in the range [min, max).""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -3375,7 +3416,7 @@ add_builtin(
         A tile with ``shape=(n)`` with linearly spaced elements of specified data type.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -3484,7 +3525,7 @@ add_builtin(
         A tile with shape as specified and data type the same as the source array.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 # overload for scalar shape
@@ -3504,7 +3545,7 @@ add_builtin(
     doc="""Load a tile from a global memory array.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -3652,7 +3693,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -3752,7 +3793,7 @@ add_builtin(
             release builds they cause silent data corruption.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 # overload for scalar offset
@@ -3773,7 +3814,7 @@ add_builtin(
     doc="""Store a tile to a global memory array.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -3920,7 +3961,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -4021,7 +4062,7 @@ add_builtin(
         A tile with the same dimensions and data type as the source tile, holding the original value of the destination elements.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 # overload for scalar offset
@@ -4041,7 +4082,7 @@ add_builtin(
     doc="""Atomically add a tile onto the array ``a``.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -4182,7 +4223,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -4427,7 +4468,7 @@ add_builtin(
     group="Tile Primitives",
     is_differentiable=False,
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -4607,7 +4648,7 @@ add_builtin(
         The input tile but with all or a subset of the dimensions of length one removed.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -4704,7 +4745,7 @@ add_builtin(
         A tile containing the same data as the input tile, but arranged in a new shape.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -4741,7 +4782,7 @@ add_builtin(
         A tile with the same data as the input tile, but with a different data type.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -4812,7 +4853,7 @@ add_builtin(
         offset: Offset in the destination tile to write to.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 # handles expressions like tile[i,j] = 1.0
@@ -4823,7 +4864,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     hidden=True,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -4833,7 +4874,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     hidden=True,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -4843,7 +4884,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     hidden=True,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -4860,7 +4901,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     hidden=True,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -4878,7 +4919,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     hidden=True,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -4897,7 +4938,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     hidden=True,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -5007,7 +5048,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -5088,7 +5129,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -5151,7 +5192,7 @@ add_builtin(
         The value of the element at the specified tile location with the same data type as the input tile.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -5174,7 +5215,7 @@ add_builtin(
         The value of the element at the specified tile location with the same data type as the input tile.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -5198,7 +5239,7 @@ add_builtin(
         The value of the element at the specified tile location with the same data type as the input tile.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -5223,7 +5264,7 @@ add_builtin(
         The value of the element at the specified tile location, with the same data type as the input tile.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -5256,7 +5297,7 @@ add_builtin(
         The value of the element at the specified tile location, with the same data type as the input tile.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -5291,7 +5332,7 @@ add_builtin(
         The value of the element at the specified tile location, with the same data type as the input tile.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -5609,7 +5650,7 @@ add_builtin(
     group="Tile Primitives",
     hidden=True,
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 add_builtin(
     "tile_add_inplace",
@@ -5618,7 +5659,7 @@ add_builtin(
     group="Tile Primitives",
     hidden=True,
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 add_builtin(
     "tile_add_inplace",
@@ -5627,7 +5668,7 @@ add_builtin(
     group="Tile Primitives",
     hidden=True,
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 add_builtin(
     "tile_add_inplace",
@@ -5636,7 +5677,7 @@ add_builtin(
     group="Tile Primitives",
     hidden=True,
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -5646,7 +5687,7 @@ add_builtin(
     group="Tile Primitives",
     hidden=True,
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 add_builtin(
     "tile_sub_inplace",
@@ -5655,7 +5696,7 @@ add_builtin(
     group="Tile Primitives",
     hidden=True,
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 add_builtin(
     "tile_sub_inplace",
@@ -5664,7 +5705,7 @@ add_builtin(
     group="Tile Primitives",
     hidden=True,
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 add_builtin(
     "tile_sub_inplace",
@@ -5673,7 +5714,7 @@ add_builtin(
     group="Tile Primitives",
     hidden=True,
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -5684,7 +5725,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 add_builtin(
     "tile_bit_and_inplace",
@@ -5694,7 +5735,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 add_builtin(
     "tile_bit_and_inplace",
@@ -5704,7 +5745,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 add_builtin(
     "tile_bit_and_inplace",
@@ -5714,7 +5755,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -5725,7 +5766,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 add_builtin(
     "tile_bit_or_inplace",
@@ -5735,7 +5776,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 add_builtin(
     "tile_bit_or_inplace",
@@ -5745,7 +5786,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 add_builtin(
     "tile_bit_or_inplace",
@@ -5755,7 +5796,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -5766,7 +5807,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 add_builtin(
     "tile_bit_xor_inplace",
@@ -5776,7 +5817,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 add_builtin(
     "tile_bit_xor_inplace",
@@ -5786,7 +5827,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 add_builtin(
     "tile_bit_xor_inplace",
@@ -5796,7 +5837,7 @@ add_builtin(
     hidden=True,
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -5851,7 +5892,7 @@ add_builtin(
         Tile with ``shape=(N,M)``.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -5924,7 +5965,7 @@ add_builtin(
         Tile with broadcast shape.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -5979,7 +6020,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -6199,7 +6240,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -6288,7 +6329,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -6349,7 +6390,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -6410,7 +6451,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -6464,7 +6505,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -6518,7 +6559,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -6604,7 +6645,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -6687,7 +6728,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -6753,7 +6794,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -6819,7 +6860,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -6888,7 +6929,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -6957,7 +6998,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -7059,7 +7100,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -7189,7 +7230,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -7326,7 +7367,7 @@ add_builtin(
     """,
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -7335,6 +7376,7 @@ add_builtin(
 
 add_builtin(
     "dense_gemm",
+    compile_family=None,
     input_types={
         "m": int,
         "n": int,
@@ -7353,6 +7395,7 @@ add_builtin(
 
 add_builtin(
     "dense_gemm_batched",
+    compile_family=None,
     input_types={
         "m": array(dtype=int),
         "n": array(dtype=int),
@@ -7376,6 +7419,7 @@ add_builtin(
 
 add_builtin(
     "dense_chol",
+    compile_family=None,
     input_types={"n": int, "A": array(dtype=float), "regularization": float, "L": array(dtype=float)},
     value_type=None,
     doc="WIP",
@@ -7386,6 +7430,7 @@ add_builtin(
 
 add_builtin(
     "dense_chol_batched",
+    compile_family=None,
     input_types={
         "A_start": array(dtype=int),
         "A_dim": array(dtype=int),
@@ -7402,6 +7447,7 @@ add_builtin(
 
 add_builtin(
     "dense_subs",
+    compile_family=None,
     input_types={"n": int, "L": array(dtype=float), "b": array(dtype=float), "x": array(dtype=float)},
     value_type=None,
     doc="WIP",
@@ -7412,6 +7458,7 @@ add_builtin(
 
 add_builtin(
     "dense_solve",
+    compile_family=None,
     input_types={
         "n": int,
         "A": array(dtype=float),
@@ -7427,6 +7474,7 @@ add_builtin(
 
 add_builtin(
     "dense_solve_batched",
+    compile_family=None,
     input_types={
         "b_start": array(dtype=int),
         "A_start": array(dtype=int),
@@ -7500,7 +7548,7 @@ add_builtin(
             [[0.5, 0.5, 0.5], [2.5, 0.5, 0.5], [0.0, 0.0, 0.0]]""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_BVH",
+    compile_family=warp._src.codegen.CompileFamily.BVH,
 )
 
 add_builtin(
@@ -7558,7 +7606,7 @@ add_builtin(
             [[0.5, 0.5, 0.5], [2.5, 0.5, 0.5], [4.5, 0.5, 0.5]]""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_BVH",
+    compile_family=warp._src.codegen.CompileFamily.BVH,
 )
 
 add_builtin(
@@ -7617,7 +7665,7 @@ add_builtin(
             [[0.5, 0.5, 0.5], [2.5, 0.5, 0.5], [0.0, 0.0, 0.0]]""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_BVH",
+    compile_family=warp._src.codegen.CompileFamily.BVH,
 )
 
 # Primary naming convention (grouped with other geometry functions)
@@ -7669,7 +7717,7 @@ add_builtin(
     native_func="tile_bvh_query_aabb",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_BVH",
+    compile_family=warp._src.codegen.CompileFamily.BVH,
 )
 
 add_builtin(
@@ -7720,7 +7768,7 @@ add_builtin(
     native_func="tile_bvh_query_ray",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_BVH",
+    compile_family=warp._src.codegen.CompileFamily.BVH,
 )
 
 
@@ -7795,7 +7843,7 @@ add_builtin(
     native_func="tile_bvh_query_next",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_BVH",
+    compile_family=warp._src.codegen.CompileFamily.BVH,
 )
 
 # Aliases for backward compatibility (tile_* naming convention)
@@ -7817,7 +7865,7 @@ add_builtin(
     native_func="tile_bvh_query_aabb",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -7838,7 +7886,7 @@ add_builtin(
     native_func="tile_bvh_query_ray",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -7865,7 +7913,7 @@ add_builtin(
     native_func="tile_bvh_query_next",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -8311,7 +8359,7 @@ add_builtin(
             [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [4.5, 0.5, 0.5]]""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_BVH",
+    compile_family=warp._src.codegen.CompileFamily.BVH,
 )
 
 add_builtin(
@@ -8354,7 +8402,7 @@ add_builtin(
             hit face: 1""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -8398,7 +8446,7 @@ add_builtin(
         ``True`` if a point < ``max_dist`` is found.""",
     export=False,
     hidden=True,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -8462,7 +8510,7 @@ add_builtin(
             [0.5 0.5 0. ] inside: True""",
     require_original_output_arg=True,
     export=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -8518,7 +8566,7 @@ add_builtin(
 """,
     export=False,
     hidden=True,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -8591,7 +8639,7 @@ add_builtin(
             inside: True""",
     require_original_output_arg=True,
     export=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -8626,7 +8674,7 @@ add_builtin(
         ``True`` if a point < ``max_dist`` is found.""",
     export=False,
     hidden=True,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -8681,7 +8729,7 @@ add_builtin(
             [0.5 0.5 0. ]""",
     require_original_output_arg=True,
     export=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -8716,7 +8764,7 @@ add_builtin(
         ``True`` if a point > ``min_dist`` is found.""",
     export=False,
     hidden=True,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -8772,7 +8820,7 @@ add_builtin(
             [1. 1. 1.]""",
     require_original_output_arg=True,
     export=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -8816,7 +8864,7 @@ add_builtin(
         ``True`` if a point < ``max_dist`` is found.""",
     export=False,
     hidden=True,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -8878,7 +8926,7 @@ add_builtin(
             inside: True""",
     require_original_output_arg=True,
     export=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -8932,7 +8980,7 @@ add_builtin(
         ``True`` if a point < ``max_dist`` is found.""",
     export=False,
     hidden=True,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -9004,7 +9052,7 @@ add_builtin(
             inside: True""",
     require_original_output_arg=True,
     export=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -9050,7 +9098,7 @@ add_builtin(
         face: Returns the index of the hit face.""",
     export=False,
     hidden=True,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -9115,7 +9163,7 @@ add_builtin(
             t = 2.0 normal = [ 0.  0. -1.]""",
     require_original_output_arg=True,
     export=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -9173,7 +9221,7 @@ add_builtin(
             hit: True""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -9231,7 +9279,7 @@ add_builtin(
             crossings: 2""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 
@@ -9282,7 +9330,7 @@ add_builtin(
             overlapping faces: 12""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -9331,7 +9379,7 @@ add_builtin(
             overlapping faces: 12""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 # Primary naming convention (grouped with other geometry functions)
@@ -9383,7 +9431,7 @@ add_builtin(
     native_func="tile_mesh_query_aabb",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 
@@ -9458,7 +9506,7 @@ add_builtin(
     native_func="tile_mesh_query_aabb_next",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 # Aliases for backward compatibility (tile_* naming convention)
@@ -9481,7 +9529,7 @@ add_builtin(
     native_func="tile_mesh_query_aabb",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -9509,7 +9557,7 @@ add_builtin(
     native_func="tile_mesh_query_aabb_next",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -9587,7 +9635,7 @@ add_builtin(
 
             (0.333, 0.667, 0.000)""",
     export=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -9633,7 +9681,7 @@ add_builtin(
 
             [0. 0. 1.]""",
     export=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 
@@ -9737,7 +9785,7 @@ def _add_hash_grid_query_builtins(vec_type, scalar_type, query_type, precision_d
         doc=doc,
         export=False,
         is_differentiable=False,
-        compile_guard="WP_NO_HASHGRID",
+        compile_family=warp._src.codegen.CompileFamily.HASHGRID,
     )
 
     add_builtin(
@@ -9788,7 +9836,7 @@ def _add_hash_grid_query_builtins(vec_type, scalar_type, query_type, precision_d
         doc=doc,
         export=False,
         is_differentiable=False,
-        compile_guard="WP_NO_HASHGRID",
+        compile_family=warp._src.codegen.CompileFamily.HASHGRID,
     )
 
 
@@ -9841,7 +9889,7 @@ add_builtin(
             True""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_HASHGRID",
+    compile_family=warp._src.codegen.CompileFamily.HASHGRID,
 )
 
 add_builtin(
@@ -9878,7 +9926,7 @@ add_builtin(
             intersect: 1""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_INTERSECT",
+    compile_family=warp._src.codegen.CompileFamily.INTERSECT,
 )
 
 
@@ -9915,7 +9963,7 @@ add_builtin(
             intersect: 1""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_INTERSECT",
+    compile_family=warp._src.codegen.CompileFamily.INTERSECT,
 )
 
 
@@ -9950,7 +9998,7 @@ add_builtin(
 
             [0. 0. 0.]""",
     export=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -9993,7 +10041,7 @@ add_builtin(
             [ 0.  0. -1.]""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -10037,7 +10085,7 @@ add_builtin(
             [0. 0. 0.]""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -10082,7 +10130,7 @@ add_builtin(
             [0. 0. 1.]""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 add_builtin(
@@ -10126,7 +10174,7 @@ add_builtin(
             [0 3 2]""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_MESH",
+    compile_family=warp._src.codegen.CompileFamily.MESH,
 )
 
 
@@ -10172,7 +10220,7 @@ add_builtin(
 
             s=0.5 t=0.5 d=1.0""",
     export=False,
-    compile_guard="WP_NO_INTERSECT",
+    compile_family=warp._src.codegen.CompileFamily.INTERSECT,
 )
 
 # ---------------------------------
@@ -10180,6 +10228,7 @@ add_builtin(
 
 add_builtin(
     "range",
+    compile_family=None,
     input_types={"end": int},
     value_type=range_t,
     group="Utility",
@@ -10189,6 +10238,7 @@ add_builtin(
 )
 add_builtin(
     "range",
+    compile_family=None,
     input_types={"start": int, "end": int},
     value_type=range_t,
     group="Utility",
@@ -10198,6 +10248,7 @@ add_builtin(
 )
 add_builtin(
     "range",
+    compile_family=None,
     input_types={"start": int, "end": int, "step": int},
     value_type=range_t,
     group="Utility",
@@ -10211,6 +10262,7 @@ add_builtin(
 
 add_builtin(
     "iter_next",
+    compile_family=None,
     input_types={"range": range_t},
     value_type=int,
     group="Utility",
@@ -10225,6 +10277,7 @@ for query_type in (
 ):
     add_builtin(
         "iter_next",
+        compile_family=None,
         input_types={"query": query_type},
         value_type=int,
         group="Utility",
@@ -10234,6 +10287,7 @@ for query_type in (
     )
 add_builtin(
     "iter_next",
+    compile_family=None,
     input_types={"query": MeshQueryAABB},
     value_type=int,
     group="Utility",
@@ -10244,6 +10298,7 @@ add_builtin(
 
 add_builtin(
     "reversed",
+    compile_family=None,
     input_types={"range": range_t},
     value_type=range_t,
     native_func="iter_reverse",
@@ -10325,7 +10380,7 @@ add_builtin(
     doc="""Sample the volume of type ``dtype`` given by ``id`` at the volume local-space point ``uvw``.
 
     Interpolation should be :attr:`warp.Volume.CLOSEST` or :attr:`warp.Volume.LINEAR`.""",
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 
@@ -10364,7 +10419,7 @@ add_builtin(
     doc="""Sample the volume given by ``id`` and its gradient at the volume local-space point ``uvw``.
 
     Interpolation should be :attr:`warp.Volume.CLOSEST` or :attr:`warp.Volume.LINEAR`.""",
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 
@@ -10403,7 +10458,7 @@ add_builtin(
 
     If the voxel at this index does not exist, this function returns the background value.""",
     is_differentiable=False,
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 
@@ -10425,7 +10480,7 @@ add_builtin(
     group="Volumes",
     doc="""Store ``value`` at the voxel with coordinates ``i``, ``j``, ``k``.""",
     is_differentiable=False,
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 add_builtin(
@@ -10436,7 +10491,7 @@ add_builtin(
     doc="""Sample the volume given by ``id`` at the volume local-space point ``uvw``.
 
     Interpolation should be :attr:`warp.Volume.CLOSEST` or :attr:`warp.Volume.LINEAR`.""",
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 add_builtin(
@@ -10447,7 +10502,7 @@ add_builtin(
     doc="""Sample the volume and its gradient given by ``id`` at the volume local-space point ``uvw``.
 
     Interpolation should be :attr:`warp.Volume.CLOSEST` or :attr:`warp.Volume.LINEAR`.""",
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 add_builtin(
@@ -10459,7 +10514,7 @@ add_builtin(
 
     If the voxel at this index does not exist, this function returns the background value.""",
     is_differentiable=False,
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 add_builtin(
@@ -10469,7 +10524,7 @@ add_builtin(
     doc="""Store ``value`` at the voxel with coordinates ``i``, ``j``, ``k``.""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 add_builtin(
@@ -10480,7 +10535,7 @@ add_builtin(
     doc="""Sample the vector volume given by ``id`` at the volume local-space point ``uvw``.
 
     Interpolation should be :attr:`warp.Volume.CLOSEST` or :attr:`warp.Volume.LINEAR`.""",
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 add_builtin(
@@ -10492,7 +10547,7 @@ add_builtin(
 
     If the voxel at this index does not exist, this function returns the background value.""",
     is_differentiable=False,
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 add_builtin(
@@ -10502,7 +10557,7 @@ add_builtin(
     doc="""Store ``value`` at the voxel with coordinates ``i``, ``j``, ``k``.""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 add_builtin(
@@ -10512,7 +10567,7 @@ add_builtin(
     group="Volumes",
     doc="""Sample the :class:`warp.int32` volume given by ``id`` at the volume local-space point ``uvw``.""",
     is_differentiable=False,
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 add_builtin(
@@ -10524,7 +10579,7 @@ add_builtin(
 
     If the voxel at this index does not exist, this function returns the background value.""",
     is_differentiable=False,
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 add_builtin(
@@ -10534,7 +10589,7 @@ add_builtin(
     doc="""Store ``value`` at the voxel with coordinates ``i``, ``j``, ``k``.""",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 
@@ -10565,7 +10620,7 @@ add_builtin(
     Interpolation should be :attr:`warp.Volume.CLOSEST` or :attr:`warp.Volume.LINEAR`.
     This function is available for both index grids and classical volumes.
     """,
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 
@@ -10605,7 +10660,7 @@ add_builtin(
     Interpolation should be :attr:`warp.Volume.CLOSEST` or :attr:`warp.Volume.LINEAR`.
     This function is available for both index grids and classical volumes.
    """,
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 add_builtin(
@@ -10619,7 +10674,7 @@ add_builtin(
     This function is available for both index grids and classical volumes.
     """,
     is_differentiable=False,
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 add_builtin(
@@ -10642,7 +10697,7 @@ add_builtin(
     value_type=vec3,
     group="Volumes",
     doc="""Transform a point ``uvw`` defined in volume index space to world space given the volume's intrinsic affine transformation.""",
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 add_builtin(
     "volume_world_to_index",
@@ -10650,7 +10705,7 @@ add_builtin(
     value_type=vec3,
     group="Volumes",
     doc="""Transform a point ``xyz`` defined in volume world space to the volume's index space given the volume's intrinsic affine transformation.""",
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 add_builtin(
     "volume_index_to_world_dir",
@@ -10658,7 +10713,7 @@ add_builtin(
     value_type=vec3,
     group="Volumes",
     doc="""Transform a direction ``uvw`` defined in volume index space to world space given the volume's intrinsic affine transformation.""",
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 add_builtin(
     "volume_world_to_index_dir",
@@ -10666,7 +10721,7 @@ add_builtin(
     value_type=vec3,
     group="Volumes",
     doc="""Transform a direction ``xyz`` defined in volume world space to the volume's index space given the volume's intrinsic affine transformation.""",
-    compile_guard="WP_NO_VOLUME",
+    compile_family=warp._src.codegen.CompileFamily.VOLUME,
 )
 
 # fp64 overloads for volume transform functions
@@ -10764,7 +10819,7 @@ add_builtin(
 
     Filtering mode is :attr:`warp.TextureFilterMode.CLOSEST` or :attr:`warp.TextureFilterMode.LINEAR`.""",
     is_differentiable=False,
-    compile_guard="WP_NO_TEXTURE",
+    compile_family=warp._src.codegen.CompileFamily.TEXTURE,
 )
 
 
@@ -10817,7 +10872,7 @@ add_builtin(
 
     Filtering mode is :attr:`warp.TextureFilterMode.CLOSEST` or :attr:`warp.TextureFilterMode.LINEAR`.""",
     is_differentiable=False,
-    compile_guard="WP_NO_TEXTURE",
+    compile_family=warp._src.codegen.CompileFamily.TEXTURE,
 )
 
 # texture_sample for 2D textures with separate u, v coordinates
@@ -10853,7 +10908,7 @@ add_builtin(
 
     Filtering mode is :attr:`warp.TextureFilterMode.CLOSEST` or :attr:`warp.TextureFilterMode.LINEAR`.""",
     is_differentiable=False,
-    compile_guard="WP_NO_TEXTURE",
+    compile_family=warp._src.codegen.CompileFamily.TEXTURE,
 )
 
 
@@ -10906,7 +10961,7 @@ add_builtin(
 
     Filtering mode is :attr:`warp.TextureFilterMode.CLOSEST` or :attr:`warp.TextureFilterMode.LINEAR`.""",
     is_differentiable=False,
-    compile_guard="WP_NO_TEXTURE",
+    compile_family=warp._src.codegen.CompileFamily.TEXTURE,
 )
 
 # texture_sample for 3D textures with separate u, v, w coordinates
@@ -10944,7 +10999,7 @@ add_builtin(
 
     Filtering mode is :attr:`warp.TextureFilterMode.CLOSEST` or :attr:`warp.TextureFilterMode.LINEAR`.""",
     is_differentiable=False,
-    compile_guard="WP_NO_TEXTURE",
+    compile_family=warp._src.codegen.CompileFamily.TEXTURE,
 )
 
 
@@ -10985,7 +11040,7 @@ add_builtin(
     Returns:
         A 32-bit unsigned integer holding the initial RNG state.""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 
 add_builtin(
@@ -11018,7 +11073,7 @@ add_builtin(
     Returns:
         A 32-bit unsigned integer holding the initial RNG state.""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 
 add_builtin(
@@ -11032,7 +11087,7 @@ add_builtin(
     values; called from the Python scope, it does not modify ``state``, so repeated
     calls with the same ``state`` return the same value (see :func:`rand_init`).""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "randi",
@@ -11047,7 +11102,7 @@ add_builtin(
     Requires ``high > low``. Uses modulo reduction, so the distribution is slightly
     biased toward lower values for very large ranges.""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "randu",
@@ -11060,7 +11115,7 @@ add_builtin(
     values; called from the Python scope, it does not modify ``state``, so repeated
     calls with the same ``state`` return the same value (see :func:`rand_init`).""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "randu",
@@ -11075,7 +11130,7 @@ add_builtin(
     Requires ``high > low``. Uses modulo reduction, so the distribution is slightly
     biased toward lower values for very large ranges.""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "randf",
@@ -11104,7 +11159,7 @@ add_builtin(
     :func:`randi`, :func:`randu`, and :func:`randn` are used the same way:
     initialize ``rng`` once with :func:`rand_init`, then pass it to each call.""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "randf",
@@ -11118,7 +11173,7 @@ add_builtin(
     calls with the same ``state`` return the same value (see :func:`rand_init`).
     Equivalent to ``low + (high - low) * wp.randf(state)``.""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "randn",
@@ -11133,7 +11188,7 @@ add_builtin(
     (see :func:`rand_init`). For a general normal, scale and shift the result:
     ``mean + stddev * wp.randn(state)``.""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 
 add_builtin(
@@ -11175,7 +11230,7 @@ add_builtin(
     Returns:
         The sampled index into ``cdf``.""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "sample_triangle",
@@ -11204,7 +11259,7 @@ add_builtin(
     Returns:
         The barycentric coordinates ``(u, v)`` of the sampled point.""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "sample_unit_ring",
@@ -11217,7 +11272,7 @@ add_builtin(
     place; called from the Python scope, it does not modify ``state``, so repeated
     calls with the same ``state`` return the same point (see :func:`rand_init`).""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "sample_unit_disk",
@@ -11230,7 +11285,7 @@ add_builtin(
     place; called from the Python scope, it does not modify ``state``, so repeated
     calls with the same ``state`` return the same point (see :func:`rand_init`).""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "sample_unit_sphere_surface",
@@ -11243,7 +11298,7 @@ add_builtin(
     place; called from the Python scope, it does not modify ``state``, so repeated
     calls with the same ``state`` return the same point (see :func:`rand_init`).""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "sample_unit_sphere",
@@ -11267,7 +11322,7 @@ add_builtin(
             rng = wp.rand_init(seed, i)
             out[i] = wp.sample_unit_sphere(rng)""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "sample_unit_hemisphere_surface",
@@ -11280,7 +11335,7 @@ add_builtin(
     place; called from the Python scope, it does not modify ``state``, so repeated
     calls with the same ``state`` return the same point (see :func:`rand_init`).""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "sample_unit_hemisphere",
@@ -11293,7 +11348,7 @@ add_builtin(
     place; called from the Python scope, it does not modify ``state``, so repeated
     calls with the same ``state`` return the same point (see :func:`rand_init`).""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "sample_unit_square",
@@ -11306,7 +11361,7 @@ add_builtin(
     place; called from the Python scope, it does not modify ``state``, so repeated
     calls with the same ``state`` return the same point (see :func:`rand_init`).""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "sample_unit_cube",
@@ -11319,7 +11374,7 @@ add_builtin(
     place; called from the Python scope, it does not modify ``state``, so repeated
     calls with the same ``state`` return the same point (see :func:`rand_init`).""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 
 add_builtin(
@@ -11350,7 +11405,7 @@ add_builtin(
     Returns:
         A ``uint32`` sample drawn from ``Poisson(lam)``.""",
     is_differentiable=False,
-    compile_guard="WP_NO_RAND",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 
 add_builtin(
@@ -11361,7 +11416,7 @@ add_builtin(
     doc="""Non-periodic Perlin-style noise.
 
     Sample 1D noise.""",
-    compile_guard="WP_NO_NOISE",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "noise",
@@ -11371,7 +11426,7 @@ add_builtin(
     doc="""Non-periodic Perlin-style noise.
 
     Sample 2D noise.""",
-    compile_guard="WP_NO_NOISE",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "noise",
@@ -11381,7 +11436,7 @@ add_builtin(
     doc="""Non-periodic Perlin-style noise.
 
     Sample 3D noise.""",
-    compile_guard="WP_NO_NOISE",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "noise",
@@ -11391,7 +11446,7 @@ add_builtin(
     doc="""Non-periodic Perlin-style noise.
 
     Sample 4D noise.""",
-    compile_guard="WP_NO_NOISE",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 
 add_builtin(
@@ -11402,7 +11457,7 @@ add_builtin(
     doc="""Periodic Perlin-style noise.
 
     Sample 1D noise.""",
-    compile_guard="WP_NO_NOISE",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "pnoise",
@@ -11412,7 +11467,7 @@ add_builtin(
     doc="""Periodic Perlin-style noise.
 
     Sample 2D noise.""",
-    compile_guard="WP_NO_NOISE",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "pnoise",
@@ -11422,7 +11477,7 @@ add_builtin(
     doc="""Periodic Perlin-style noise.
 
     Sample 3D noise.""",
-    compile_guard="WP_NO_NOISE",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "pnoise",
@@ -11432,7 +11487,7 @@ add_builtin(
     doc="""Periodic Perlin-style noise.
 
     Sample 4D noise.""",
-    compile_guard="WP_NO_NOISE",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 
 add_builtin(
@@ -11445,7 +11500,7 @@ add_builtin(
 
     Use the gradient of a Perlin noise function.""",
     is_differentiable=False,
-    compile_guard="WP_NO_NOISE",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "curlnoise",
@@ -11457,7 +11512,7 @@ add_builtin(
 
     Use the curl of three Perlin noise functions.""",
     is_differentiable=False,
-    compile_guard="WP_NO_NOISE",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 add_builtin(
     "curlnoise",
@@ -11469,7 +11524,7 @@ add_builtin(
 
     Use the curl of three Perlin noise functions.""",
     is_differentiable=False,
-    compile_guard="WP_NO_NOISE",
+    compile_family=warp._src.codegen.CompileFamily.STOCHASTIC,
 )
 
 
@@ -11494,6 +11549,7 @@ def printf_dispatch_func(input_types: Mapping[str, type], return_type: Any, args
 # note printf calls directly to global CRT printf (no wp:: namespace prefix)
 add_builtin(
     "printf",
+    compile_family=None,
     input_types={"fmt": str, "*args": Any},
     namespace="",
     variadic=True,
@@ -11506,6 +11562,7 @@ add_builtin(
 
 add_builtin(
     "print",
+    compile_family=None,
     input_types={"value": Any},
     doc="Print a variable to stdout.",
     export=False,
@@ -11514,6 +11571,7 @@ add_builtin(
 
 add_builtin(
     "breakpoint",
+    compile_family=None,
     input_types={},
     doc="Trigger a debugger breakpoint.",
     export=False,
@@ -11526,6 +11584,7 @@ add_builtin(
 # helpers
 add_builtin(
     "tid",
+    compile_family=None,
     input_types={},
     value_type=int,
     export=False,
@@ -11553,6 +11612,7 @@ add_builtin(
 
 add_builtin(
     "tid",
+    compile_family=None,
     input_types={},
     value_type=[int, int],
     group="Utility",
@@ -11579,6 +11639,7 @@ add_builtin(
 
 add_builtin(
     "tid",
+    compile_family=None,
     input_types={},
     value_type=[int, int, int],
     group="Utility",
@@ -11605,6 +11666,7 @@ add_builtin(
 
 add_builtin(
     "tid",
+    compile_family=None,
     input_types={},
     value_type=[int, int, int, int],
     group="Utility",
@@ -11631,6 +11693,7 @@ add_builtin(
 
 add_builtin(
     "block_dim",
+    compile_family=None,
     input_types={},
     value_type=int,
     group="Utility",
@@ -11660,6 +11723,7 @@ def copy_value_func(arg_types: Mapping[str, type], arg_values: Mapping[str, Any]
 
 add_builtin(
     "copy",
+    compile_family=None,
     input_types={"a": Any},
     value_func=copy_value_func,
     hidden=True,
@@ -11670,6 +11734,7 @@ add_builtin(
 
 add_builtin(
     "assign",
+    compile_family=None,
     input_types={"dest": Any, "src": Any},
     hidden=True,
     export=False,
@@ -11686,6 +11751,7 @@ def select_value_func(arg_types: Mapping[str, type], arg_values: Mapping[str, An
 
 add_builtin(
     "select",
+    compile_family=None,
     input_types={"cond": builtins.bool, "value_if_false": Any, "value_if_true": Any},
     value_func=select_value_func,
     doc="""Select between two arguments, if ``cond`` is ``False`` then return ``value_if_false``, otherwise return ``value_if_true``.
@@ -11701,6 +11767,7 @@ add_builtin(
 for t in int_types:
     add_builtin(
         "select",
+        compile_family=None,
         input_types={"cond": t, "value_if_false": Any, "value_if_true": Any},
         value_func=select_value_func,
         doc="""Select between two arguments, if ``cond`` is ``False`` then return ``value_if_false``, otherwise return ``value_if_true``.
@@ -11715,6 +11782,7 @@ for t in int_types:
     )
 add_builtin(
     "select",
+    compile_family=None,
     input_types={"arr": array(dtype=Any), "value_if_false": Any, "value_if_true": Any},
     value_func=select_value_func,
     doc="""Select between two arguments, if ``arr`` is null then return ``value_if_false``, otherwise return ``value_if_true``.
@@ -11760,6 +11828,7 @@ def where_value_func(arg_types: Mapping[str, type], arg_values: Mapping[str, Any
 
 add_builtin(
     "where",
+    compile_family=None,
     input_types={"cond": builtins.bool, "value_if_true": Any, "value_if_false": Any},
     value_func=where_value_func,
     doc="Select between two arguments, if ``cond`` is ``True`` then return ``value_if_true``, otherwise return ``value_if_false``.",
@@ -11768,6 +11837,7 @@ add_builtin(
 for t in int_types:
     add_builtin(
         "where",
+        compile_family=None,
         input_types={"cond": t, "value_if_true": Any, "value_if_false": Any},
         value_func=where_value_func,
         doc="Select between two arguments, if ``cond`` is ``True`` then return ``value_if_true``, otherwise return ``value_if_false``.",
@@ -11775,6 +11845,7 @@ for t in int_types:
     )
 add_builtin(
     "where",
+    compile_family=None,
     input_types={"arr": array(dtype=Any), "value_if_true": Any, "value_if_false": Any},
     value_func=where_value_func,
     doc="Select between two arguments, if ``arr`` is not null then return ``value_if_true``, otherwise return ``value_if_false``.",
@@ -11806,6 +11877,7 @@ def array_dispatch_func(input_types: Mapping[str, type], return_type: Any, args:
 
 add_builtin(
     "array",
+    compile_family=None,
     input_types={"ptr": warp.uint64, "shape": tuple[int, ...], "dtype": Any},
     value_func=array_value_func,
     export_func=lambda input_types: {k: v for k, v in input_types.items() if k != "dtype"},
@@ -11848,6 +11920,7 @@ def zeros_dispatch_func(input_types: Mapping[str, type], return_type: Any, args:
 
 add_builtin(
     "zeros",
+    compile_family=None,
     input_types={"shape": tuple[int, ...], "dtype": Any},
     value_func=zeros_value_func,
     export_func=lambda input_types: {},
@@ -11861,6 +11934,7 @@ add_builtin(
 
 add_builtin(
     "zeros",
+    compile_family=None,
     input_types={"shape": int, "dtype": Any},
     value_func=zeros_value_func,
     export_func=lambda input_types: {},
@@ -11899,6 +11973,7 @@ def address_value_func(arg_types: Mapping[str, type], arg_values: Mapping[str, A
 for array_type in array_types:
     add_builtin(
         "address",
+        compile_family=None,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "l": Int},
         constraint=sametypes,
         defaults={"j": None, "k": None, "l": None},
@@ -11968,6 +12043,7 @@ def view_value_func(arg_types: Mapping[str, type], arg_values: Mapping[str, Any]
 for array_type in array_types:
     add_builtin(
         "view",
+        compile_family=None,
         input_types={
             "arr": array_type(dtype=Any),
             "i": Any,
@@ -12022,6 +12098,7 @@ def array_store_value_func(arg_types: Mapping[str, type], arg_values: Mapping[st
 for array_type in array_types:
     add_builtin(
         "array_store",
+        compile_family=None,
         input_types={"arr": array_type(dtype=Any), "i": Int, "value": Any},
         constraint=sametypes,
         hidden=True,
@@ -12031,6 +12108,7 @@ for array_type in array_types:
     )
     add_builtin(
         "array_store",
+        compile_family=None,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "value": Any},
         constraint=sametypes,
         hidden=True,
@@ -12040,6 +12118,7 @@ for array_type in array_types:
     )
     add_builtin(
         "array_store",
+        compile_family=None,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "value": Any},
         constraint=sametypes,
         hidden=True,
@@ -12049,6 +12128,7 @@ for array_type in array_types:
     )
     add_builtin(
         "array_store",
+        compile_family=None,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "l": Int, "value": Any},
         constraint=sametypes,
         hidden=True,
@@ -12077,6 +12157,7 @@ def store_dispatch_func(input_types: Mapping[str, type], return_type: Any, args:
 
 add_builtin(
     "store",
+    compile_family=None,
     input_types={"address": Any, "value": Any},
     value_func=store_value_func,
     dispatch_func=store_dispatch_func,
@@ -12095,6 +12176,7 @@ def load_dispatch_func(input_types: Mapping[str, type], return_type: Any, args: 
 
 add_builtin(
     "load",
+    compile_family=None,
     input_types={"address": Any},
     value_func=lambda arg_types, arg_values: arg_types["address"],
     dispatch_func=load_dispatch_func,
@@ -12211,6 +12293,7 @@ for array_type in array_types:
 
     add_builtin(
         "atomic_add",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12224,6 +12307,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_add",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12237,6 +12321,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_add",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12250,6 +12335,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_add",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "l": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12264,6 +12350,7 @@ for array_type in array_types:
 
     add_builtin(
         "atomic_sub",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12277,6 +12364,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_sub",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12290,6 +12378,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_sub",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12303,6 +12392,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_sub",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "l": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12317,6 +12407,7 @@ for array_type in array_types:
 
     add_builtin(
         "atomic_min",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12330,6 +12421,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_min",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12343,6 +12435,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_min",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12356,6 +12449,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_min",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "l": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12370,6 +12464,7 @@ for array_type in array_types:
 
     add_builtin(
         "atomic_max",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12383,6 +12478,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_max",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12396,6 +12492,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_max",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12409,6 +12506,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_max",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "l": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12423,6 +12521,7 @@ for array_type in array_types:
 
     add_builtin(
         "atomic_cas",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "compare": Any, "value": Any},
         constraint=atomic_op_constraint,
@@ -12437,6 +12536,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_cas",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "compare": Any, "value": Any},
         constraint=atomic_op_constraint,
@@ -12451,6 +12551,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_cas",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "compare": Any, "value": Any},
         constraint=atomic_op_constraint,
@@ -12465,6 +12566,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_cas",
+        compile_family=None,
         hidden=hidden,
         input_types={
             "arr": array_type(dtype=Any),
@@ -12488,6 +12590,7 @@ for array_type in array_types:
 
     add_builtin(
         "atomic_exch",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12502,6 +12605,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_exch",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12516,6 +12620,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_exch",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12530,6 +12635,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_exch",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "l": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12545,6 +12651,7 @@ for array_type in array_types:
 
     add_builtin(
         "atomic_and",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12559,6 +12666,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_and",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12573,6 +12681,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_and",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12587,6 +12696,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_and",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "l": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12602,6 +12712,7 @@ for array_type in array_types:
 
     add_builtin(
         "atomic_or",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12616,6 +12727,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_or",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12630,6 +12742,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_or",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12644,6 +12757,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_or",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "l": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12659,6 +12773,7 @@ for array_type in array_types:
 
     add_builtin(
         "atomic_xor",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12673,6 +12788,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_xor",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12687,6 +12803,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_xor",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12701,6 +12818,7 @@ for array_type in array_types:
     )
     add_builtin(
         "atomic_xor",
+        compile_family=None,
         hidden=hidden,
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "l": Int, "value": Any},
         constraint=atomic_op_constraint,
@@ -12735,6 +12853,7 @@ def vector_extract_dispatch_func(input_types: Mapping[str, type], return_type: A
 
 add_builtin(
     "extract",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "i": Any},
     value_func=vector_extract_value_func,
     dispatch_func=vector_extract_dispatch_func,
@@ -12745,6 +12864,7 @@ add_builtin(
 # Bool vector extract (bool is not part of Scalar)
 add_builtin(
     "extract",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=bool), "i": Any},
     value_func=vector_extract_value_func,
     dispatch_func=vector_extract_dispatch_func,
@@ -12754,6 +12874,7 @@ add_builtin(
 )
 add_builtin(
     "extract",
+    compile_family=None,
     input_types={"a": quaternion(dtype=Float), "i": Any},
     value_func=vector_extract_value_func,
     dispatch_func=vector_extract_dispatch_func,
@@ -12763,6 +12884,7 @@ add_builtin(
 )
 add_builtin(
     "extract",
+    compile_family=None,
     input_types={"a": transformation(dtype=Float), "i": Any},
     value_func=vector_extract_value_func,
     dispatch_func=vector_extract_dispatch_func,
@@ -12817,6 +12939,7 @@ def matrix_extract_dispatch_func(input_types: Mapping[str, type], return_type: A
 
 add_builtin(
     "extract",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": Any},
     value_func=matrix_extract_value_func,
     dispatch_func=matrix_extract_dispatch_func,
@@ -12826,6 +12949,7 @@ add_builtin(
 )
 add_builtin(
     "extract",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": Any, "j": Any},
     value_func=matrix_extract_value_func,
     dispatch_func=matrix_extract_dispatch_func,
@@ -12836,6 +12960,7 @@ add_builtin(
 # Bool matrix extract (bool is not part of Scalar)
 add_builtin(
     "extract",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=bool), "i": Any},
     value_func=matrix_extract_value_func,
     dispatch_func=matrix_extract_dispatch_func,
@@ -12845,6 +12970,7 @@ add_builtin(
 )
 add_builtin(
     "extract",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=bool), "i": Any, "j": Any},
     value_func=matrix_extract_value_func,
     dispatch_func=matrix_extract_dispatch_func,
@@ -12855,6 +12981,7 @@ add_builtin(
 
 add_builtin(
     "extract",
+    compile_family=None,
     input_types={"s": shape_t, "i": int},
     value_type=int,
     hidden=True,
@@ -12892,6 +13019,7 @@ def matrix_ij_dispatch_func(input_types: Mapping[str, type], return_type: Any, a
 # implements &vector[index]
 add_builtin(
     "index",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "i": Int},
     value_func=vector_index_value_func,
     dispatch_func=vector_index_dispatch_func,
@@ -12903,6 +13031,7 @@ add_builtin(
 # implements &bool_vector[index] (bool is not part of Scalar)
 add_builtin(
     "index",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=bool), "i": Int},
     value_func=vector_index_value_func,
     dispatch_func=vector_index_dispatch_func,
@@ -12914,6 +13043,7 @@ add_builtin(
 # implements &quaternion[index]
 add_builtin(
     "index",
+    compile_family=None,
     input_types={"a": quaternion(dtype=Float), "i": Int},
     value_func=vector_index_value_func,
     dispatch_func=vector_index_dispatch_func,
@@ -12925,6 +13055,7 @@ add_builtin(
 # implements &transformation[index]
 add_builtin(
     "index",
+    compile_family=None,
     input_types={"a": transformation(dtype=Float), "i": Int},
     value_func=vector_index_value_func,
     dispatch_func=vector_index_dispatch_func,
@@ -12936,6 +13067,7 @@ add_builtin(
 # implements &(*vector)[index]
 add_builtin(
     "indexref",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "i": Int},
     value_func=vector_index_value_func,
     dispatch_func=vector_index_dispatch_func,
@@ -12947,6 +13079,7 @@ add_builtin(
 # implements &(*bool_vector)[index] (bool is not part of Scalar)
 add_builtin(
     "indexref",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=bool), "i": Int},
     value_func=vector_index_value_func,
     dispatch_func=vector_index_dispatch_func,
@@ -12958,6 +13091,7 @@ add_builtin(
 # implements &(*matrix)[i, j]
 add_builtin(
     "indexref",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": Int, "j": Int},
     value_func=matrix_ij_value_func,
     dispatch_func=matrix_ij_dispatch_func,
@@ -12969,6 +13103,7 @@ add_builtin(
 # implements &(*bool_matrix)[i, j] (bool is not part of Scalar)
 add_builtin(
     "indexref",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=bool), "i": Int, "j": Int},
     value_func=matrix_ij_value_func,
     dispatch_func=matrix_ij_dispatch_func,
@@ -12980,6 +13115,7 @@ add_builtin(
 # implements &(*quaternion)[index]
 add_builtin(
     "indexref",
+    compile_family=None,
     input_types={"a": quaternion(dtype=Float), "i": Int},
     value_func=vector_index_value_func,
     dispatch_func=vector_index_dispatch_func,
@@ -12991,6 +13127,7 @@ add_builtin(
 # implements &(*transformation)[index]
 add_builtin(
     "indexref",
+    compile_family=None,
     input_types={"a": transformation(dtype=Float), "i": Int},
     value_func=vector_index_value_func,
     dispatch_func=vector_index_dispatch_func,
@@ -13038,6 +13175,7 @@ def vector_assign_dispatch_func(input_types: Mapping[str, type], return_type: An
 # implements vector[index] = value
 add_builtin(
     "assign_inplace",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "i": Any, "value": Any},
     value_type=None,
     dispatch_func=vector_assign_dispatch_func,
@@ -13049,6 +13187,7 @@ add_builtin(
 # Bool vector assign_inplace (bool is not part of Scalar)
 add_builtin(
     "assign_inplace",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=bool), "i": Any, "value": Any},
     value_type=None,
     dispatch_func=vector_assign_dispatch_func,
@@ -13060,6 +13199,7 @@ add_builtin(
 # implements quaternion[index] = value
 add_builtin(
     "assign_inplace",
+    compile_family=None,
     input_types={"a": quaternion(dtype=Float), "i": Any, "value": Any},
     value_type=None,
     dispatch_func=vector_assign_dispatch_func,
@@ -13070,6 +13210,7 @@ add_builtin(
 # implements transformation[index] = value
 add_builtin(
     "assign_inplace",
+    compile_family=None,
     input_types={"a": transformation(dtype=Float), "i": Any, "value": Any},
     value_type=None,
     dispatch_func=vector_assign_dispatch_func,
@@ -13087,6 +13228,7 @@ def vector_assign_copy_value_func(arg_types: Mapping[str, type], arg_values: Map
 # implements vector[index] = value, performs a copy internally if wp.config.enable_vector_component_overwrites is True
 add_builtin(
     "assign_copy",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "i": Any, "value": Any},
     value_func=vector_assign_copy_value_func,
     dispatch_func=vector_assign_dispatch_func,
@@ -13098,6 +13240,7 @@ add_builtin(
 # Bool vector assign_copy (bool is not part of Scalar)
 add_builtin(
     "assign_copy",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=bool), "i": Any, "value": Any},
     value_func=vector_assign_copy_value_func,
     dispatch_func=vector_assign_dispatch_func,
@@ -13109,6 +13252,7 @@ add_builtin(
 # implements quaternion[index] = value, performs a copy internally if wp.config.enable_vector_component_overwrites is True
 add_builtin(
     "assign_copy",
+    compile_family=None,
     input_types={"a": quaternion(dtype=Float), "i": Any, "value": Any},
     value_func=vector_assign_copy_value_func,
     dispatch_func=vector_assign_dispatch_func,
@@ -13120,6 +13264,7 @@ add_builtin(
 # implements transformation[index] = value, performs a copy internally if wp.config.enable_vector_component_overwrites is True
 add_builtin(
     "assign_copy",
+    compile_family=None,
     input_types={"a": transformation(dtype=Float), "i": Any, "value": Any},
     value_func=vector_assign_copy_value_func,
     dispatch_func=vector_assign_dispatch_func,
@@ -13131,6 +13276,7 @@ add_builtin(
 # implements vector[idx] += scalar
 add_builtin(
     "add_inplace",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "i": Any, "value": Any},
     value_type=None,
     dispatch_func=vector_assign_dispatch_func,
@@ -13142,6 +13288,7 @@ add_builtin(
 # implements quaternion[idx] += scalar
 add_builtin(
     "add_inplace",
+    compile_family=None,
     input_types={"a": quaternion(dtype=Float), "i": Any, "value": Any},
     value_type=None,
     dispatch_func=vector_assign_dispatch_func,
@@ -13153,6 +13300,7 @@ add_builtin(
 # implements transformation[idx] += scalar
 add_builtin(
     "add_inplace",
+    compile_family=None,
     input_types={"a": transformation(dtype=Float), "i": Any, "value": Any},
     value_type=None,
     dispatch_func=vector_assign_dispatch_func,
@@ -13164,6 +13312,7 @@ add_builtin(
 # implements transformation.p += vec3
 add_builtin(
     "transform_add_inplace",
+    compile_family=None,
     input_types={"a": transformation(dtype=Float), "value": vector(length=3, dtype=Float)},
     value_type=None,
     hidden=True,
@@ -13174,6 +13323,7 @@ add_builtin(
 # implements vector[idx] -= scalar
 add_builtin(
     "sub_inplace",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "i": Any, "value": Any},
     value_type=None,
     dispatch_func=vector_assign_dispatch_func,
@@ -13185,6 +13335,7 @@ add_builtin(
 # implements quaternion[idx] -= scalar
 add_builtin(
     "sub_inplace",
+    compile_family=None,
     input_types={"a": quaternion(dtype=Float), "i": Any, "value": Any},
     value_type=None,
     dispatch_func=vector_assign_dispatch_func,
@@ -13196,6 +13347,7 @@ add_builtin(
 # implements transformation[idx] -= scalar
 add_builtin(
     "sub_inplace",
+    compile_family=None,
     input_types={"a": transformation(dtype=Float), "i": Any, "value": Any},
     value_type=None,
     dispatch_func=vector_assign_dispatch_func,
@@ -13207,6 +13359,7 @@ add_builtin(
 # implements transformation.p -= vec3
 add_builtin(
     "transform_sub_inplace",
+    compile_family=None,
     input_types={"a": transformation(dtype=Float), "value": vector(length=3, dtype=Float)},
     value_type=None,
     hidden=True,
@@ -13218,6 +13371,7 @@ add_builtin(
 # implements vector[idx] &= scalar
 add_builtin(
     "bit_and_inplace",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "i": Any, "value": Any},
     value_type=None,
     dispatch_func=vector_assign_dispatch_func,
@@ -13230,6 +13384,7 @@ add_builtin(
 # implements vector[idx] |= scalar
 add_builtin(
     "bit_or_inplace",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "i": Any, "value": Any},
     value_type=None,
     dispatch_func=vector_assign_dispatch_func,
@@ -13242,6 +13397,7 @@ add_builtin(
 # implements vector[idx] ^= scalar
 add_builtin(
     "bit_xor_inplace",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "i": Any, "value": Any},
     value_type=None,
     dispatch_func=vector_assign_dispatch_func,
@@ -13262,6 +13418,7 @@ def matrix_index_row_value_func(arg_types: Mapping[str, type], arg_values: Mappi
 # implements &matrix[i] = row
 add_builtin(
     "index",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": int},
     value_func=matrix_index_row_value_func,
     hidden=True,
@@ -13281,6 +13438,7 @@ def matrix_index_value_func(arg_types: Mapping[str, type], arg_values: Mapping[s
 # implements &matrix[i,j] = scalar
 add_builtin(
     "index",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": int, "j": int},
     value_func=matrix_index_value_func,
     hidden=True,
@@ -13390,6 +13548,7 @@ def matrix_assign_dispatch_func(input_types: Mapping[str, type], return_type: An
 # implements matrix[i] = value
 add_builtin(
     "assign_inplace",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": Any, "value": Any},
     constraint=matrix_vector_sametype,
     value_type=None,
@@ -13403,6 +13562,7 @@ add_builtin(
 # implements matrix[i,j] = value
 add_builtin(
     "assign_inplace",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": Any, "j": Any, "value": Any},
     value_type=None,
     dispatch_func=matrix_assign_dispatch_func,
@@ -13420,6 +13580,7 @@ def matrix_assign_copy_value_func(arg_types: Mapping[str, type], arg_values: Map
 # implements matrix[i] = value
 add_builtin(
     "assign_copy",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": Any, "value": Any},
     value_func=matrix_assign_copy_value_func,
     dispatch_func=matrix_assign_dispatch_func,
@@ -13432,6 +13593,7 @@ add_builtin(
 # implements matrix[i,j] = value
 add_builtin(
     "assign_copy",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": Any, "j": Any, "value": Any},
     value_func=matrix_assign_copy_value_func,
     dispatch_func=matrix_assign_dispatch_func,
@@ -13444,6 +13606,7 @@ add_builtin(
 # implements matrix[i] += value
 add_builtin(
     "add_inplace",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": Any, "value": Any},
     constraint=matrix_vector_sametype,
     value_type=None,
@@ -13456,6 +13619,7 @@ add_builtin(
 # implements matrix[i,j] += value
 add_builtin(
     "add_inplace",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": Any, "j": Any, "value": Any},
     value_type=None,
     hidden=True,
@@ -13467,6 +13631,7 @@ add_builtin(
 # implements matrix[i] -= value
 add_builtin(
     "sub_inplace",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": Any, "value": Any},
     value_type=None,
     hidden=True,
@@ -13478,6 +13643,7 @@ add_builtin(
 # implements matrix[i,j] -= value
 add_builtin(
     "sub_inplace",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": Any, "j": Any, "value": Any},
     value_type=None,
     hidden=True,
@@ -13489,6 +13655,7 @@ add_builtin(
 # implements matrix[i] &= value
 add_builtin(
     "bit_and_inplace",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": Any, "value": Any},
     value_type=None,
     hidden=True,
@@ -13501,6 +13668,7 @@ add_builtin(
 # implements matrix[i,j] &= value
 add_builtin(
     "bit_and_inplace",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": Any, "j": Any, "value": Any},
     value_type=None,
     hidden=True,
@@ -13513,6 +13681,7 @@ add_builtin(
 # implements matrix[i] |= value
 add_builtin(
     "bit_or_inplace",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": Any, "value": Any},
     value_type=None,
     hidden=True,
@@ -13525,6 +13694,7 @@ add_builtin(
 # implements matrix[i,j] |= value
 add_builtin(
     "bit_or_inplace",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": Any, "j": Any, "value": Any},
     value_type=None,
     hidden=True,
@@ -13537,6 +13707,7 @@ add_builtin(
 # implements matrix[i] ^= value
 add_builtin(
     "bit_xor_inplace",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": Any, "value": Any},
     value_type=None,
     hidden=True,
@@ -13549,6 +13720,7 @@ add_builtin(
 # implements matrix[i,j] ^= value
 add_builtin(
     "bit_xor_inplace",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "i": Any, "j": Any, "value": Any},
     value_type=None,
     hidden=True,
@@ -13564,6 +13736,7 @@ for t in scalar_types + vector_types + (bool,):
 
     add_builtin(
         "expect_eq",
+        compile_family=None,
         input_types={"a": t, "b": t},
         value_type=None,
         doc="Print an error to stdout if ``a`` and ``b`` are not equal.",
@@ -13574,6 +13747,7 @@ for t in scalar_types + vector_types + (bool,):
 
     add_builtin(
         "expect_neq",
+        compile_family=None,
         input_types={"a": t, "b": t},
         value_type=None,
         doc="Print an error to stdout if ``a`` and ``b`` are not equal.",
@@ -13593,6 +13767,7 @@ def expect_eq_value_func(arg_types: Mapping[str, type], arg_values: Mapping[str,
 
 add_builtin(
     "expect_eq",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "b": vector(length=Any, dtype=Scalar)},
     constraint=sametypes,
     value_func=expect_eq_value_func,
@@ -13603,6 +13778,7 @@ add_builtin(
 )
 add_builtin(
     "expect_neq",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "b": vector(length=Any, dtype=Scalar)},
     constraint=sametypes,
     value_func=expect_eq_value_func,
@@ -13615,6 +13791,7 @@ add_builtin(
 
 add_builtin(
     "expect_eq",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "b": matrix(shape=(Any, Any), dtype=Scalar)},
     constraint=sametypes,
     value_func=expect_eq_value_func,
@@ -13625,6 +13802,7 @@ add_builtin(
 )
 add_builtin(
     "expect_neq",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "b": matrix(shape=(Any, Any), dtype=Scalar)},
     constraint=sametypes,
     value_func=expect_eq_value_func,
@@ -13638,6 +13816,7 @@ add_builtin(
 # Bool vector/matrix overloads for expect_eq/expect_neq (bool is not part of Scalar)
 add_builtin(
     "expect_eq",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=bool), "b": vector(length=Any, dtype=bool)},
     constraint=sametypes,
     value_func=expect_eq_value_func,
@@ -13648,6 +13827,7 @@ add_builtin(
 )
 add_builtin(
     "expect_neq",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=bool), "b": vector(length=Any, dtype=bool)},
     constraint=sametypes,
     value_func=expect_eq_value_func,
@@ -13659,6 +13839,7 @@ add_builtin(
 )
 add_builtin(
     "expect_eq",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=bool), "b": matrix(shape=(Any, Any), dtype=bool)},
     constraint=sametypes,
     value_func=expect_eq_value_func,
@@ -13669,6 +13850,7 @@ add_builtin(
 )
 add_builtin(
     "expect_neq",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=bool), "b": matrix(shape=(Any, Any), dtype=bool)},
     constraint=sametypes,
     value_func=expect_eq_value_func,
@@ -13681,6 +13863,7 @@ add_builtin(
 
 add_builtin(
     "lerp",
+    compile_family=None,
     input_types={"a": Float, "b": Float, "t": Float},
     value_func=sametypes_create_value_func(Float),
     doc="Linearly interpolate two values ``a`` and ``b`` using factor ``t``, computed as ``a*(1-t) + b*t``.",
@@ -13688,6 +13871,7 @@ add_builtin(
 )
 add_builtin(
     "smoothstep",
+    compile_family=None,
     input_types={"a": Float, "b": Float, "x": Float},
     value_func=sametypes_create_value_func(Float),
     doc="""Smoothly interpolate between two values ``a`` and ``b`` using a factor ``x``,
@@ -13718,6 +13902,7 @@ def lerp_create_value_func(default):
 
 add_builtin(
     "lerp",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Float), "b": vector(length=Any, dtype=Float), "t": Float},
     constraint=lerp_constraint,
     value_func=lerp_create_value_func(vector(length=Any, dtype=Float)),
@@ -13726,6 +13911,7 @@ add_builtin(
 )
 add_builtin(
     "lerp",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Float), "b": matrix(shape=(Any, Any), dtype=Float), "t": Float},
     constraint=lerp_constraint,
     value_func=lerp_create_value_func(matrix(shape=(Any, Any), dtype=Float)),
@@ -13734,6 +13920,7 @@ add_builtin(
 )
 add_builtin(
     "lerp",
+    compile_family=None,
     input_types={"a": quaternion(dtype=Float), "b": quaternion(dtype=Float), "t": Float},
     value_func=lerp_create_value_func(quaternion(dtype=Float)),
     doc="Linearly interpolate two values ``a`` and ``b`` using factor ``t``, computed as ``a*(1-t) + b*t``.",
@@ -13741,6 +13928,7 @@ add_builtin(
 )
 add_builtin(
     "lerp",
+    compile_family=None,
     input_types={"a": transformation(dtype=Float), "b": transformation(dtype=Float), "t": Float},
     value_func=lerp_create_value_func(transformation(dtype=Float)),
     doc="Linearly interpolate two values ``a`` and ``b`` using factor ``t``, computed as ``a*(1-t) + b*t``.",
@@ -13761,6 +13949,7 @@ def expect_near_constraint(arg_types: Mapping[str, type]):
 
 add_builtin(
     "expect_near",
+    compile_family=None,
     input_types={"a": Float, "b": Float, "tolerance": Float},
     defaults={"tolerance": 1.0e-6},
     constraint=expect_near_constraint,
@@ -13773,6 +13962,7 @@ add_builtin(
 )
 add_builtin(
     "expect_near",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Float), "b": vector(length=Any, dtype=Float), "tolerance": Float},
     defaults={"tolerance": 1.0e-6},
     constraint=expect_near_constraint,
@@ -13785,6 +13975,7 @@ add_builtin(
 )
 add_builtin(
     "expect_near",
+    compile_family=None,
     input_types={"a": quaternion(dtype=Float), "b": quaternion(dtype=Float), "tolerance": Float},
     defaults={"tolerance": 1.0e-6},
     constraint=expect_near_constraint,
@@ -13797,6 +13988,7 @@ add_builtin(
 )
 add_builtin(
     "expect_near",
+    compile_family=None,
     input_types={
         "a": matrix(shape=(Any, Any), dtype=Float),
         "b": matrix(shape=(Any, Any), dtype=Float),
@@ -13817,6 +14009,7 @@ add_builtin(
 
 add_builtin(
     "lower_bound",
+    compile_family=None,
     input_types={"arr": array(dtype=Scalar), "value": Scalar},
     value_type=int,
     doc="Search a sorted array ``arr`` for the closest element greater than or equal to ``value``.",
@@ -13825,6 +14018,7 @@ add_builtin(
 
 add_builtin(
     "lower_bound",
+    compile_family=None,
     input_types={"arr": array(dtype=Scalar), "arr_begin": int, "arr_end": int, "value": Scalar},
     value_type=int,
     doc="""Search a sorted array ``arr`` for the closest element greater than or equal to ``value``.
@@ -13839,6 +14033,7 @@ add_builtin(
 
 add_builtin(
     "add",
+    compile_family=None,
     input_types={"a": Scalar, "b": Scalar},
     value_func=sametypes_create_value_func(Scalar),
     doc="""Add ``a`` and ``b``.""",
@@ -13846,6 +14041,7 @@ add_builtin(
 )
 add_builtin(
     "add",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "b": vector(length=Any, dtype=Scalar)},
     constraint=sametypes,
     value_func=sametypes_create_value_func(vector(length=Any, dtype=Scalar)),
@@ -13854,6 +14050,7 @@ add_builtin(
 )
 add_builtin(
     "add",
+    compile_family=None,
     input_types={"a": quaternion(dtype=Float), "b": quaternion(dtype=Float)},
     value_func=sametypes_create_value_func(quaternion(dtype=Float)),
     doc="""Add ``a`` and ``b``.""",
@@ -13861,6 +14058,7 @@ add_builtin(
 )
 add_builtin(
     "add",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "b": matrix(shape=(Any, Any), dtype=Scalar)},
     constraint=sametypes,
     value_func=sametypes_create_value_func(matrix(shape=(Any, Any), dtype=Scalar)),
@@ -13869,6 +14067,7 @@ add_builtin(
 )
 add_builtin(
     "add",
+    compile_family=None,
     input_types={"a": transformation(dtype=Float), "b": transformation(dtype=Float)},
     value_func=sametypes_create_value_func(transformation(dtype=Float)),
     doc="""Add ``a`` and ``b``.""",
@@ -13877,6 +14076,7 @@ add_builtin(
 
 add_builtin(
     "sub",
+    compile_family=None,
     input_types={"a": Scalar, "b": Scalar},
     value_func=sametypes_create_value_func(Scalar),
     doc="""Subtract ``b`` from ``a``.""",
@@ -13884,6 +14084,7 @@ add_builtin(
 )
 add_builtin(
     "sub",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "b": vector(length=Any, dtype=Scalar)},
     constraint=sametypes,
     value_func=sametypes_create_value_func(vector(length=Any, dtype=Scalar)),
@@ -13892,6 +14093,7 @@ add_builtin(
 )
 add_builtin(
     "sub",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "b": matrix(shape=(Any, Any), dtype=Scalar)},
     constraint=sametypes,
     value_func=sametypes_create_value_func(matrix(shape=(Any, Any), dtype=Scalar)),
@@ -13900,6 +14102,7 @@ add_builtin(
 )
 add_builtin(
     "sub",
+    compile_family=None,
     input_types={"a": quaternion(dtype=Float), "b": quaternion(dtype=Float)},
     value_func=sametypes_create_value_func(quaternion(dtype=Float)),
     doc="""Subtract ``b`` from ``a``.""",
@@ -13907,6 +14110,7 @@ add_builtin(
 )
 add_builtin(
     "sub",
+    compile_family=None,
     input_types={"a": transformation(dtype=Float), "b": transformation(dtype=Float)},
     value_func=sametypes_create_value_func(transformation(dtype=Float)),
     doc="""Subtract ``b`` from ``a``.""",
@@ -13916,6 +14120,7 @@ add_builtin(
 # bitwise operators
 add_builtin(
     "bit_and",
+    compile_family=None,
     input_types={"a": Int, "b": Int},
     value_func=sametypes_create_value_func(Int),
     doc="""Compute the bitwise AND of ``a`` and ``b``.""",
@@ -13924,6 +14129,7 @@ add_builtin(
 )
 add_builtin(
     "bit_and",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Int), "b": vector(length=Any, dtype=Int)},
     constraint=sametypes,
     value_func=sametypes_create_value_func(vector(length=Any, dtype=Int)),
@@ -13935,6 +14141,7 @@ add_builtin(
 )
 add_builtin(
     "bit_and",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Int), "b": matrix(shape=(Any, Any), dtype=Int)},
     constraint=sametypes,
     value_func=sametypes_create_value_func(matrix(shape=(Any, Any), dtype=Int)),
@@ -13947,6 +14154,7 @@ add_builtin(
 
 add_builtin(
     "bit_or",
+    compile_family=None,
     input_types={"a": Int, "b": Int},
     value_func=sametypes_create_value_func(Int),
     doc="""Compute the bitwise OR of ``a`` and ``b``.""",
@@ -13955,6 +14163,7 @@ add_builtin(
 )
 add_builtin(
     "bit_or",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Int), "b": vector(length=Any, dtype=Int)},
     constraint=sametypes,
     value_func=sametypes_create_value_func(vector(length=Any, dtype=Int)),
@@ -13966,6 +14175,7 @@ add_builtin(
 )
 add_builtin(
     "bit_or",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Int), "b": matrix(shape=(Any, Any), dtype=Int)},
     constraint=sametypes,
     value_func=sametypes_create_value_func(matrix(shape=(Any, Any), dtype=Int)),
@@ -13978,6 +14188,7 @@ add_builtin(
 
 add_builtin(
     "bit_xor",
+    compile_family=None,
     input_types={"a": Int, "b": Int},
     value_func=sametypes_create_value_func(Int),
     doc="""Compute the bitwise XOR of ``a`` and ``b``.""",
@@ -13986,6 +14197,7 @@ add_builtin(
 )
 add_builtin(
     "bit_xor",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Int), "b": vector(length=Any, dtype=Int)},
     constraint=sametypes,
     value_func=sametypes_create_value_func(vector(length=Any, dtype=Int)),
@@ -13997,6 +14209,7 @@ add_builtin(
 )
 add_builtin(
     "bit_xor",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Int), "b": matrix(shape=(Any, Any), dtype=Int)},
     constraint=sametypes,
     value_func=sametypes_create_value_func(matrix(shape=(Any, Any), dtype=Int)),
@@ -14009,6 +14222,7 @@ add_builtin(
 
 add_builtin(
     "lshift",
+    compile_family=None,
     input_types={"a": Int, "b": Int},
     value_func=sametypes_create_value_func(Int),
     doc="""Compute ``a`` left-shifted by ``b`` bits.""",
@@ -14017,6 +14231,7 @@ add_builtin(
 )
 add_builtin(
     "lshift",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Int), "b": vector(length=Any, dtype=Int)},
     constraint=sametypes,
     value_func=sametypes_create_value_func(vector(length=Any, dtype=Int)),
@@ -14028,6 +14243,7 @@ add_builtin(
 )
 add_builtin(
     "lshift",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Int), "b": matrix(shape=(Any, Any), dtype=Int)},
     constraint=sametypes,
     value_func=sametypes_create_value_func(matrix(shape=(Any, Any), dtype=Int)),
@@ -14040,6 +14256,7 @@ add_builtin(
 
 add_builtin(
     "rshift",
+    compile_family=None,
     input_types={"a": Int, "b": Int},
     value_func=sametypes_create_value_func(Int),
     doc="""Compute ``a`` right-shifted by ``b`` bits.""",
@@ -14048,6 +14265,7 @@ add_builtin(
 )
 add_builtin(
     "rshift",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Int), "b": vector(length=Any, dtype=Int)},
     constraint=sametypes,
     value_func=sametypes_create_value_func(vector(length=Any, dtype=Int)),
@@ -14059,6 +14277,7 @@ add_builtin(
 )
 add_builtin(
     "rshift",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Int), "b": matrix(shape=(Any, Any), dtype=Int)},
     constraint=sametypes,
     value_func=sametypes_create_value_func(matrix(shape=(Any, Any), dtype=Int)),
@@ -14071,6 +14290,7 @@ add_builtin(
 
 add_builtin(
     "invert",
+    compile_family=None,
     input_types={"a": Int},
     value_func=sametypes_create_value_func(Int),
     doc="""Compute the bitwise complement of ``a``.""",
@@ -14079,6 +14299,7 @@ add_builtin(
 )
 add_builtin(
     "invert",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Int)},
     value_func=sametypes_create_value_func(vector(length=Any, dtype=Int)),
     doc="""Compute the bitwise complement of ``a``.
@@ -14089,6 +14310,7 @@ add_builtin(
 )
 add_builtin(
     "invert",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Int)},
     value_func=sametypes_create_value_func(matrix(shape=(Any, Any), dtype=Int)),
     doc="""Compute the bitwise complement of ``a``.
@@ -14101,6 +14323,7 @@ add_builtin(
 
 add_builtin(
     "mul",
+    compile_family=None,
     input_types={"a": Scalar, "b": Scalar},
     value_func=sametypes_create_value_func(Scalar),
     doc="""Multiply two values.""",
@@ -14125,6 +14348,7 @@ def scalar_mul_create_value_func(default):
 
 add_builtin(
     "mul",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "b": Scalar},
     value_func=scalar_mul_create_value_func(vector(length=Any, dtype=Scalar)),
     doc="""Multiply two values.
@@ -14134,6 +14358,7 @@ add_builtin(
 )
 add_builtin(
     "mul",
+    compile_family=None,
     input_types={"a": Scalar, "b": vector(length=Any, dtype=Scalar)},
     value_func=scalar_mul_create_value_func(vector(length=Any, dtype=Scalar)),
     doc="""Multiply two values.
@@ -14143,6 +14368,7 @@ add_builtin(
 )
 add_builtin(
     "mul",
+    compile_family=None,
     input_types={"a": quaternion(dtype=Float), "b": Scalar},
     value_func=scalar_mul_create_value_func(quaternion(dtype=Float)),
     doc="""Multiply two values.
@@ -14152,6 +14378,7 @@ add_builtin(
 )
 add_builtin(
     "mul",
+    compile_family=None,
     input_types={"a": Scalar, "b": quaternion(dtype=Float)},
     value_func=scalar_mul_create_value_func(quaternion(dtype=Float)),
     doc="""Multiply two values.
@@ -14161,6 +14388,7 @@ add_builtin(
 )
 add_builtin(
     "mul",
+    compile_family=None,
     input_types={"a": quaternion(dtype=Float), "b": quaternion(dtype=Float)},
     value_func=sametypes_create_value_func(quaternion(dtype=Float)),
     doc="""Multiply two values.
@@ -14170,6 +14398,7 @@ add_builtin(
 )
 add_builtin(
     "mul",
+    compile_family=None,
     input_types={"a": Scalar, "b": matrix(shape=(Any, Any), dtype=Scalar)},
     value_func=scalar_mul_create_value_func(matrix(shape=(Any, Any), dtype=Scalar)),
     doc="""Multiply two values.
@@ -14179,6 +14408,7 @@ add_builtin(
 )
 add_builtin(
     "mul",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "b": Scalar},
     value_func=scalar_mul_create_value_func(matrix(shape=(Any, Any), dtype=Scalar)),
     doc="""Multiply two values.
@@ -14211,6 +14441,7 @@ def matvec_mul_value_func(arg_types: Mapping[str, type], arg_values: Mapping[str
 
 add_builtin(
     "mul",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "b": vector(length=Any, dtype=Scalar)},
     constraint=matvec_mul_constraint,
     value_func=matvec_mul_value_func,
@@ -14244,6 +14475,7 @@ def mul_vecmat_value_func(arg_types: Mapping[str, type], arg_values: Mapping[str
 
 add_builtin(
     "mul",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "b": matrix(shape=(Any, Any), dtype=Scalar)},
     constraint=mul_vecmat_constraint,
     value_func=mul_vecmat_value_func,
@@ -14275,6 +14507,7 @@ def matmat_mul_value_func(arg_types: Mapping[str, type], arg_values: Mapping[str
 
 add_builtin(
     "mul",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "b": matrix(shape=(Any, Any), dtype=Scalar)},
     constraint=matmat_mul_constraint,
     value_func=matmat_mul_value_func,
@@ -14287,6 +14520,7 @@ add_builtin(
 
 add_builtin(
     "mul",
+    compile_family=None,
     input_types={"a": transformation(dtype=Float), "b": transformation(dtype=Float)},
     value_func=sametypes_create_value_func(transformation(dtype=Float)),
     doc="""Multiply two values.
@@ -14296,6 +14530,7 @@ add_builtin(
 )
 add_builtin(
     "mul",
+    compile_family=None,
     input_types={"a": Scalar, "b": transformation(dtype=Float)},
     value_func=scalar_mul_create_value_func(transformation(dtype=Float)),
     doc="""Multiply two values.
@@ -14307,6 +14542,7 @@ add_builtin(
 )
 add_builtin(
     "mul",
+    compile_family=None,
     input_types={"a": transformation(dtype=Float), "b": Scalar},
     value_func=scalar_mul_create_value_func(transformation(dtype=Float)),
     doc="""Multiply two values.
@@ -14319,6 +14555,7 @@ add_builtin(
 
 add_builtin(
     "mod",
+    compile_family=None,
     input_types={"a": Scalar, "b": Scalar},
     value_func=sametypes_create_value_func(Scalar),
     doc="Modulo operation using truncated division.",
@@ -14326,6 +14563,7 @@ add_builtin(
 )
 add_builtin(
     "mod",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "b": vector(length=Any, dtype=Scalar)},
     constraint=sametypes,
     value_func=sametypes_create_value_func(vector(length=Any, dtype=Scalar)),
@@ -14336,6 +14574,7 @@ add_builtin(
 
 add_builtin(
     "div",
+    compile_family=None,
     input_types={"a": Scalar, "b": Scalar},
     value_func=sametypes_create_value_func(Scalar),
     doc="""Divide two values.""",
@@ -14344,6 +14583,7 @@ add_builtin(
 )
 add_builtin(
     "div",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar), "b": Scalar},
     value_func=scalar_mul_create_value_func(vector(length=Any, dtype=Scalar)),
     doc="""Divide two values.
@@ -14353,6 +14593,7 @@ add_builtin(
 )
 add_builtin(
     "div",
+    compile_family=None,
     input_types={"a": Scalar, "b": vector(length=Any, dtype=Scalar)},
     value_func=scalar_mul_create_value_func(vector(length=Any, dtype=Scalar)),
     doc="""Divide two values.
@@ -14362,6 +14603,7 @@ add_builtin(
 )
 add_builtin(
     "div",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar), "b": Scalar},
     value_func=scalar_mul_create_value_func(matrix(shape=(Any, Any), dtype=Scalar)),
     doc="""Divide two values.
@@ -14371,6 +14613,7 @@ add_builtin(
 )
 add_builtin(
     "div",
+    compile_family=None,
     input_types={"a": Scalar, "b": matrix(shape=(Any, Any), dtype=Scalar)},
     value_func=scalar_mul_create_value_func(matrix(shape=(Any, Any), dtype=Scalar)),
     doc="""Divide two values.
@@ -14380,6 +14623,7 @@ add_builtin(
 )
 add_builtin(
     "div",
+    compile_family=None,
     input_types={"a": quaternion(dtype=Float), "b": Scalar},
     value_func=scalar_mul_create_value_func(quaternion(dtype=Float)),
     doc="""Divide two values.
@@ -14391,6 +14635,7 @@ add_builtin(
 )
 add_builtin(
     "div",
+    compile_family=None,
     input_types={"a": Scalar, "b": quaternion(dtype=Float)},
     value_func=scalar_mul_create_value_func(quaternion(dtype=Float)),
     doc="""Divide two values.
@@ -14403,6 +14648,7 @@ add_builtin(
 
 add_builtin(
     "div_approx",
+    compile_family=None,
     input_types={"a": Float, "b": Float},
     value_func=sametypes_create_value_func(Float),
     native_func="approx_div",
@@ -14415,6 +14661,7 @@ add_builtin(
 )
 add_builtin(
     "div_approx",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Float), "b": Float},
     value_func=scalar_mul_create_value_func(vector(length=Any, dtype=Float)),
     native_func="approx_div",
@@ -14426,6 +14673,7 @@ add_builtin(
 )
 add_builtin(
     "div_approx",
+    compile_family=None,
     input_types={"a": Float, "b": vector(length=Any, dtype=Float)},
     value_func=scalar_mul_create_value_func(vector(length=Any, dtype=Float)),
     native_func="approx_div",
@@ -14437,6 +14685,7 @@ add_builtin(
 )
 add_builtin(
     "div_approx",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Float), "b": Float},
     value_func=scalar_mul_create_value_func(matrix(shape=(Any, Any), dtype=Float)),
     native_func="approx_div",
@@ -14448,6 +14697,7 @@ add_builtin(
 )
 add_builtin(
     "div_approx",
+    compile_family=None,
     input_types={"a": Float, "b": matrix(shape=(Any, Any), dtype=Float)},
     value_func=scalar_mul_create_value_func(matrix(shape=(Any, Any), dtype=Float)),
     native_func="approx_div",
@@ -14459,6 +14709,7 @@ add_builtin(
 )
 add_builtin(
     "div_approx",
+    compile_family=None,
     input_types={"a": quaternion(dtype=Float), "b": Float},
     value_func=scalar_mul_create_value_func(quaternion(dtype=Float)),
     native_func="approx_div",
@@ -14472,6 +14723,7 @@ add_builtin(
 )
 add_builtin(
     "div_approx",
+    compile_family=None,
     input_types={"a": Float, "b": quaternion(dtype=Float)},
     value_func=scalar_mul_create_value_func(quaternion(dtype=Float)),
     native_func="approx_div",
@@ -14486,6 +14738,7 @@ add_builtin(
 
 add_builtin(
     "floordiv",
+    compile_family=None,
     input_types={"a": Scalar, "b": Scalar},
     value_func=sametypes_create_value_func(Scalar),
     doc="Divide two scalars using floor division.",
@@ -14495,6 +14748,7 @@ add_builtin(
 
 add_builtin(
     "pos",
+    compile_family=None,
     input_types={"x": Scalar},
     value_func=sametypes_create_value_func(Scalar),
     doc="""Pass ``x`` unchanged.""",
@@ -14502,6 +14756,7 @@ add_builtin(
 )
 add_builtin(
     "pos",
+    compile_family=None,
     input_types={"x": vector(length=Any, dtype=Scalar)},
     value_func=sametypes_create_value_func(vector(length=Any, dtype=Scalar)),
     doc="""Pass ``x`` unchanged.""",
@@ -14509,6 +14764,7 @@ add_builtin(
 )
 add_builtin(
     "pos",
+    compile_family=None,
     input_types={"x": quaternion(dtype=Float)},
     value_func=sametypes_create_value_func(quaternion(dtype=Float)),
     doc="""Pass ``x`` unchanged.""",
@@ -14516,6 +14772,7 @@ add_builtin(
 )
 add_builtin(
     "pos",
+    compile_family=None,
     input_types={"x": matrix(shape=(Any, Any), dtype=Scalar)},
     value_func=sametypes_create_value_func(matrix(shape=(Any, Any), dtype=Scalar)),
     doc="""Pass ``x`` unchanged.""",
@@ -14523,6 +14780,7 @@ add_builtin(
 )
 add_builtin(
     "neg",
+    compile_family=None,
     input_types={"x": Scalar},
     value_func=sametypes_create_value_func(Scalar),
     doc="""Negate ``x``.""",
@@ -14530,6 +14788,7 @@ add_builtin(
 )
 add_builtin(
     "neg",
+    compile_family=None,
     input_types={"x": vector(length=Any, dtype=Scalar)},
     value_func=sametypes_create_value_func(vector(length=Any, dtype=Scalar)),
     doc="""Negate ``x``.""",
@@ -14537,6 +14796,7 @@ add_builtin(
 )
 add_builtin(
     "neg",
+    compile_family=None,
     input_types={"x": quaternion(dtype=Float)},
     value_func=sametypes_create_value_func(quaternion(dtype=Float)),
     doc="""Negate ``x``.""",
@@ -14544,6 +14804,7 @@ add_builtin(
 )
 add_builtin(
     "neg",
+    compile_family=None,
     input_types={"x": matrix(shape=(Any, Any), dtype=Scalar)},
     value_func=sametypes_create_value_func(matrix(shape=(Any, Any), dtype=Scalar)),
     doc="""Negate ``x``.""",
@@ -14552,6 +14813,7 @@ add_builtin(
 
 add_builtin(
     "unot",
+    compile_family=None,
     input_types={"a": builtins.bool},
     value_type=builtins.bool,
     doc="""Compute logical NOT of ``a``.
@@ -14564,6 +14826,7 @@ add_builtin(
 for t in int_types:
     add_builtin(
         "unot",
+        compile_family=None,
         input_types={"a": t},
         value_type=builtins.bool,
         doc="""Compute logical NOT of ``a``.
@@ -14577,6 +14840,7 @@ for t in int_types:
 
 add_builtin(
     "unot",
+    compile_family=None,
     input_types={"a": array(dtype=Any)},
     value_type=builtins.bool,
     doc="""Compute logical NOT of ``a``.
@@ -14796,7 +15060,7 @@ add_builtin(
     export=False,
     native_func="tile_neg",
     group="Operators",
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -14809,7 +15073,7 @@ add_builtin(
     doc="""Add ``a`` and ``b``.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -14822,7 +15086,7 @@ add_builtin(
     doc="""Subtract ``b`` from ``a``.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 # NOTE: The tile*tile overload must be registered before the tile*Any overload below.
@@ -14837,7 +15101,7 @@ add_builtin(
     doc="""Element-wise multiplication of tiles.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -14853,7 +15117,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -14869,7 +15133,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -14885,7 +15149,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -14902,7 +15166,7 @@ add_builtin(
     export=False,
     native_func="tile_mul",
     group="Operators",
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -14926,7 +15190,7 @@ add_builtin(
     export=False,
     native_func="tile_mul",
     group="Operators",
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -14940,7 +15204,7 @@ add_builtin(
     doc="""Element-wise division of tiles.""",
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -14958,7 +15222,7 @@ add_builtin(
     Underlying scalar types must match.""",
     export=False,
     group="Operators",
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -14976,7 +15240,7 @@ add_builtin(
     Underlying scalar types must match.""",
     export=False,
     group="Operators",
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -15004,7 +15268,7 @@ add_builtin(
     hidden=True,
     native_func="tile_add_inplace",
     group="Operators",
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -15017,7 +15281,7 @@ add_builtin(
     hidden=True,
     native_func="tile_sub_inplace",
     group="Operators",
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -15031,7 +15295,7 @@ add_builtin(
     native_func="tile_bit_and_inplace",
     group="Operators",
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -15045,7 +15309,7 @@ add_builtin(
     native_func="tile_bit_or_inplace",
     group="Operators",
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -15059,7 +15323,7 @@ add_builtin(
     native_func="tile_bit_xor_inplace",
     group="Operators",
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -15125,7 +15389,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -15442,7 +15706,7 @@ add_builtin(
 """,
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -15478,7 +15742,7 @@ add_builtin(
 """,
     group="Tile Primitives",
     export=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -15751,7 +16015,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     namespace="",
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 add_builtin(
@@ -15782,7 +16046,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     namespace="",
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -16034,7 +16298,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=True,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -16067,7 +16331,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -16251,7 +16515,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -16287,7 +16551,7 @@ add_builtin(
     group="Tile Primitives",
     export=False,
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -16508,7 +16772,7 @@ add_builtin(
     export=False,
     namespace="",
     is_differentiable=True,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -16536,7 +16800,7 @@ add_builtin(
     export=False,
     namespace="",
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -16710,7 +16974,7 @@ add_builtin(
     export=False,
     namespace="",
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -16738,7 +17002,7 @@ add_builtin(
     export=False,
     namespace="",
     is_differentiable=False,
-    compile_guard="WP_NO_TILE",
+    compile_family=warp._src.codegen.CompileFamily.TILE,
 )
 
 
@@ -16747,6 +17011,7 @@ add_builtin(
 
 add_builtin(
     "static",
+    compile_family=None,
     input_types={"expr": Any},
     value_type=Any,
     doc="""Evaluate a static Python expression and replaces it with its result.
@@ -16778,6 +17043,7 @@ def static(expr):
 
 add_builtin(
     "len",
+    compile_family=None,
     input_types={"a": vector(length=Any, dtype=Scalar)},
     value_func=static_len_value_func,
     doc="""Query the length of ``a``.
@@ -16792,6 +17058,7 @@ add_builtin(
 
 add_builtin(
     "len",
+    compile_family=None,
     input_types={"a": quaternion(dtype=Float)},
     value_func=static_len_value_func,
     doc="""Query the length of ``a``.
@@ -16806,6 +17073,7 @@ add_builtin(
 
 add_builtin(
     "len",
+    compile_family=None,
     input_types={"a": matrix(shape=(Any, Any), dtype=Scalar)},
     value_func=static_len_value_func,
     doc="""Query the length of ``a``.
@@ -16820,6 +17088,7 @@ add_builtin(
 
 add_builtin(
     "len",
+    compile_family=None,
     input_types={"a": transformation(dtype=Float)},
     value_func=static_len_value_func,
     doc="""Query the length of ``a``.
@@ -16834,6 +17103,7 @@ add_builtin(
 
 add_builtin(
     "len",
+    compile_family=None,
     input_types={"a": array(dtype=Any)},
     value_type=int,
     doc="""Query the length of ``a``.
@@ -16848,6 +17118,7 @@ add_builtin(
 
 add_builtin(
     "len",
+    compile_family=None,
     input_types={"a": tile(dtype=Any, shape=tuple[int, ...])},
     value_func=static_len_value_func,
     doc="""Query the length of ``a``.
@@ -16877,6 +17148,7 @@ def cast_dispatch_func(input_types: Mapping[str, type], return_type: Any, args: 
 
 add_builtin(
     "cast",
+    compile_family=None,
     input_types={"a": Any, "dtype": Any},
     value_func=cast_value_func,
     dispatch_func=cast_dispatch_func,
@@ -16933,6 +17205,7 @@ def tuple_dispatch_func(input_types: Mapping[str, type], return_type: Any, args:
 
 add_builtin(
     "tuple",
+    compile_family=None,
     input_types={"*args": Any},
     value_func=tuple_value_func,
     dispatch_func=tuple_dispatch_func,
@@ -16972,6 +17245,7 @@ def tuple_extract_dispatch_func(input_types: Mapping[str, type], return_type: An
 
 add_builtin(
     "extract",
+    compile_family=None,
     input_types={"a": tuple, "i": int},
     value_func=tuple_extract_value_func,
     dispatch_func=tuple_extract_dispatch_func,
@@ -16983,6 +17257,7 @@ add_builtin(
 
 add_builtin(
     "len",
+    compile_family=None,
     input_types={"a": tuple},
     value_func=static_len_value_func,
     doc="""Query the length of ``a``.
@@ -17005,6 +17280,7 @@ def slice_value_func(arg_types: Mapping[str, type], arg_values: Mapping[str, Any
 
 add_builtin(
     "slice",
+    compile_family=None,
     input_types={"start": int, "stop": int, "step": int},
     value_func=slice_value_func,
     native_func="slice_t",
