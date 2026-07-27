@@ -1,6 +1,21 @@
 # Robust Compile Guards
 
-**Status**: Implemented
+**Status**: Shelved (2026-07-27)
+
+> [!IMPORTANT]
+> This document records the branch's implemented design, but it is no longer
+> an approved implementation or merge plan. Matched measurements against exact
+> `main` found only a 0.44% aggregate CPU improvement with default PCH and a
+> 1.16% CUDA improvement, with credible regressions in some Newton workloads.
+> That product value does not justify the design's permanent maintenance cost.
+> Do not merge or refactor this branch on the basis of this document.
+>
+> The unlisted
+> [branch status and measurement record](https://gist.github.com/shi-eric/5fdf6e215795af2461f9bb94aa22499e)
+> contains the final decision, exact revisions, application results, and
+> artifact hashes. If compile guards are revisited, start a small coarse
+> Geometry-and-Tile experiment from then-current `main` rather than reviving
+> this complete branch.
 
 ## Motivation
 
