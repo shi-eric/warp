@@ -130,6 +130,75 @@ def bad_kernel(a: wp.array[float]):
                 a = wp.zeros(4, dtype=float, device=device)
                 wp.launch(kernel, dim=4, inputs=[a], device=device)
 
+    @staticmethod
+    def _make_native_failure_module():
+        """Import a fresh module whose native build fails, alongside a valid kernel.
+
+        The snippet is not valid C++, so Warp's own codegen succeeds and the
+        failure comes from the native compiler instead. That fails the whole
+        module rather than a single kernel's adjoint.
+        """
+        name = f"_test_native_build_fail_{uuid.uuid4().hex[:12]}"
+        code = '''\
+import warp as wp
+
+snippet = """
+    not valid C++ #### ;;; @@@
+"""
+
+@wp.func_native(snippet)
+def broken_native(a: wp.array[float], tid: int):
+    ...
+
+@wp.kernel
+def native_kernel(a: wp.array[float]):
+    tid = wp.tid()
+    broken_native(a, tid)
+
+@wp.kernel
+def sibling_kernel(a: wp.array[float]):
+    i = wp.tid()
+    a[i] = 7.0
+'''
+        file, file_path = tempfile.mkstemp(suffix=".py")
+        try:
+            with os.fdopen(file, "w") as f:
+                f.write(code)
+
+            spec = util.spec_from_file_location(name, file_path)
+            module = util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        finally:
+            os.remove(file_path)
+
+        return module
+
+    def test_native_build_failure_repeats_on_relaunch(self):
+        """Verify that relaunching a kernel whose native build failed raises again."""
+        module = self._make_native_failure_module()
+        device = wp.get_device()
+        a = wp.zeros(4, dtype=float, device=device)
+
+        with self.assertRaises(Exception) as caught:
+            wp.launch(module.native_kernel, dim=4, inputs=[a], device=device)
+
+        with self.assertRaises(type(caught.exception)):
+            wp.launch(module.native_kernel, dim=4, inputs=[a], device=device)
+
+    def test_native_build_failure_reported_for_sibling_kernel(self):
+        """Verify that a valid kernel reports its module's build failure instead of skipping."""
+        module = self._make_native_failure_module()
+        device = wp.get_device()
+        a = wp.zeros(4, dtype=float, device=device)
+
+        with self.assertRaises(Exception) as caught:
+            wp.launch(module.native_kernel, dim=4, inputs=[a], device=device)
+
+        # sibling_kernel is valid, but its module never built. Launching it has to
+        # say so rather than returning as though the kernel had run.
+        with self.assertRaises(type(caught.exception)):
+            wp.launch(module.sibling_kernel, dim=4, inputs=[a], device=device)
+
 
 devices = get_test_devices()
 add_function_test(

@@ -3375,8 +3375,8 @@ class Module:
         # executable modules currently loaded
         self.execs = {}  # ((device.context, blockdim): ModuleExec)
 
-        # set of (device context, block_dim) variants where the build has failed
-        self.failed_builds = set()
+        # ((device context, block_dim): the exception that failed that build)
+        self.failed_builds = {}
 
         # hash data, including the module hash. Module may store multiple hashes (one per block_dim used)
         self.hashers = {}
@@ -4065,9 +4065,9 @@ class Module:
                 _check_and_raise_long_path_error(e)
 
             if is_cpu:
-                self.failed_builds.add((None, active_block_dim))
+                self.failed_builds[(None, active_block_dim)] = e
             elif device:
-                self.failed_builds.add((device.context, active_block_dim))
+                self.failed_builds[(device.context, active_block_dim)] = e
 
             raise (e)
 
@@ -4154,9 +4154,14 @@ class Module:
                 new_str = current_hash.hex()[:8] if current_hash else "None"
                 log_debug(f"[Module.load] Module hash changed, recompiling: {self.name} ({old_str} -> {new_str})")
 
-        # quietly avoid repeated build attempts to reduce error spew
-        if (device.context, active_block_dim) in self.failed_builds:
-            return None
+        # Replay the recorded failure instead of rebuilding, which keeps the error
+        # spew down without going quiet: returning None here reads to callers as
+        # "nothing to do" and silently skips every kernel in the module, including
+        # the ones that had nothing to do with the failure. A fresh instance keeps
+        # the traceback from growing across repeated launches.
+        build_error = self.failed_builds.get((device.context, active_block_dim))
+        if build_error is not None:
+            raise type(build_error)(*build_error.args) from None
 
         module_hash = self.get_module_hash(active_block_dim)
         options = self.resolved_options[active_block_dim]
@@ -4282,7 +4287,7 @@ class Module:
         self.resolved_options = {}
 
         # clear build failures
-        self.failed_builds = set()
+        self.failed_builds = {}
 
     # lookup kernel entry points based on name, called after compilation / module load
     def get_kernel_hooks(self, kernel, device: Device) -> KernelHooks:
