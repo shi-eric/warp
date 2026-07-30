@@ -2070,7 +2070,10 @@ class Adjoint:
 
         This validation happens during build() (before C++ code generation) to catch
         errors early and prevent module contamination. If validation fails here,
-        the function is marked as skip_build and won't emit any C++ code.
+        the function is marked as skip_build and won't emit any C++ code. Kernels
+        calling it are still emitted, with the failing call reduced to a comment,
+        and are rejected at launch by their recorded build error rather than
+        running that truncated code.
         """
         if adj.return_var is not None and "return" in adj.arg_types:
             if get_origin(adj.arg_types["return"]) is tuple:
