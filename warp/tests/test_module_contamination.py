@@ -3,7 +3,11 @@
 
 """Test that validation failures don't contaminate shared modules with invalid code."""
 
+import os
+import tempfile
 import unittest
+import uuid
+from importlib import util
 
 import warp as wp
 from warp.tests.unittest_utils import *
@@ -66,6 +70,65 @@ def test_function_validation_failure_contamination(test, device):
 
 class TestModuleContamination(unittest.TestCase):
     pass
+
+
+class TestFailedBuildRepeats(unittest.TestCase):
+    """Verify that a build failure keeps failing the same way.
+
+    A kernel that cannot be built must report the same error on every retry and
+    on every device. Reporting it only the first time leaves later launches
+    running whatever partial state the failed build left behind.
+    """
+
+    @staticmethod
+    def _make_bad_kernel():
+        """Import a fresh regular module whose kernel fails during codegen.
+
+        A regular module is required here. Kernels declared with
+        ``module="unique"`` take a separate path that already clears the failed
+        build state between devices.
+        """
+        name = f"_test_failed_build_{uuid.uuid4().hex[:12]}"
+        code = """\
+import warp as wp
+
+@wp.kernel
+def bad_kernel(a: wp.array[float]):
+    i = wp.tid()
+    a[i] = 1.0
+    a[i] = wp.no_such_builtin_function(a[i])
+"""
+        file, file_path = tempfile.mkstemp(suffix=".py")
+        try:
+            with os.fdopen(file, "w") as f:
+                f.write(code)
+
+            spec = util.spec_from_file_location(name, file_path)
+            module = util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        finally:
+            os.remove(file_path)
+
+        return module.bad_kernel
+
+    def test_codegen_failure_repeats_on_same_device(self):
+        """Verify that relaunching a kernel that failed codegen raises again."""
+        kernel = self._make_bad_kernel()
+        device = wp.get_device()
+        a = wp.zeros(4, dtype=float, device=device)
+
+        for attempt in range(2):
+            with self.subTest(attempt=attempt), self.assertRaises(wp.WarpCodegenAttributeError):
+                wp.launch(kernel, dim=4, inputs=[a], device=device)
+
+    def test_codegen_failure_repeats_across_devices(self):
+        """Verify that a kernel failing codegen raises the same error on every device."""
+        kernel = self._make_bad_kernel()
+
+        for device in get_test_devices():
+            with self.subTest(device=str(device)), self.assertRaises(wp.WarpCodegenAttributeError):
+                a = wp.zeros(4, dtype=float, device=device)
+                wp.launch(kernel, dim=4, inputs=[a], device=device)
 
 
 devices = get_test_devices()

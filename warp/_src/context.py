@@ -10677,6 +10677,15 @@ def launch(
         # A failure on one device shouldn't prevent compilation attempts on other devices.
         if kernel.is_unique_module:
             kernel.adj.skip_build = False
+            kernel.adj.build_error = None
+        elif kernel.adj.build_error is not None:
+            # This kernel's codegen already failed. Its module still builds, so the
+            # module's other kernels keep working, but this kernel cannot: report the
+            # original error instead of launching the partial code that the failed
+            # build left behind. Raising a fresh instance keeps the traceback from
+            # growing across repeated launches.
+            build_error = kernel.adj.build_error
+            raise type(build_error)(*build_error.args) from None
 
         # delay load modules, including new overload if needed
         try:

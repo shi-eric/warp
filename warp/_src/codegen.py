@@ -1777,6 +1777,11 @@ class Adjoint:
         # for unit testing errors being spit out from kernels.
         adj.skip_build = False
 
+        # The exception from a failed build, kept so later launches on any device
+        # report the same error instead of running the partial state that build
+        # left behind. Codegen is device-independent, so a failure here is too.
+        adj.build_error = None
+
         # Feature-specific deterministic lowering state.  Keep its policy and
         # helper metadata behind a small integration object so the core codegen
         # paths do not need to coordinate deterministic internals directly.
@@ -2029,6 +2034,8 @@ class Adjoint:
             adj._validate_return_type()
 
         except Exception as original_exc:
+            # Fall back to the original exception if building the enhanced one fails.
+            build_error = original_exc
             try:
                 lineno = adj.lineno + adj.fun_lineno
                 line = adj.source_lines[adj.lineno]
@@ -2039,9 +2046,11 @@ class Adjoint:
 
                 # Enhance the original exception with parser context before re-raising.
                 # 'from None' is used to suppress Python's chained exceptions for a cleaner error output.
-                raise type(original_exc)(*new_args).with_traceback(original_exc.__traceback__) from None
+                build_error = type(original_exc)(*new_args).with_traceback(original_exc.__traceback__)
+                raise build_error from None
             finally:
                 adj.skip_build = True
+                adj.build_error = build_error
                 adj.builder = None
 
         if builder is not None:
