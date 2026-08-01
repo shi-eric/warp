@@ -45,7 +45,7 @@ from warp.examples.optimizations.harness.model import OptimizationCase, Toleranc
 from warp.examples.optimizations.harness.registry import discover_examples
 from warp.examples.optimizations.harness.statistics import PairedSummary, summarize_paired
 from warp.tests.unittest_suites import default_suite
-from warp.tests.unittest_utils import add_function_test, get_test_devices
+from warp.tests.unittest_utils import add_function_test, get_cuda_test_devices, get_test_devices
 
 
 def make_valid_manifest():
@@ -2511,9 +2511,32 @@ class TestRuntimeOptimizationExamples(unittest.TestCase):
     def test_fused_elementwise_pipeline_card_is_registered(self):
         examples = discover_examples()
 
-        self.assertEqual(set(examples), {"fused-elementwise-pipeline"})
+        self.assertEqual(
+            set(examples),
+            {
+                "device-resident-spectral-transform",
+                "fused-elementwise-pipeline",
+            },
+        )
         record = examples["fused-elementwise-pipeline"]
         validate_manifest(record.manifest, record.root / "manifest.json")
+        for name, relative_path in record.manifest["artifacts"].items():
+            if name != "python_module":
+                self.assertTrue((record.root / relative_path).is_file(), name)
+
+    def test_device_resident_spectral_transform_card_is_registered(self):
+        examples = discover_examples()
+
+        record = examples["device-resident-spectral-transform"]
+        validate_manifest(record.manifest, record.root / "manifest.json")
+        self.assertEqual(
+            set(record.manifest["recognition"]["signals"]),
+            {
+                "device_to_host_copy_inside_iteration",
+                "host_to_device_copy_inside_iteration",
+                "host_transform_between_device_kernels",
+            },
+        )
         for name, relative_path in record.manifest["artifacts"].items():
             if name != "python_module":
                 self.assertTrue((record.root / relative_path).is_file(), name)
@@ -2561,11 +2584,46 @@ def test_fused_elementwise_pipeline_correctness(test, device):
         test.assertIn(f"size={size}: PASS", result.stdout)
 
 
+def test_device_resident_spectral_transform_correctness(test, device):
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "warp.examples.optimizations.transfer_elimination.device_resident_spectral_transform.test_correctness",
+            "--device",
+            str(device),
+            "--size",
+            "256",
+            "--batch",
+            "4",
+            "--iterations",
+            "1",
+            "--iterations",
+            "2",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    test.assertEqual(result.returncode, 0, f"{result.stdout}\n{result.stderr}")
+    for iterations in (1, 2):
+        test.assertIn(
+            f"size=256 batch=4 iterations={iterations}: PASS",
+            result.stdout,
+        )
+
+
 add_function_test(
     TestRuntimeOptimizationExamples,
     "test_fused_elementwise_pipeline_correctness",
     test_fused_elementwise_pipeline_correctness,
     devices=get_test_devices(mode="basic"),
+)
+add_function_test(
+    TestRuntimeOptimizationExamples,
+    "test_device_resident_spectral_transform_correctness",
+    test_device_resident_spectral_transform_correctness,
+    devices=get_cuda_test_devices(mode="basic"),
 )
 
 
