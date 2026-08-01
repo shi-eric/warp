@@ -2520,6 +2520,7 @@ class TestRuntimeOptimizationExamples(unittest.TestCase):
             {
                 "direct-tape-without-checkpointing",
                 "device-resident-spectral-transform",
+                "expanded-halo-fusion",
                 "fused-elementwise-pipeline",
                 "gradient-safe-intermediate-lifetime",
                 "native-autodiff-rollout",
@@ -2531,6 +2532,68 @@ class TestRuntimeOptimizationExamples(unittest.TestCase):
         for name, relative_path in record.manifest["artifacts"].items():
             if name != "python_module":
                 self.assertTrue((record.root / relative_path).is_file(), name)
+
+    def test_expanded_halo_fusion_card_is_registered(self):
+        examples = discover_examples()
+
+        record = examples["expanded-halo-fusion"]
+        validate_manifest(record.manifest, record.root / "manifest.json")
+        self.assertIn(
+            "fusion_expands_halo",
+            record.manifest["recognition"]["signals"],
+        )
+        for name, relative_path in record.manifest["artifacts"].items():
+            if name != "python_module":
+                self.assertTrue((record.root / relative_path).is_file(), name)
+
+    def test_expanded_halo_fusion_rejects_retuned_followup_workloads(self):
+        from warp.examples.optimizations.kernel_fusion.expanded_halo_fusion.benchmark import (  # noqa: PLC0415
+            build_case,
+        )
+
+        followup = {
+            "height": 2048,
+            "iterations": 20,
+            "radius": 4,
+            "seed": 20260730,
+            "width": 2048,
+        }
+        for name, value in (
+            ("height", 1024),
+            ("iterations", 10),
+            ("seed", 17),
+            ("width", 1024),
+        ):
+            workload = {**followup, name: value}
+            with (
+                self.subTest(name=name),
+                self.assertRaisesRegex(UnsupportedWorkload, "predeclared"),
+            ):
+                build_case("cuda:0", workload)
+
+    def test_expanded_halo_fusion_classification_matches_evidence(self):
+        record = discover_examples()["expanded-halo-fusion"]
+        evidence = json.loads((record.root / record.manifest["artifacts"]["evidence"]).read_text(encoding="utf-8"))
+        measured = evidence["records"][-1]
+
+        self.assertGreater(measured["statistics"]["ratio_ci_low"], 1.0)
+        self.assertEqual(measured["result"], "harmful")
+        self.assertEqual(record.manifest["status"], "rejected")
+        self.assertEqual(record.manifest["impact"]["cuda"], "harmful")
+        self.assertEqual(record.manifest["impact"]["cpu"], "unverified")
+        self.assertEqual(
+            record.manifest["claims"]["cuda"],
+            [
+                {
+                    "impact": "harmful",
+                    "scope": {
+                        "device": measured["measured_contract"]["compatibility"]["device"],
+                        "workload": measured["measured_contract"]["workload"],
+                    },
+                    "supporting_record_ids": [measured["record_id"]],
+                }
+            ],
+        )
 
     def test_device_resident_spectral_transform_card_is_registered(self):
         examples = discover_examples()
@@ -2889,6 +2952,37 @@ def test_direct_tape_without_checkpointing_correctness(test, device):
     test.assertIn("size=1024 steps=8 segment_length=2: PASS", result.stdout)
 
 
+def test_expanded_halo_fusion_correctness(test, device):
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "warp.examples.optimizations.kernel_fusion.expanded_halo_fusion.test_correctness",
+            "--device",
+            str(device),
+            "--shape",
+            "1",
+            "1",
+            "--shape",
+            "7",
+            "9",
+            "--iterations",
+            "2",
+            "--radius",
+            "2",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    test.assertEqual(result.returncode, 0, f"{result.stdout}\n{result.stderr}")
+    for height, width in ((1, 1), (7, 9)):
+        test.assertIn(
+            f"shape={height}x{width} iterations=2 radius=2: PASS",
+            result.stdout,
+        )
+
+
 add_function_test(
     TestRuntimeOptimizationExamples,
     "test_fused_elementwise_pipeline_correctness",
@@ -2931,6 +3025,12 @@ add_function_test(
     TestRuntimeOptimizationExamples,
     "test_direct_tape_without_checkpointing_correctness",
     test_direct_tape_without_checkpointing_correctness,
+    devices=get_cuda_test_devices(mode="basic"),
+)
+add_function_test(
+    TestRuntimeOptimizationExamples,
+    "test_expanded_halo_fusion_correctness",
+    test_expanded_halo_fusion_correctness,
     devices=get_cuda_test_devices(mode="basic"),
 )
 

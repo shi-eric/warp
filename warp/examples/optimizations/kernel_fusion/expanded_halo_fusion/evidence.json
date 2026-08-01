@@ -1,0 +1,285 @@
+{
+  "records": [
+    {
+      "correctness": {
+        "outputs": {
+          "result": {
+            "atol": 3e-05,
+            "finite": true,
+            "max_abs": 5.21540641784668e-08,
+            "max_normalized": 0.0008941981503807623,
+            "max_rel": 0.00018699211068451405,
+            "name": "result",
+            "passed": true,
+            "rtol": 0.0003
+          }
+        },
+        "passed": true
+      },
+      "environment": {
+        "cpu": {
+          "affinity_cpu_count": 192,
+          "logical_cpu_count": 192,
+          "model": "AMD EPYC 9B45"
+        },
+        "cuda": {
+          "driver": [
+            13,
+            0
+          ],
+          "toolkit": [
+            13,
+            0
+          ]
+        },
+        "device": {
+          "alias": "cuda:0",
+          "architecture": 120,
+          "is_cuda": true,
+          "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+          "total_memory_bytes": 101973950464
+        },
+        "git": {
+          "repository_dirty": false,
+          "revision": "8303eb71e81f720333c5bb0bb616aff4a3cbae52",
+          "runtime_sources_dirty": false
+        },
+        "machine": "x86_64",
+        "os": "Linux-6.8.0-1054-gke-x86_64-with-glibc2.35",
+        "python": "3.12.13",
+        "timestamp_utc": "2026-07-30T05:17:09.019904+00:00",
+        "warp": "1.17.0.dev0",
+        "workload": {
+          "height": 2048,
+          "iterations": 20,
+          "radius": 2,
+          "seed": 20260730,
+          "width": 2048
+        }
+      },
+      "example_id": "expanded-halo-fusion",
+      "limitations": [
+        "Covers two-dimensional float32 fields with clamped boundaries and triangular separable weights.",
+        "The default workload uses radius 2; radius 4 is the sole predeclared contingent follow-up.",
+        "CPU correctness and runtime impact are unsupported and unverified.",
+        "Runtime impact depends on device, shape, radius, and iteration count."
+      ],
+      "measured_contract": {
+        "compatibility": {
+          "device": {
+            "affinity_cpu_count": null,
+            "architecture": 120,
+            "class": "cuda",
+            "cpu_model": null,
+            "logical_cpu_count": null,
+            "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "total_memory_bytes": 101973950464
+          },
+          "devices": [
+            "cuda"
+          ],
+          "equivalence_band": {
+            "high": 1.02,
+            "low": 0.98
+          },
+          "warp": {
+            "measured_version": "1.17.0.dev0",
+            "specifier": ">=1.17"
+          }
+        },
+        "declared_workload": {
+          "height": 2048,
+          "iterations": 20,
+          "radius": 2,
+          "seed": 20260730,
+          "width": 2048
+        },
+        "digest_sha256": "5c6c8e6d864dc45f18c099993cb7c8b2514020da32ba6c74e2d0b66c8b4cde51",
+        "example_id": "expanded-halo-fusion",
+        "outputs": {
+          "result": {
+            "atol": 3e-05,
+            "rtol": 0.0003
+          }
+        },
+        "protocol": {
+          "bootstrap_seed": 161803,
+          "pairs": 20,
+          "resamples": 10000,
+          "warmups": 3
+        },
+        "protocol_requirements": {
+          "bootstrap_seed": 161803,
+          "pairs": 20,
+          "resamples": 10000,
+          "warmups": 3
+        },
+        "source_hashes": {
+          "artifacts": {
+            "baseline": {
+              "path": "before.py",
+              "sha256": "0f3f2470b2a6b8a78dbba60348da80dd404e9d6b43850cef595092af5c240724"
+            },
+            "benchmark": {
+              "path": "benchmark.py",
+              "sha256": "b1956290821f6e94292e55f80f823cb40cc70e90714af0eb20bffc957fbd1927"
+            },
+            "candidate": {
+              "path": "after.py",
+              "sha256": "fb4e3cbc9fe3a543b470eaef2d50a9f488ea6686548831f9528574a7a19aec00"
+            },
+            "correctness": {
+              "path": "test_correctness.py",
+              "sha256": "dceedadd345462d1fd0b6c87dc6008683198d6421cd3cc91bbb3f079588c85e7"
+            }
+          },
+          "shared": [
+            {
+              "path": "harness/__init__.py",
+              "sha256": "9ef0bcb51a7a77ba0a2d8b1227405d9513afb41b8aac0cc47c933a4d669cbbba"
+            },
+            {
+              "path": "harness/benchmark.py",
+              "sha256": "a54ea50740a5b2882e3888d2f26df875dcdc8e374eaec144f4f7e1b8e9a928d9"
+            },
+            {
+              "path": "harness/clean_room.py",
+              "sha256": "2cc1f263cb6b3c1df227ee994be8231f89103e6f0c8f7e59700aaabf41bc9a73"
+            },
+            {
+              "path": "harness/correctness.py",
+              "sha256": "4edcfe5a5c2b0652c5ce1ba89ec94613c023466bb55bc148de1d1ea3c7b33a2d"
+            },
+            {
+              "path": "harness/environment.py",
+              "sha256": "7f0e6f76ca5dbbeb5397ca2aed3c5fac2dc234c750b274437e0ea9b5e9105ed8"
+            },
+            {
+              "path": "harness/evidence.py",
+              "sha256": "edfe9260dc1685c45d2b094d4685c93b08b96f52a23070a10095eea472376aa9"
+            },
+            {
+              "path": "harness/json_utils.py",
+              "sha256": "93f26e1cade65ad8a9095df3d9ae483f5f4f4ef1436277e54203b6b35a75f49f"
+            },
+            {
+              "path": "harness/manifest.py",
+              "sha256": "d9146eacc00147fc60e881e0a78f8600bc73e46d0b356dd5439c570e8aeaa8fd"
+            },
+            {
+              "path": "harness/model.py",
+              "sha256": "9cbecb172a6747c064dc8e997cc0146e4591c9d77b0639898ecfd4b6eb9a9f0a"
+            },
+            {
+              "path": "harness/registry.py",
+              "sha256": "c67106aac4c6a85a713637aa3037ae41621d08c4cfcefbc7bb70d7eabece8f9e"
+            },
+            {
+              "path": "harness/statistics.py",
+              "sha256": "b30a7ce43fe014df8591b5f21f34a4f7dbb9b6a69261e287586a4ed21a47856b"
+            },
+            {
+              "path": "run.py",
+              "sha256": "c1af4d1044f427a128d6f743036ea9af558d3e76c4566f32b24fdc1a7db1b832"
+            }
+          ]
+        },
+        "workload": {
+          "height": 2048,
+          "iterations": 20,
+          "radius": 2,
+          "seed": 20260730,
+          "width": 2048
+        }
+      },
+      "protocol": {
+        "bootstrap_seed": 161803,
+        "pairs": 20,
+        "resamples": 10000,
+        "warmups": 3
+      },
+      "record_format_version": 2,
+      "record_id": "d60e3a7fdd2c454bba3fd7a60fbb84a0",
+      "result": "harmful",
+      "samples": {
+        "baseline_ns": [
+          757670,
+          758430,
+          755380,
+          756060,
+          756979,
+          757560,
+          754330,
+          757810,
+          753670,
+          755450,
+          753969,
+          754700,
+          753450,
+          754240,
+          752520,
+          753770,
+          752669,
+          756030,
+          754070,
+          753780
+        ],
+        "candidate_ns": [
+          1171450,
+          1167819,
+          1199630,
+          1198490,
+          1169880,
+          1194120,
+          1189340,
+          1169049,
+          1168370,
+          1166270,
+          1168510,
+          1177860,
+          1168060,
+          1166379,
+          1179080,
+          1175840,
+          1167750,
+          1168450,
+          1171210,
+          1169439
+        ],
+        "order": [
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first"
+        ]
+      },
+      "statistics": {
+        "baseline_mad_ns": 1000.0,
+        "baseline_median_ns": 754515.0,
+        "candidate_mad_ns": 1875.0,
+        "candidate_median_ns": 1169659.5,
+        "median_ratio": 1.5508574073813775,
+        "pairs": 20,
+        "ratio_ci_high": 1.5603224785792487,
+        "ratio_ci_low": 1.5462755904604266
+      }
+    }
+  ],
+  "schema_version": 1
+}

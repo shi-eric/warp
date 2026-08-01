@@ -1,0 +1,119 @@
+{
+  "applicability": {
+    "contraindications": [
+      "fused_halo_loads_are_reused_effectively_by_the_target_device",
+      "intermediate_traffic_dominates_the_expanded_source_reads",
+      "the_requested_radius_is_outside_the_measured_scope"
+    ],
+    "preconditions": [
+      "the_stencil_is_mathematically_separable",
+      "both_forms_use_identical_boundary_clamping",
+      "the_intermediate_field_is_not_observable"
+    ]
+  },
+  "artifacts": {
+    "baseline": "before.py",
+    "benchmark": "benchmark.py",
+    "candidate": "after.py",
+    "correctness": "test_correctness.py",
+    "evidence": "evidence.json",
+    "explanation": "explanation.md",
+    "python_module": "warp.examples.optimizations.kernel_fusion.expanded_halo_fusion.benchmark"
+  },
+  "benchmark": {
+    "bootstrap_seed": 161803,
+    "equivalence_band": {
+      "high": 1.02,
+      "low": 0.98
+    },
+    "estimated_peak_bytes": 134217728,
+    "pairs": 20,
+    "resamples": 10000,
+    "warmups": 3,
+    "workload": {
+      "height": 2048,
+      "iterations": 20,
+      "radius": 2,
+      "seed": 20260730,
+      "width": 2048
+    }
+  },
+  "category": "kernel-fusion",
+  "claims": {
+    "cpu": [],
+    "cuda": [
+      {
+        "impact": "harmful",
+        "scope": {
+          "device": {
+            "affinity_cpu_count": null,
+            "architecture": 120,
+            "class": "cuda",
+            "cpu_model": null,
+            "logical_cpu_count": null,
+            "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "total_memory_bytes": 101973950464
+          },
+          "workload": {
+            "height": 2048,
+            "iterations": 20,
+            "radius": 2,
+            "seed": 20260730,
+            "width": 2048
+          }
+        },
+        "supporting_record_ids": [
+          "d60e3a7fdd2c454bba3fd7a60fbb84a0"
+        ]
+      }
+    ]
+  },
+  "clean_room": {
+    "declaration": "Independently authored from the general tradeoff between intermediate traffic and expanded stencil halos.",
+    "derived_from_private_source": false,
+    "synthetic": true
+  },
+  "compatibility": {
+    "devices": [
+      "cuda"
+    ],
+    "evidence_max_age_days": 365,
+    "limitations": [
+      "Covers two-dimensional float32 fields with clamped boundaries and triangular separable weights.",
+      "The default workload uses radius 2; radius 4 is the sole predeclared contingent follow-up.",
+      "CPU correctness and runtime impact are unsupported and unverified.",
+      "Runtime impact depends on device, shape, radius, and iteration count."
+    ],
+    "warp": ">=1.17"
+  },
+  "id": "expanded-halo-fusion",
+  "impact": {
+    "cpu": "unverified",
+    "cuda": "harmful",
+    "mechanism": [
+      "eliminates_one_full_size_intermediate",
+      "expands_per_output_source_loads",
+      "increases_redundant_halo_work_and_resource_demand"
+    ]
+  },
+  "recognition": {
+    "signals": [
+      "fusion_expands_halo",
+      "separable_passes_share_a_full_size_intermediate",
+      "fused_outputs_reload_overlapping_source_neighborhoods"
+    ]
+  },
+  "schema_version": 1,
+  "semantics": {
+    "observable_outputs": [
+      "result"
+    ],
+    "tolerance": {
+      "absolute": 3e-05,
+      "relative": 0.0003
+    }
+  },
+  "status": "rejected",
+  "summary": "Show when a direct product stencil is slower than separable passes.",
+  "title": "Avoid fusion that expands a separable halo"
+}
