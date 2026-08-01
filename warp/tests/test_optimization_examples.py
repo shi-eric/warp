@@ -51,6 +51,19 @@ from warp.examples.optimizations.harness.statistics import PairedSummary, summar
 from warp.tests.unittest_suites import default_suite
 from warp.tests.unittest_utils import add_function_test, get_cuda_test_devices, get_test_devices
 
+_INITIAL_CORPUS_IDS = {
+    "direct-tape-without-checkpointing",
+    "device-resident-spectral-transform",
+    "device-resident-torch-exchange",
+    "expanded-halo-fusion",
+    "fused-elementwise-pipeline",
+    "gradient-safe-intermediate-lifetime",
+    "native-autodiff-rollout",
+    "reused-iteration-workspace",
+}
+_IMPACT_LABELS = {"improved", "neutral", "harmful", "unverified"}
+_STANDARD_TEST_MEMORY_LIMIT = 256 * 1024 * 1024
+
 
 def make_valid_manifest():
     return {
@@ -2512,22 +2525,81 @@ if marker:
 
 
 class TestRuntimeOptimizationExamples(unittest.TestCase):
+    def test_initial_corpus_satisfies_publication_invariants(self):
+        examples = discover_examples()
+
+        self.assertEqual(set(examples), _INITIAL_CORPUS_IDS)
+        for example_id, example in examples.items():
+            with self.subTest(example_id=example_id):
+                manifest = example.manifest
+                evidence_path = example.root / manifest["artifacts"]["evidence"]
+                evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+
+                validate_manifest(manifest, example.root / "manifest.json")
+                validate_evidence_document(evidence, manifest, card_root=example.root)
+                for name, relative_path in manifest["artifacts"].items():
+                    if name != "python_module":
+                        self.assertTrue((example.root / relative_path).is_file(), name)
+
+                self.assertIn(manifest["impact"]["cuda"], _IMPACT_LABELS)
+                self.assertIn(manifest["impact"]["cpu"], _IMPACT_LABELS)
+                self.assertIs(manifest["clean_room"]["synthetic"], True)
+                self.assertIs(manifest["clean_room"]["derived_from_private_source"], False)
+                self.assertLess(
+                    manifest["benchmark"]["estimated_peak_bytes"],
+                    _STANDARD_TEST_MEMORY_LIMIT,
+                )
+
+                records = evidence["records"]
+                for measured in records:
+                    self.assertGreaterEqual(measured["protocol"]["pairs"], 10)
+                    self.assertGreaterEqual(measured["protocol"]["resamples"], 10_000)
+
+                if manifest["status"] in {"recommended", "conditional"}:
+                    current_improved_cuda = [
+                        measured
+                        for measured in records
+                        if measured["environment"]["device"]["is_cuda"]
+                        and measured["correctness"]["passed"]
+                        and measured["result"] == "improved"
+                        and not is_evidence_stale(measured, manifest, card_root=example.root)
+                    ]
+                    self.assertTrue(current_improved_cuda)
+                elif manifest["status"] == "rejected":
+                    self.assertTrue(manifest["impact"]["mechanism"])
+                    rejected_claims = manifest["claims"]["cuda"]
+                    self.assertTrue(rejected_claims)
+                    records_by_id = {measured["record_id"]: measured for measured in records}
+                    for claim in rejected_claims:
+                        self.assertEqual(claim["impact"], manifest["impact"]["cuda"])
+                        self.assertIn(claim["impact"], {"neutral", "harmful"})
+                        for record_id in claim["supporting_record_ids"]:
+                            measured = records_by_id[record_id]
+                            self.assertTrue(measured["environment"]["device"]["is_cuda"])
+                            self.assertTrue(measured["correctness"]["passed"])
+                            self.assertIs(measured["environment"]["git"]["runtime_sources_dirty"], False)
+                            self.assertEqual(
+                                measured["measured_contract"]["workload"],
+                                claim["scope"]["workload"],
+                            )
+                            self.assertEqual(
+                                measured["measured_contract"]["compatibility"]["device"],
+                                claim["scope"]["device"],
+                            )
+                            self.assertFalse(
+                                is_evidence_stale(measured, manifest, card_root=example.root),
+                            )
+                            if claim["impact"] == "harmful":
+                                self.assertEqual(measured["result"], "harmful")
+                            else:
+                                band = measured["measured_contract"]["compatibility"]["equivalence_band"]
+                                self.assertGreaterEqual(measured["statistics"]["ratio_ci_low"], band["low"])
+                                self.assertLessEqual(measured["statistics"]["ratio_ci_high"], band["high"])
+
     def test_fused_elementwise_pipeline_card_is_registered(self):
         examples = discover_examples()
 
-        self.assertEqual(
-            set(examples),
-            {
-                "direct-tape-without-checkpointing",
-                "device-resident-torch-exchange",
-                "device-resident-spectral-transform",
-                "expanded-halo-fusion",
-                "fused-elementwise-pipeline",
-                "gradient-safe-intermediate-lifetime",
-                "native-autodiff-rollout",
-                "reused-iteration-workspace",
-            },
-        )
+        self.assertEqual(set(examples), _INITIAL_CORPUS_IDS)
         record = examples["fused-elementwise-pipeline"]
         validate_manifest(record.manifest, record.root / "manifest.json")
         for name, relative_path in record.manifest["artifacts"].items():
