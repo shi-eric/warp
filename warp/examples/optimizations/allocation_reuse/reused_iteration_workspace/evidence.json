@@ -1,0 +1,553 @@
+{
+  "records": [
+    {
+      "correctness": {
+        "outputs": {
+          "energy": {
+            "atol": 1e-06,
+            "finite": true,
+            "max_abs": 0.0,
+            "max_normalized": 0.0,
+            "max_rel": 0.0,
+            "name": "energy",
+            "passed": true,
+            "rtol": 1e-06
+          }
+        },
+        "passed": true
+      },
+      "environment": {
+        "cpu": {
+          "affinity_cpu_count": 192,
+          "logical_cpu_count": 192,
+          "model": "AMD EPYC 9B45"
+        },
+        "cuda": {
+          "driver": [
+            13,
+            0
+          ],
+          "toolkit": [
+            13,
+            0
+          ]
+        },
+        "device": {
+          "alias": "cuda:0",
+          "architecture": 120,
+          "is_cuda": true,
+          "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+          "total_memory_bytes": 101973950464
+        },
+        "git": {
+          "repository_dirty": false,
+          "revision": "5b81e209f648664838a64a3b77984620e5262d0a",
+          "runtime_sources_dirty": false
+        },
+        "machine": "x86_64",
+        "os": "Linux-6.8.0-1054-gke-x86_64-with-glibc2.35",
+        "python": "3.12.13",
+        "timestamp_utc": "2026-07-30T02:10:29.397041+00:00",
+        "warp": "1.17.0.dev0",
+        "workload": {
+          "iterations": 100,
+          "seed": 20260730,
+          "size": 1048576
+        }
+      },
+      "example_id": "reused-iteration-workspace",
+      "limitations": [
+        "The workspace shape, dtype, and device remain fixed for the measured operation.",
+        "One workspace cannot serve overlapping calls without separate synchronization or storage.",
+        "Impact depends on allocator behavior, device, workload size, and iteration count."
+      ],
+      "measured_contract": {
+        "compatibility": {
+          "device": {
+            "affinity_cpu_count": null,
+            "architecture": 120,
+            "class": "cuda",
+            "cpu_model": null,
+            "logical_cpu_count": null,
+            "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "total_memory_bytes": 101973950464
+          },
+          "devices": [
+            "cpu",
+            "cuda"
+          ],
+          "equivalence_band": {
+            "high": 1.02,
+            "low": 0.98
+          },
+          "warp": {
+            "measured_version": "1.17.0.dev0",
+            "specifier": ">=1.17"
+          }
+        },
+        "declared_workload": {
+          "iterations": 100,
+          "seed": 20260730,
+          "size": 1048576
+        },
+        "digest_sha256": "f954c0fc32347879d9c325a2c30ab7d19d3770b7b1c2285f8f4ad0c1f567ce57",
+        "example_id": "reused-iteration-workspace",
+        "outputs": {
+          "energy": {
+            "atol": 1e-06,
+            "rtol": 1e-06
+          }
+        },
+        "protocol": {
+          "bootstrap_seed": 314159,
+          "pairs": 20,
+          "resamples": 10000,
+          "warmups": 3
+        },
+        "protocol_requirements": {
+          "bootstrap_seed": 314159,
+          "pairs": 20,
+          "resamples": 10000,
+          "warmups": 3
+        },
+        "source_hashes": {
+          "artifacts": {
+            "baseline": {
+              "path": "before.py",
+              "sha256": "8ba08ebf6690966cef417ac4368d0818d5f721ea5fcd60b6a0e632dfbd79b1b7"
+            },
+            "benchmark": {
+              "path": "benchmark.py",
+              "sha256": "4d2c75e1f39b7e777d063b6bfc724b3574a273d3081c7e7a0c19959da663e905"
+            },
+            "candidate": {
+              "path": "after.py",
+              "sha256": "2a02e5462b125e56f5b19cf95ba7ad832a0fde1fb97b39b1d15940a2515afe7c"
+            },
+            "correctness": {
+              "path": "test_correctness.py",
+              "sha256": "11fe149ebed2bca6b98c2c63011a565321950ebb9ab72b2e0ce7094e074e3014"
+            }
+          },
+          "shared": [
+            {
+              "path": "harness/__init__.py",
+              "sha256": "9ef0bcb51a7a77ba0a2d8b1227405d9513afb41b8aac0cc47c933a4d669cbbba"
+            },
+            {
+              "path": "harness/benchmark.py",
+              "sha256": "a54ea50740a5b2882e3888d2f26df875dcdc8e374eaec144f4f7e1b8e9a928d9"
+            },
+            {
+              "path": "harness/clean_room.py",
+              "sha256": "2cc1f263cb6b3c1df227ee994be8231f89103e6f0c8f7e59700aaabf41bc9a73"
+            },
+            {
+              "path": "harness/correctness.py",
+              "sha256": "4edcfe5a5c2b0652c5ce1ba89ec94613c023466bb55bc148de1d1ea3c7b33a2d"
+            },
+            {
+              "path": "harness/environment.py",
+              "sha256": "7f0e6f76ca5dbbeb5397ca2aed3c5fac2dc234c750b274437e0ea9b5e9105ed8"
+            },
+            {
+              "path": "harness/evidence.py",
+              "sha256": "edfe9260dc1685c45d2b094d4685c93b08b96f52a23070a10095eea472376aa9"
+            },
+            {
+              "path": "harness/json_utils.py",
+              "sha256": "93f26e1cade65ad8a9095df3d9ae483f5f4f4ef1436277e54203b6b35a75f49f"
+            },
+            {
+              "path": "harness/manifest.py",
+              "sha256": "d9146eacc00147fc60e881e0a78f8600bc73e46d0b356dd5439c570e8aeaa8fd"
+            },
+            {
+              "path": "harness/model.py",
+              "sha256": "9cbecb172a6747c064dc8e997cc0146e4591c9d77b0639898ecfd4b6eb9a9f0a"
+            },
+            {
+              "path": "harness/registry.py",
+              "sha256": "c67106aac4c6a85a713637aa3037ae41621d08c4cfcefbc7bb70d7eabece8f9e"
+            },
+            {
+              "path": "harness/statistics.py",
+              "sha256": "b30a7ce43fe014df8591b5f21f34a4f7dbb9b6a69261e287586a4ed21a47856b"
+            },
+            {
+              "path": "run.py",
+              "sha256": "c1af4d1044f427a128d6f743036ea9af558d3e76c4566f32b24fdc1a7db1b832"
+            }
+          ]
+        },
+        "workload": {
+          "iterations": 100,
+          "seed": 20260730,
+          "size": 1048576
+        }
+      },
+      "protocol": {
+        "bootstrap_seed": 314159,
+        "pairs": 20,
+        "resamples": 10000,
+        "warmups": 3
+      },
+      "record_format_version": 2,
+      "record_id": "1fca6467a02e414a934af068b6ef9d41",
+      "result": "improved",
+      "samples": {
+        "baseline_ns": [
+          2353620,
+          2445620,
+          2367270,
+          2370090,
+          2334719,
+          2335889,
+          2335520,
+          2329560,
+          2367700,
+          2341700,
+          2319329,
+          2339219,
+          2324380,
+          2333860,
+          2326100,
+          2354850,
+          2345049,
+          2319569,
+          2324650,
+          2313320
+        ],
+        "candidate_ns": [
+          1630210,
+          1606999,
+          1603289,
+          1607010,
+          1613360,
+          1592860,
+          1610300,
+          1592009,
+          1604329,
+          1598430,
+          1601400,
+          1596340,
+          1589840,
+          1600289,
+          1591659,
+          1595700,
+          1604710,
+          1601300,
+          1600100,
+          1606719
+        ],
+        "order": [
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first"
+        ]
+      },
+      "statistics": {
+        "baseline_mad_ns": 11189.5,
+        "baseline_median_ns": 2335704.5,
+        "candidate_mad_ns": 5509.0,
+        "candidate_median_ns": 1601350.0,
+        "median_ratio": 0.6841226631313866,
+        "pairs": 20,
+        "ratio_ci_high": 0.688900549762065,
+        "ratio_ci_low": 0.6821658749457802
+      }
+    },
+    {
+      "correctness": {
+        "outputs": {
+          "energy": {
+            "atol": 1e-06,
+            "finite": true,
+            "max_abs": 0.0,
+            "max_normalized": 0.0,
+            "max_rel": 0.0,
+            "name": "energy",
+            "passed": true,
+            "rtol": 1e-06
+          }
+        },
+        "passed": true
+      },
+      "environment": {
+        "cpu": {
+          "affinity_cpu_count": 192,
+          "logical_cpu_count": 192,
+          "model": "AMD EPYC 9B45"
+        },
+        "cuda": {
+          "driver": [
+            13,
+            0
+          ],
+          "toolkit": [
+            13,
+            0
+          ]
+        },
+        "device": {
+          "alias": "cpu",
+          "architecture": 0,
+          "is_cuda": false,
+          "name": "x86_64",
+          "total_memory_bytes": 760420753408
+        },
+        "git": {
+          "repository_dirty": false,
+          "revision": "5b81e209f648664838a64a3b77984620e5262d0a",
+          "runtime_sources_dirty": false
+        },
+        "machine": "x86_64",
+        "os": "Linux-6.8.0-1054-gke-x86_64-with-glibc2.35",
+        "python": "3.12.13",
+        "timestamp_utc": "2026-07-30T02:10:55.888477+00:00",
+        "warp": "1.17.0.dev0",
+        "workload": {
+          "iterations": 100,
+          "seed": 20260730,
+          "size": 1048576
+        }
+      },
+      "example_id": "reused-iteration-workspace",
+      "limitations": [
+        "The workspace shape, dtype, and device remain fixed for the measured operation.",
+        "One workspace cannot serve overlapping calls without separate synchronization or storage.",
+        "Impact depends on allocator behavior, device, workload size, and iteration count."
+      ],
+      "measured_contract": {
+        "compatibility": {
+          "device": {
+            "affinity_cpu_count": 192,
+            "architecture": 0,
+            "class": "cpu",
+            "cpu_model": "AMD EPYC 9B45",
+            "logical_cpu_count": 192,
+            "name": "x86_64",
+            "total_memory_bytes": 760420753408
+          },
+          "devices": [
+            "cpu",
+            "cuda"
+          ],
+          "equivalence_band": {
+            "high": 1.02,
+            "low": 0.98
+          },
+          "warp": {
+            "measured_version": "1.17.0.dev0",
+            "specifier": ">=1.17"
+          }
+        },
+        "declared_workload": {
+          "iterations": 100,
+          "seed": 20260730,
+          "size": 1048576
+        },
+        "digest_sha256": "0329073cac344bf06ae711e670aed75f9b9600998bd83619c1b976e42f6016c9",
+        "example_id": "reused-iteration-workspace",
+        "outputs": {
+          "energy": {
+            "atol": 1e-06,
+            "rtol": 1e-06
+          }
+        },
+        "protocol": {
+          "bootstrap_seed": 314159,
+          "pairs": 20,
+          "resamples": 10000,
+          "warmups": 3
+        },
+        "protocol_requirements": {
+          "bootstrap_seed": 314159,
+          "pairs": 20,
+          "resamples": 10000,
+          "warmups": 3
+        },
+        "source_hashes": {
+          "artifacts": {
+            "baseline": {
+              "path": "before.py",
+              "sha256": "8ba08ebf6690966cef417ac4368d0818d5f721ea5fcd60b6a0e632dfbd79b1b7"
+            },
+            "benchmark": {
+              "path": "benchmark.py",
+              "sha256": "4d2c75e1f39b7e777d063b6bfc724b3574a273d3081c7e7a0c19959da663e905"
+            },
+            "candidate": {
+              "path": "after.py",
+              "sha256": "2a02e5462b125e56f5b19cf95ba7ad832a0fde1fb97b39b1d15940a2515afe7c"
+            },
+            "correctness": {
+              "path": "test_correctness.py",
+              "sha256": "11fe149ebed2bca6b98c2c63011a565321950ebb9ab72b2e0ce7094e074e3014"
+            }
+          },
+          "shared": [
+            {
+              "path": "harness/__init__.py",
+              "sha256": "9ef0bcb51a7a77ba0a2d8b1227405d9513afb41b8aac0cc47c933a4d669cbbba"
+            },
+            {
+              "path": "harness/benchmark.py",
+              "sha256": "a54ea50740a5b2882e3888d2f26df875dcdc8e374eaec144f4f7e1b8e9a928d9"
+            },
+            {
+              "path": "harness/clean_room.py",
+              "sha256": "2cc1f263cb6b3c1df227ee994be8231f89103e6f0c8f7e59700aaabf41bc9a73"
+            },
+            {
+              "path": "harness/correctness.py",
+              "sha256": "4edcfe5a5c2b0652c5ce1ba89ec94613c023466bb55bc148de1d1ea3c7b33a2d"
+            },
+            {
+              "path": "harness/environment.py",
+              "sha256": "7f0e6f76ca5dbbeb5397ca2aed3c5fac2dc234c750b274437e0ea9b5e9105ed8"
+            },
+            {
+              "path": "harness/evidence.py",
+              "sha256": "edfe9260dc1685c45d2b094d4685c93b08b96f52a23070a10095eea472376aa9"
+            },
+            {
+              "path": "harness/json_utils.py",
+              "sha256": "93f26e1cade65ad8a9095df3d9ae483f5f4f4ef1436277e54203b6b35a75f49f"
+            },
+            {
+              "path": "harness/manifest.py",
+              "sha256": "d9146eacc00147fc60e881e0a78f8600bc73e46d0b356dd5439c570e8aeaa8fd"
+            },
+            {
+              "path": "harness/model.py",
+              "sha256": "9cbecb172a6747c064dc8e997cc0146e4591c9d77b0639898ecfd4b6eb9a9f0a"
+            },
+            {
+              "path": "harness/registry.py",
+              "sha256": "c67106aac4c6a85a713637aa3037ae41621d08c4cfcefbc7bb70d7eabece8f9e"
+            },
+            {
+              "path": "harness/statistics.py",
+              "sha256": "b30a7ce43fe014df8591b5f21f34a4f7dbb9b6a69261e287586a4ed21a47856b"
+            },
+            {
+              "path": "run.py",
+              "sha256": "c1af4d1044f427a128d6f743036ea9af558d3e76c4566f32b24fdc1a7db1b832"
+            }
+          ]
+        },
+        "workload": {
+          "iterations": 100,
+          "seed": 20260730,
+          "size": 1048576
+        }
+      },
+      "protocol": {
+        "bootstrap_seed": 314159,
+        "pairs": 20,
+        "resamples": 10000,
+        "warmups": 3
+      },
+      "record_format_version": 2,
+      "record_id": "f9f5dc2406c649a9b1b5b21a7aed49b1",
+      "result": "improved",
+      "samples": {
+        "baseline_ns": [
+          237959950,
+          238273280,
+          238123189,
+          237945760,
+          237904350,
+          238027019,
+          237895260,
+          237978210,
+          237874809,
+          237791460,
+          238023700,
+          237884639,
+          238016920,
+          238035080,
+          238056679,
+          236957510,
+          238240690,
+          238409239,
+          238275300,
+          238386159
+        ],
+        "candidate_ns": [
+          235928990,
+          236051660,
+          236016450,
+          236038850,
+          235978040,
+          236068451,
+          236019080,
+          235985150,
+          236240350,
+          235895880,
+          236106150,
+          236034720,
+          236085020,
+          235971370,
+          236072610,
+          236004890,
+          236551510,
+          236296930,
+          236216100,
+          236411960
+        ],
+        "order": [
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first"
+        ]
+      },
+      "statistics": {
+        "baseline_mad_ns": 120505.0,
+        "baseline_median_ns": 238020310.0,
+        "candidate_mad_ns": 60500.0,
+        "candidate_median_ns": 236045255.0,
+        "median_ratio": 0.9918275034775634,
+        "pairs": 20,
+        "ratio_ci_high": 0.9920071699976571,
+        "ratio_ci_low": 0.9915450749735908
+      }
+    }
+  ],
+  "schema_version": 1
+}

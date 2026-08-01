@@ -1,0 +1,138 @@
+{
+  "applicability": {
+    "contraindications": [
+      "scratch_shape_dtype_or_device_changes_between_iterations",
+      "calls_using_the_same_workspace_overlap",
+      "scratch_storage_escapes_the_operation",
+      "retained_workspace_crowds_other_device_work"
+    ],
+    "preconditions": [
+      "scratch_shape_dtype_and_device_are_fixed",
+      "calls_using_the_same_workspace_do_not_overlap",
+      "scratch_contents_are_not_observable_between_iterations"
+    ]
+  },
+  "artifacts": {
+    "baseline": "before.py",
+    "benchmark": "benchmark.py",
+    "candidate": "after.py",
+    "correctness": "test_correctness.py",
+    "evidence": "evidence.json",
+    "explanation": "explanation.md",
+    "python_module": "warp.examples.optimizations.allocation_reuse.reused_iteration_workspace.benchmark"
+  },
+  "benchmark": {
+    "bootstrap_seed": 314159,
+    "equivalence_band": {
+      "high": 1.02,
+      "low": 0.98
+    },
+    "estimated_peak_bytes": 37748736,
+    "pairs": 20,
+    "resamples": 10000,
+    "warmups": 3,
+    "workload": {
+      "iterations": 100,
+      "seed": 20260730,
+      "size": 1048576
+    }
+  },
+  "category": "allocation-reuse",
+  "claims": {
+    "cpu": [
+      {
+        "impact": "neutral",
+        "scope": {
+          "device": {
+            "affinity_cpu_count": 192,
+            "architecture": 0,
+            "class": "cpu",
+            "cpu_model": "AMD EPYC 9B45",
+            "logical_cpu_count": 192,
+            "name": "x86_64",
+            "total_memory_bytes": 760420753408
+          },
+          "workload": {
+            "iterations": 100,
+            "seed": 20260730,
+            "size": 1048576
+          }
+        },
+        "supporting_record_ids": [
+          "f9f5dc2406c649a9b1b5b21a7aed49b1"
+        ]
+      }
+    ],
+    "cuda": [
+      {
+        "impact": "improved",
+        "scope": {
+          "device": {
+            "affinity_cpu_count": null,
+            "architecture": 120,
+            "class": "cuda",
+            "cpu_model": null,
+            "logical_cpu_count": null,
+            "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "total_memory_bytes": 101973950464
+          },
+          "workload": {
+            "iterations": 100,
+            "seed": 20260730,
+            "size": 1048576
+          }
+        },
+        "supporting_record_ids": [
+          "1fca6467a02e414a934af068b6ef9d41"
+        ]
+      }
+    ]
+  },
+  "clean_room": {
+    "declaration": "Independently authored from the general pattern of reusing fixed temporary storage.",
+    "derived_from_private_source": false,
+    "synthetic": true
+  },
+  "compatibility": {
+    "devices": [
+      "cpu",
+      "cuda"
+    ],
+    "evidence_max_age_days": 365,
+    "limitations": [
+      "The workspace shape, dtype, and device remain fixed for the measured operation.",
+      "One workspace cannot serve overlapping calls without separate synchronization or storage.",
+      "Impact depends on allocator behavior, device, workload size, and iteration count."
+    ],
+    "warp": ">=1.17"
+  },
+  "id": "reused-iteration-workspace",
+  "impact": {
+    "cpu": "neutral",
+    "cuda": "improved",
+    "mechanism": [
+      "removes_repeated_allocator_bookkeeping",
+      "removes_temporary_array_lifetime_churn"
+    ]
+  },
+  "recognition": {
+    "signals": [
+      "same_shape_scratch_is_allocated_inside_each_iteration",
+      "temporary_storage_does_not_escape_the_repeated_operation",
+      "workspace_use_is_serial"
+    ]
+  },
+  "schema_version": 1,
+  "semantics": {
+    "observable_outputs": [
+      "energy"
+    ],
+    "tolerance": {
+      "absolute": 1e-06,
+      "relative": 1e-06
+    }
+  },
+  "status": "recommended",
+  "summary": "Compare repeated scratch allocation with reuse of one fixed workspace.",
+  "title": "Reuse fixed iteration workspace"
+}

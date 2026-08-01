@@ -2516,6 +2516,7 @@ class TestRuntimeOptimizationExamples(unittest.TestCase):
             {
                 "device-resident-spectral-transform",
                 "fused-elementwise-pipeline",
+                "reused-iteration-workspace",
             },
         )
         record = examples["fused-elementwise-pipeline"]
@@ -2536,6 +2537,23 @@ class TestRuntimeOptimizationExamples(unittest.TestCase):
                 "host_to_device_copy_inside_iteration",
                 "host_transform_between_device_kernels",
             },
+        )
+        for name, relative_path in record.manifest["artifacts"].items():
+            if name != "python_module":
+                self.assertTrue((record.root / relative_path).is_file(), name)
+
+    def test_reused_iteration_workspace_card_is_registered(self):
+        examples = discover_examples()
+
+        record = examples["reused-iteration-workspace"]
+        validate_manifest(record.manifest, record.root / "manifest.json")
+        self.assertIn(
+            "scratch_shape_dtype_and_device_are_fixed",
+            record.manifest["applicability"]["preconditions"],
+        )
+        self.assertIn(
+            "calls_using_the_same_workspace_do_not_overlap",
+            record.manifest["applicability"]["preconditions"],
         )
         for name, relative_path in record.manifest["artifacts"].items():
             if name != "python_module":
@@ -2613,6 +2631,27 @@ def test_device_resident_spectral_transform_correctness(test, device):
         )
 
 
+def test_reused_iteration_workspace_correctness(test, device):
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "warp.examples.optimizations.allocation_reuse.reused_iteration_workspace.test_correctness",
+            "--device",
+            str(device),
+            "--size",
+            "4096",
+            "--iterations",
+            "3",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    test.assertEqual(result.returncode, 0, f"{result.stdout}\n{result.stderr}")
+    test.assertIn("size=4096 iterations=3: PASS", result.stdout)
+
+
 add_function_test(
     TestRuntimeOptimizationExamples,
     "test_fused_elementwise_pipeline_correctness",
@@ -2624,6 +2663,12 @@ add_function_test(
     "test_device_resident_spectral_transform_correctness",
     test_device_resident_spectral_transform_correctness,
     devices=get_cuda_test_devices(mode="basic"),
+)
+add_function_test(
+    TestRuntimeOptimizationExamples,
+    "test_reused_iteration_workspace_correctness",
+    test_reused_iteration_workspace_correctness,
+    devices=get_test_devices(mode="basic"),
 )
 
 
