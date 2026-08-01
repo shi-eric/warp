@@ -1,0 +1,116 @@
+{
+  "applicability": {
+    "contraindications": [
+      "pipeline_must_remain_in_the_host_framework",
+      "custom_gradient_behavior_is_not_supported_by_warp",
+      "rollout_requires_host_framework_operations_between_steps"
+    ],
+    "preconditions": [
+      "rollout_steps_use_warp_differentiable_kernels",
+      "intermediate_states_remain_device_resident",
+      "only_endpoint_values_cross_the_framework_boundary"
+    ]
+  },
+  "artifacts": {
+    "baseline": "before.py",
+    "benchmark": "benchmark.py",
+    "candidate": "after.py",
+    "correctness": "test_correctness.py",
+    "evidence": "evidence.json",
+    "explanation": "explanation.md",
+    "python_module": "warp.examples.optimizations.autodiff.native_autodiff_rollout.benchmark"
+  },
+  "benchmark": {
+    "bootstrap_seed": 161803,
+    "equivalence_band": {
+      "high": 1.02,
+      "low": 0.98
+    },
+    "estimated_peak_bytes": 134217728,
+    "pairs": 20,
+    "resamples": 10000,
+    "warmups": 3,
+    "workload": {
+      "seed": 20260730,
+      "size": 262144,
+      "steps": 32
+    }
+  },
+  "category": "autodiff-strategy",
+  "claims": {
+    "cpu": [],
+    "cuda": [
+      {
+        "impact": "improved",
+        "scope": {
+          "device": {
+            "affinity_cpu_count": null,
+            "architecture": 120,
+            "class": "cuda",
+            "cpu_model": null,
+            "logical_cpu_count": null,
+            "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "total_memory_bytes": 101973950464
+          },
+          "workload": {
+            "seed": 20260730,
+            "size": 262144,
+            "steps": 32
+          }
+        },
+        "supporting_record_ids": [
+          "7195a562d19e4eb993d9e1f15ecced62"
+        ]
+      }
+    ]
+  },
+  "clean_room": {
+    "declaration": "Independently authored from the general pattern of differentiating a device-resident rollout as one native graph.",
+    "derived_from_private_source": false,
+    "synthetic": true
+  },
+  "compatibility": {
+    "devices": [
+      "cuda"
+    ],
+    "evidence_max_age_days": 365,
+    "limitations": [
+      "Requires CUDA-enabled PyTorch compatible with the Warp CUDA environment.",
+      "Covers one-dimensional float32 state and the declared differentiable recurrence.",
+      "Impact depends on framework, device, rollout length, and state size.",
+      "The standard workload uses full state retention without checkpointing."
+    ],
+    "warp": ">=1.17"
+  },
+  "id": "native-autodiff-rollout",
+  "impact": {
+    "cpu": "unverified",
+    "cuda": "improved",
+    "mechanism": [
+      "reduces_python_autograd_callback_dispatch",
+      "reduces_repeated_framework_array_mapping",
+      "keeps_intermediate_autodiff_state_in_warp"
+    ]
+  },
+  "recognition": {
+    "signals": [
+      "one_host_autograd_callback_wraps_each_rollout_step",
+      "warp_arrays_are_mapped_at_every_forward_and_backward_step",
+      "intermediate_rollout_state_has_no_host_framework_consumer"
+    ]
+  },
+  "schema_version": 1,
+  "semantics": {
+    "observable_outputs": [
+      "final_state",
+      "input_gradient"
+    ],
+    "tolerance": {
+      "absolute": 2e-05,
+      "relative": 0.0002
+    }
+  },
+  "status": "recommended",
+  "summary": "Compare per-step PyTorch autograd callbacks with one Warp Tape over a complete rollout.",
+  "title": "Differentiate a rollout with one Warp Tape"
+}

@@ -2516,6 +2516,7 @@ class TestRuntimeOptimizationExamples(unittest.TestCase):
             {
                 "device-resident-spectral-transform",
                 "fused-elementwise-pipeline",
+                "native-autodiff-rollout",
                 "reused-iteration-workspace",
             },
         )
@@ -2558,6 +2559,36 @@ class TestRuntimeOptimizationExamples(unittest.TestCase):
         for name, relative_path in record.manifest["artifacts"].items():
             if name != "python_module":
                 self.assertTrue((record.root / relative_path).is_file(), name)
+
+    def test_native_autodiff_rollout_card_is_registered(self):
+        examples = discover_examples()
+
+        record = examples["native-autodiff-rollout"]
+        validate_manifest(record.manifest, record.root / "manifest.json")
+        self.assertEqual(
+            set(record.manifest["semantics"]["observable_outputs"]),
+            {"final_state", "input_gradient"},
+        )
+        for name, relative_path in record.manifest["artifacts"].items():
+            if name != "python_module":
+                self.assertTrue((record.root / relative_path).is_file(), name)
+
+    def test_native_autodiff_rollout_torch_runtime_errors_are_not_skipped(self):
+        original_import = __import__
+
+        def fail_torch_import(name, *args, **kwargs):
+            if name == "torch":
+                raise RuntimeError("broken CUDA runtime")
+            return original_import(name, *args, **kwargs)
+
+        fake_test = SimpleNamespace(
+            skipTest=lambda reason: (_ for _ in ()).throw(AssertionError(f"unexpected skip: {reason}"))
+        )
+        with (
+            patch("builtins.__import__", side_effect=fail_torch_import),
+            self.assertRaisesRegex(RuntimeError, "broken CUDA runtime"),
+        ):
+            test_native_autodiff_rollout_correctness(fake_test, "cuda:0", torch_required=True)
 
     def test_default_suite_registers_optimization_evidence(self):
         loader = unittest.TestLoader()
@@ -2652,6 +2683,70 @@ def test_reused_iteration_workspace_correctness(test, device):
     test.assertIn("size=4096 iterations=3: PASS", result.stdout)
 
 
+def test_native_autodiff_rollout_correctness(test, device, torch_required):
+    if torch_required:
+        try:
+            import torch  # noqa: PLC0415
+        except ModuleNotFoundError as error:
+            if error.name != "torch":
+                raise
+            test.skipTest(f"{error}")
+        if not torch.cuda.is_available():
+            raise RuntimeError("Torch CUDA support is required")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "warp.examples.optimizations.autodiff.native_autodiff_rollout.test_correctness",
+            "--device",
+            str(device),
+            "--size",
+            "1024",
+            "--steps",
+            "4",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    test.assertEqual(result.returncode, 0, f"{result.stdout}\n{result.stderr}")
+    test.assertIn("size=1024 steps=4: PASS", result.stdout)
+
+
+def test_native_autodiff_rollout_non_default_stream(test, device, torch_required):
+    if torch_required:
+        try:
+            import torch  # noqa: PLC0415
+        except ModuleNotFoundError as error:
+            if error.name != "torch":
+                raise
+            test.skipTest(f"{error}")
+        if not torch.cuda.is_available():
+            raise RuntimeError("Torch CUDA support is required")
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "warp.examples.optimizations.autodiff.native_autodiff_rollout.test_correctness",
+            "--device",
+            str(device),
+            "--size",
+            "1024",
+            "--steps",
+            "4",
+            "--non-default-stream",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    test.assertEqual(result.returncode, 0, f"{result.stdout}\n{result.stderr}")
+    test.assertIn("size=1024 steps=4: PASS", result.stdout)
+    test.assertIn("stream=non-default", result.stdout)
+
+
 add_function_test(
     TestRuntimeOptimizationExamples,
     "test_fused_elementwise_pipeline_correctness",
@@ -2669,6 +2764,20 @@ add_function_test(
     "test_reused_iteration_workspace_correctness",
     test_reused_iteration_workspace_correctness,
     devices=get_test_devices(mode="basic"),
+)
+add_function_test(
+    TestRuntimeOptimizationExamples,
+    "test_native_autodiff_rollout_correctness",
+    test_native_autodiff_rollout_correctness,
+    devices=get_cuda_test_devices(mode="basic"),
+    torch_required=True,
+)
+add_function_test(
+    TestRuntimeOptimizationExamples,
+    "test_native_autodiff_rollout_non_default_stream",
+    test_native_autodiff_rollout_non_default_stream,
+    devices=get_cuda_test_devices(mode="basic"),
+    torch_required=True,
 )
 
 

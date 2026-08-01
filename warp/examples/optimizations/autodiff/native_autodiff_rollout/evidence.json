@@ -1,0 +1,293 @@
+{
+  "records": [
+    {
+      "correctness": {
+        "outputs": {
+          "final_state": {
+            "atol": 2e-05,
+            "finite": true,
+            "max_abs": 0.0,
+            "max_normalized": 0.0,
+            "max_rel": 0.0,
+            "name": "final_state",
+            "passed": true,
+            "rtol": 0.0002
+          },
+          "input_gradient": {
+            "atol": 2e-05,
+            "finite": true,
+            "max_abs": 0.0,
+            "max_normalized": 0.0,
+            "max_rel": 0.0,
+            "name": "input_gradient",
+            "passed": true,
+            "rtol": 0.0002
+          }
+        },
+        "passed": true
+      },
+      "environment": {
+        "cpu": {
+          "affinity_cpu_count": 192,
+          "logical_cpu_count": 192,
+          "model": "AMD EPYC 9B45"
+        },
+        "cuda": {
+          "driver": [
+            13,
+            0
+          ],
+          "toolkit": [
+            13,
+            0
+          ]
+        },
+        "device": {
+          "alias": "cuda:0",
+          "architecture": 120,
+          "is_cuda": true,
+          "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+          "total_memory_bytes": 101973950464
+        },
+        "git": {
+          "repository_dirty": false,
+          "revision": "32470c48c7bfe9ac0f4954a5d9373e03f3905373",
+          "runtime_sources_dirty": false
+        },
+        "machine": "x86_64",
+        "os": "Linux-6.8.0-1054-gke-x86_64-with-glibc2.35",
+        "python": "3.12.13",
+        "timestamp_utc": "2026-07-30T03:05:58.914227+00:00",
+        "warp": "1.17.0.dev0",
+        "workload": {
+          "seed": 20260730,
+          "size": 262144,
+          "steps": 32
+        }
+      },
+      "example_id": "native-autodiff-rollout",
+      "limitations": [
+        "Requires CUDA-enabled PyTorch compatible with the Warp CUDA environment.",
+        "Covers one-dimensional float32 state and the declared differentiable recurrence.",
+        "Impact depends on framework, device, rollout length, and state size.",
+        "The standard workload uses full state retention without checkpointing."
+      ],
+      "measured_contract": {
+        "compatibility": {
+          "device": {
+            "affinity_cpu_count": null,
+            "architecture": 120,
+            "class": "cuda",
+            "cpu_model": null,
+            "logical_cpu_count": null,
+            "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "total_memory_bytes": 101973950464
+          },
+          "devices": [
+            "cuda"
+          ],
+          "equivalence_band": {
+            "high": 1.02,
+            "low": 0.98
+          },
+          "warp": {
+            "measured_version": "1.17.0.dev0",
+            "specifier": ">=1.17"
+          }
+        },
+        "declared_workload": {
+          "seed": 20260730,
+          "size": 262144,
+          "steps": 32
+        },
+        "digest_sha256": "7db1f88e61d7c431f72889666d7588669c7dde5a96703fb5b17c13dbfe321b91",
+        "example_id": "native-autodiff-rollout",
+        "outputs": {
+          "final_state": {
+            "atol": 2e-05,
+            "rtol": 0.0002
+          },
+          "input_gradient": {
+            "atol": 2e-05,
+            "rtol": 0.0002
+          }
+        },
+        "protocol": {
+          "bootstrap_seed": 161803,
+          "pairs": 20,
+          "resamples": 10000,
+          "warmups": 3
+        },
+        "protocol_requirements": {
+          "bootstrap_seed": 161803,
+          "pairs": 20,
+          "resamples": 10000,
+          "warmups": 3
+        },
+        "source_hashes": {
+          "artifacts": {
+            "baseline": {
+              "path": "before.py",
+              "sha256": "e8f814691585d65a04415889122f7898dbb5f7a745b5b429ef871f82bc5fea06"
+            },
+            "benchmark": {
+              "path": "benchmark.py",
+              "sha256": "23e81cb4ca04e2b7b0a250948903d9d56fd668c4fe369402f7278351d6a34195"
+            },
+            "candidate": {
+              "path": "after.py",
+              "sha256": "6a7295d48f379c140b498ab444d954c3445ff5a8b3f9cb8abf871c9aa691e5b9"
+            },
+            "correctness": {
+              "path": "test_correctness.py",
+              "sha256": "52b7fa7cc3e4553ec7cb99c95c13882523f02b9fd9bef3ea2d4dc29ff2a9897f"
+            }
+          },
+          "shared": [
+            {
+              "path": "harness/__init__.py",
+              "sha256": "9ef0bcb51a7a77ba0a2d8b1227405d9513afb41b8aac0cc47c933a4d669cbbba"
+            },
+            {
+              "path": "harness/benchmark.py",
+              "sha256": "a54ea50740a5b2882e3888d2f26df875dcdc8e374eaec144f4f7e1b8e9a928d9"
+            },
+            {
+              "path": "harness/clean_room.py",
+              "sha256": "2cc1f263cb6b3c1df227ee994be8231f89103e6f0c8f7e59700aaabf41bc9a73"
+            },
+            {
+              "path": "harness/correctness.py",
+              "sha256": "4edcfe5a5c2b0652c5ce1ba89ec94613c023466bb55bc148de1d1ea3c7b33a2d"
+            },
+            {
+              "path": "harness/environment.py",
+              "sha256": "7f0e6f76ca5dbbeb5397ca2aed3c5fac2dc234c750b274437e0ea9b5e9105ed8"
+            },
+            {
+              "path": "harness/evidence.py",
+              "sha256": "edfe9260dc1685c45d2b094d4685c93b08b96f52a23070a10095eea472376aa9"
+            },
+            {
+              "path": "harness/json_utils.py",
+              "sha256": "93f26e1cade65ad8a9095df3d9ae483f5f4f4ef1436277e54203b6b35a75f49f"
+            },
+            {
+              "path": "harness/manifest.py",
+              "sha256": "d9146eacc00147fc60e881e0a78f8600bc73e46d0b356dd5439c570e8aeaa8fd"
+            },
+            {
+              "path": "harness/model.py",
+              "sha256": "9cbecb172a6747c064dc8e997cc0146e4591c9d77b0639898ecfd4b6eb9a9f0a"
+            },
+            {
+              "path": "harness/registry.py",
+              "sha256": "c67106aac4c6a85a713637aa3037ae41621d08c4cfcefbc7bb70d7eabece8f9e"
+            },
+            {
+              "path": "harness/statistics.py",
+              "sha256": "b30a7ce43fe014df8591b5f21f34a4f7dbb9b6a69261e287586a4ed21a47856b"
+            },
+            {
+              "path": "run.py",
+              "sha256": "c1af4d1044f427a128d6f743036ea9af558d3e76c4566f32b24fdc1a7db1b832"
+            }
+          ]
+        },
+        "workload": {
+          "seed": 20260730,
+          "size": 262144,
+          "steps": 32
+        }
+      },
+      "protocol": {
+        "bootstrap_seed": 161803,
+        "pairs": 20,
+        "resamples": 10000,
+        "warmups": 3
+      },
+      "record_format_version": 2,
+      "record_id": "7195a562d19e4eb993d9e1f15ecced62",
+      "result": "improved",
+      "samples": {
+        "baseline_ns": [
+          3112059,
+          3187279,
+          3131590,
+          3195300,
+          3078519,
+          3131340,
+          3099280,
+          3192949,
+          3002559,
+          3030510,
+          3002619,
+          3063949,
+          3027960,
+          3028000,
+          3018249,
+          3027049,
+          3007010,
+          3030750,
+          2953299,
+          3034080
+        ],
+        "candidate_ns": [
+          785930,
+          718610,
+          786850,
+          693730,
+          785120,
+          706610,
+          790730,
+          704280,
+          787920,
+          705080,
+          786600,
+          696810,
+          794209,
+          712670,
+          785450,
+          699760,
+          790510,
+          706239,
+          781640,
+          703070
+        ],
+        "order": [
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first"
+        ]
+      },
+      "statistics": {
+        "baseline_mad_ns": 30695.0,
+        "baseline_median_ns": 3032415.0,
+        "candidate_mad_ns": 40495.0,
+        "candidate_median_ns": 750125.0,
+        "median_ratio": 0.24331105599122876,
+        "pairs": 20,
+        "ratio_ci_high": 0.2576835578152612,
+        "ratio_ci_low": 0.23144665755251131
+      }
+    }
+  ],
+  "schema_version": 1
+}
