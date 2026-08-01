@@ -218,6 +218,14 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
     from warp.tests.test_modules_lite import TestModuleLite
     from warp.tests.test_noise import TestNoise
     from warp.tests.test_operators import TestOperators
+    from warp.tests.test_optimization_examples import (
+        TestOptimizationEvidence,
+        TestOptimizationHarness,
+        TestOptimizationManifests,
+        TestOptimizationModels,
+        TestOptimizationRunner,
+        TestRuntimeOptimizationExamples,
+    )
     from warp.tests.test_options import TestOptions
     from warp.tests.test_overwrite import TestOverwrite
     from warp.tests.test_print import TestPrint
@@ -332,6 +340,12 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
         TestEnum,
         TestCoreExamples,
         TestOptimExamples,
+        TestOptimizationEvidence,
+        TestOptimizationHarness,
+        TestOptimizationManifests,
+        TestOptimizationModels,
+        TestOptimizationRunner,
+        TestRuntimeOptimizationExamples,
         TestFactoryStyleArrayAnnotations,
         TestFabricArray,
         TestFastMath,

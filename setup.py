@@ -220,6 +220,11 @@ setuptools.setup(
             "native/nanovdb/*.h",
             "tests/assets/*",
             "examples/assets/*",
+            "README.md",
+            "manifest.json",
+            "evidence.json",
+            "explanation.md",
+            "schema/*.json",
             *warp_binary_libraries,
         ]
     },

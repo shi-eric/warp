@@ -1,0 +1,500 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "records"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "records": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/record"}
+    }
+  },
+  "$defs": {
+    "record": {
+      "anyOf": [
+        {"$ref": "#/$defs/legacyRecord"},
+        {"$ref": "#/$defs/v2Record"}
+      ]
+    },
+    "legacyRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_id",
+        "example_id",
+        "environment",
+        "correctness",
+        "protocol",
+        "samples",
+        "statistics",
+        "result",
+        "limitations"
+      ],
+      "properties": {
+        "record_id": {"$ref": "#/$defs/nonEmptyString"},
+        "example_id": {"$ref": "#/$defs/exampleId"},
+        "environment": {"$ref": "#/$defs/legacyEnvironment"},
+        "correctness": {"$ref": "#/$defs/legacyCorrectness"},
+        "protocol": {"$ref": "#/$defs/protocol"},
+        "samples": {"$ref": "#/$defs/samples"},
+        "statistics": {"$ref": "#/$defs/statistics"},
+        "result": {"$ref": "#/$defs/result"},
+        "limitations": {"$ref": "#/$defs/limitations"}
+      }
+    },
+    "v2Record": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "record_format_version",
+        "record_id",
+        "example_id",
+        "environment",
+        "correctness",
+        "protocol",
+        "samples",
+        "statistics",
+        "result",
+        "limitations",
+        "measured_contract"
+      ],
+      "properties": {
+        "record_format_version": {"const": 2},
+        "record_id": {"$ref": "#/$defs/nonEmptyString"},
+        "example_id": {"$ref": "#/$defs/exampleId"},
+        "environment": {"$ref": "#/$defs/v2Environment"},
+        "correctness": {"$ref": "#/$defs/v2Correctness"},
+        "protocol": {"$ref": "#/$defs/protocol"},
+        "samples": {"$ref": "#/$defs/samples"},
+        "statistics": {"$ref": "#/$defs/statistics"},
+        "result": {"$ref": "#/$defs/result"},
+        "limitations": {"$ref": "#/$defs/limitations"},
+        "measured_contract": {"$ref": "#/$defs/measuredContract"}
+      }
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "exampleId": {
+      "type": "string",
+      "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+    },
+    "jsonScalar": {
+      "type": ["string", "number", "boolean", "null"]
+    },
+    "workload": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/jsonScalar"}
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{6})?\\+00:00$"
+    },
+    "git": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "repository_dirty", "runtime_sources_dirty"],
+      "properties": {
+        "revision": {"type": ["string", "null"]},
+        "repository_dirty": {"type": ["boolean", "null"]},
+        "runtime_sources_dirty": {"type": ["boolean", "null"]}
+      }
+    },
+    "device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alias", "name", "is_cuda", "architecture", "total_memory_bytes"],
+      "properties": {
+        "alias": {"type": "string"},
+        "name": {"type": "string"},
+        "is_cuda": {"type": "boolean"},
+        "architecture": {
+          "anyOf": [
+            {"type": "string"},
+            {"type": "integer"},
+            {"type": "null"}
+          ]
+        },
+        "total_memory_bytes": {"type": "integer", "minimum": 0}
+      }
+    },
+    "cpu": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "logical_cpu_count", "affinity_cpu_count"],
+      "properties": {
+        "model": {"$ref": "#/$defs/nonEmptyString"},
+        "logical_cpu_count": {"type": "integer", "minimum": 1},
+        "affinity_cpu_count": {"type": "integer", "minimum": 1}
+      }
+    },
+    "cuda": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["toolkit", "driver"],
+      "properties": {
+        "toolkit": {"$ref": "#/$defs/version"},
+        "driver": {"$ref": "#/$defs/version"}
+      }
+    },
+    "legacyEnvironment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timestamp_utc",
+        "python",
+        "warp",
+        "os",
+        "machine",
+        "git",
+        "device",
+        "cuda",
+        "workload"
+      ],
+      "properties": {
+        "timestamp_utc": {"$ref": "#/$defs/timestamp"},
+        "python": {"$ref": "#/$defs/nonEmptyString"},
+        "warp": {"$ref": "#/$defs/nonEmptyString"},
+        "os": {"$ref": "#/$defs/nonEmptyString"},
+        "machine": {"$ref": "#/$defs/nonEmptyString"},
+        "git": {"$ref": "#/$defs/git"},
+        "device": {"$ref": "#/$defs/device"},
+        "cuda": {"$ref": "#/$defs/cuda"},
+        "workload": {"$ref": "#/$defs/workload"}
+      }
+    },
+    "v2Environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timestamp_utc",
+        "python",
+        "warp",
+        "os",
+        "machine",
+        "git",
+        "device",
+        "cuda",
+        "cpu",
+        "workload"
+      ],
+      "properties": {
+        "timestamp_utc": {"$ref": "#/$defs/timestamp"},
+        "python": {"$ref": "#/$defs/nonEmptyString"},
+        "warp": {"$ref": "#/$defs/nonEmptyString"},
+        "os": {"$ref": "#/$defs/nonEmptyString"},
+        "machine": {"$ref": "#/$defs/nonEmptyString"},
+        "git": {"$ref": "#/$defs/git"},
+        "device": {"$ref": "#/$defs/device"},
+        "cuda": {"$ref": "#/$defs/cuda"},
+        "cpu": {"$ref": "#/$defs/cpu"},
+        "workload": {"$ref": "#/$defs/workload"}
+      }
+    },
+    "version": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"type": "integer", "minimum": 0}
+    },
+    "legacyCorrectness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "outputs"],
+      "properties": {
+        "passed": {"type": "boolean"},
+        "outputs": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"$ref": "#/$defs/legacyOutputError"}
+        }
+      }
+    },
+    "legacyOutputError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "max_abs", "max_rel", "finite", "passed"],
+      "properties": {
+        "name": {"$ref": "#/$defs/nonEmptyString"},
+        "max_abs": {"type": "number", "minimum": 0},
+        "max_rel": {"type": "number", "minimum": 0},
+        "finite": {"type": "boolean"},
+        "passed": {"type": "boolean"}
+      }
+    },
+    "v2Correctness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "outputs"],
+      "properties": {
+        "passed": {"type": "boolean"},
+        "outputs": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"$ref": "#/$defs/v2OutputError"}
+        }
+      }
+    },
+    "v2OutputError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "max_abs",
+        "max_rel",
+        "finite",
+        "atol",
+        "rtol",
+        "max_normalized",
+        "passed"
+      ],
+      "properties": {
+        "name": {"$ref": "#/$defs/nonEmptyString"},
+        "max_abs": {
+          "anyOf": [
+            {"type": "number", "minimum": 0},
+            {"type": "null"}
+          ]
+        },
+        "max_rel": {
+          "anyOf": [
+            {"type": "number", "minimum": 0},
+            {"type": "null"}
+          ]
+        },
+        "finite": {"type": "boolean"},
+        "atol": {"type": "number", "minimum": 0},
+        "rtol": {"type": "number", "minimum": 0},
+        "max_normalized": {
+          "anyOf": [
+            {"type": "number", "minimum": 0},
+            {"type": "null"}
+          ]
+        },
+        "passed": {"type": "boolean"}
+      }
+    },
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["warmups", "pairs", "bootstrap_seed", "resamples"],
+      "properties": {
+        "warmups": {"type": "integer", "minimum": 3},
+        "pairs": {"type": "integer", "minimum": 10},
+        "bootstrap_seed": {"type": "integer", "minimum": 0},
+        "resamples": {"type": "integer", "minimum": 10000}
+      }
+    },
+    "samples": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline_ns", "candidate_ns", "order"],
+      "properties": {
+        "baseline_ns": {
+          "type": "array",
+          "minItems": 10,
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "candidate_ns": {
+          "type": "array",
+          "minItems": 10,
+          "items": {"type": "integer", "minimum": 1}
+        },
+        "order": {
+          "type": "array",
+          "minItems": 10,
+          "items": {"enum": ["baseline-first", "candidate-first"]}
+        }
+      }
+    },
+    "statistics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "baseline_median_ns",
+        "candidate_median_ns",
+        "baseline_mad_ns",
+        "candidate_mad_ns",
+        "median_ratio",
+        "ratio_ci_low",
+        "ratio_ci_high",
+        "pairs"
+      ],
+      "properties": {
+        "baseline_median_ns": {"type": "number", "exclusiveMinimum": 0},
+        "candidate_median_ns": {"type": "number", "exclusiveMinimum": 0},
+        "baseline_mad_ns": {"type": "number", "minimum": 0},
+        "candidate_mad_ns": {"type": "number", "minimum": 0},
+        "median_ratio": {"type": "number", "exclusiveMinimum": 0},
+        "ratio_ci_low": {"type": "number", "exclusiveMinimum": 0},
+        "ratio_ci_high": {"type": "number", "exclusiveMinimum": 0},
+        "pairs": {"type": "integer", "minimum": 10}
+      }
+    },
+    "result": {
+      "enum": ["improved", "harmful", "inconclusive"]
+    },
+    "limitations": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/nonEmptyString"}
+    },
+    "sourceEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^(?![\\\\/])(?![A-Za-z]:[\\\\/])(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$)).+$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "outputContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["atol", "rtol"],
+      "properties": {
+        "atol": {"type": "number", "minimum": 0},
+        "rtol": {"type": "number", "minimum": 0}
+      }
+    },
+    "equivalenceBand": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["low", "high"],
+      "properties": {
+        "low": {"type": "number", "minimum": 0},
+        "high": {"type": "number", "minimum": 0}
+      }
+    },
+    "contractDevice": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "class",
+        "name",
+        "architecture",
+        "total_memory_bytes",
+        "cpu_model",
+        "logical_cpu_count",
+        "affinity_cpu_count"
+      ],
+      "properties": {
+        "class": {"enum": ["cuda", "cpu"]},
+        "name": {"$ref": "#/$defs/nonEmptyString"},
+        "architecture": {
+          "anyOf": [
+            {"type": "string"},
+            {"type": "integer"},
+            {"type": "null"}
+          ]
+        },
+        "total_memory_bytes": {"type": "integer", "minimum": 0},
+        "cpu_model": {
+          "anyOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ]
+        },
+        "logical_cpu_count": {
+          "anyOf": [
+            {"type": "integer", "minimum": 1},
+            {"type": "null"}
+          ]
+        },
+        "affinity_cpu_count": {
+          "anyOf": [
+            {"type": "integer", "minimum": 1},
+            {"type": "null"}
+          ]
+        }
+      }
+    },
+    "measuredContract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "digest_sha256",
+        "example_id",
+        "workload",
+        "declared_workload",
+        "protocol",
+        "protocol_requirements",
+        "outputs",
+        "compatibility",
+        "source_hashes"
+      ],
+      "properties": {
+        "digest_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "example_id": {"$ref": "#/$defs/exampleId"},
+        "workload": {"$ref": "#/$defs/workload"},
+        "declared_workload": {"$ref": "#/$defs/workload"},
+        "protocol": {"$ref": "#/$defs/protocol"},
+        "protocol_requirements": {"$ref": "#/$defs/protocol"},
+        "outputs": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {"$ref": "#/$defs/outputContract"}
+        },
+        "compatibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["warp", "devices", "equivalence_band", "device"],
+          "properties": {
+            "warp": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["measured_version", "specifier"],
+              "properties": {
+                "measured_version": {"$ref": "#/$defs/nonEmptyString"},
+                "specifier": {"$ref": "#/$defs/nonEmptyString"}
+              }
+            },
+            "devices": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"enum": ["cpu", "cuda"]}
+            },
+            "equivalence_band": {"$ref": "#/$defs/equivalenceBand"},
+            "device": {"$ref": "#/$defs/contractDevice"}
+          }
+        },
+        "source_hashes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["artifacts", "shared"],
+          "properties": {
+            "artifacts": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["baseline", "candidate", "benchmark", "correctness"],
+              "properties": {
+                "baseline": {"$ref": "#/$defs/sourceEntry"},
+                "candidate": {"$ref": "#/$defs/sourceEntry"},
+                "benchmark": {"$ref": "#/$defs/sourceEntry"},
+                "correctness": {"$ref": "#/$defs/sourceEntry"}
+              }
+            },
+            "shared": {
+              "type": "array",
+              "minItems": 1,
+              "items": {"$ref": "#/$defs/sourceEntry"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

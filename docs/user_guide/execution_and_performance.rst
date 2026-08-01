@@ -15,6 +15,8 @@ Guides in this section
   Allocation strategies, memory pools, residency, and cross-device access.
 * :doc:`Profiling <execution_and_performance/profiling>`: Measuring host and
   device work with Warp timers, NVTX, and NVIDIA profiling tools.
+* :doc:`Runtime Optimization Examples <execution_and_performance/runtime_optimization>`:
+  Correctness-first, paired evidence for end-to-end runtime transformations.
 * :doc:`Deterministic Execution <execution_and_performance/deterministic_execution>`:
   Reproducibility guarantees, limitations, and performance tradeoffs.
 
@@ -25,4 +27,5 @@ Guides in this section
    execution_and_performance/concurrency
    execution_and_performance/memory_management
    execution_and_performance/profiling
+   execution_and_performance/runtime_optimization
    execution_and_performance/deterministic_execution
