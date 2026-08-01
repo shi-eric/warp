@@ -28,7 +28,11 @@ import numpy as np
 import warp.examples.optimizations.harness.environment as environment_module
 import warp.examples.optimizations.harness.evidence as evidence_module
 import warp.examples.optimizations.run as runner_module
+from warp.examples.optimizations.autodiff.gradient_safe_intermediate_lifetime.benchmark import (
+    build_case as build_gradient_safe_intermediate_lifetime_case,
+)
 from warp.examples.optimizations.harness import (
+    UnsupportedWorkload,
     append_evidence,
     classify_summary,
     evidence_staleness_reasons,
@@ -2516,6 +2520,7 @@ class TestRuntimeOptimizationExamples(unittest.TestCase):
             {
                 "device-resident-spectral-transform",
                 "fused-elementwise-pipeline",
+                "gradient-safe-intermediate-lifetime",
                 "native-autodiff-rollout",
                 "reused-iteration-workspace",
             },
@@ -2572,6 +2577,35 @@ class TestRuntimeOptimizationExamples(unittest.TestCase):
         for name, relative_path in record.manifest["artifacts"].items():
             if name != "python_module":
                 self.assertTrue((record.root / relative_path).is_file(), name)
+
+    def test_gradient_safe_intermediate_lifetime_card_is_registered(self):
+        examples = discover_examples()
+
+        record = examples["gradient-safe-intermediate-lifetime"]
+        validate_manifest(record.manifest, record.root / "manifest.json")
+        self.assertEqual(
+            set(record.manifest["semantics"]["observable_outputs"]),
+            {"final_state", "input_gradient"},
+        )
+        self.assertIn(
+            "step_derivative_is_independent_of_overwritten_primal_values",
+            record.manifest["applicability"]["preconditions"],
+        )
+        for name, relative_path in record.manifest["artifacts"].items():
+            if name != "python_module":
+                self.assertTrue((record.root / relative_path).is_file(), name)
+
+    def test_gradient_safe_intermediate_lifetime_rejects_state_dependent_derivative(self):
+        with self.assertRaisesRegex(UnsupportedWorkload, "derivative.*state"):
+            build_gradient_safe_intermediate_lifetime_case(
+                "cpu",
+                {
+                    "derivative_depends_on_state": True,
+                    "seed": 20260730,
+                    "size": 16,
+                    "steps": 2,
+                },
+            )
 
     def test_native_autodiff_rollout_torch_runtime_errors_are_not_skipped(self):
         original_import = __import__
@@ -2747,6 +2781,28 @@ def test_native_autodiff_rollout_non_default_stream(test, device, torch_required
     test.assertIn("stream=non-default", result.stdout)
 
 
+def test_gradient_safe_intermediate_lifetime_correctness(test, device):
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "warp.examples.optimizations.autodiff.gradient_safe_intermediate_lifetime.test_correctness",
+            "--device",
+            str(device),
+            "--size",
+            "1024",
+            "--steps",
+            "4",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    test.assertEqual(result.returncode, 0, f"{result.stdout}\n{result.stderr}")
+    test.assertIn("size=1024 steps=4: PASS", result.stdout)
+    test.assertIn("nonlinear_counterexample: PASS", result.stdout)
+
+
 add_function_test(
     TestRuntimeOptimizationExamples,
     "test_fused_elementwise_pipeline_correctness",
@@ -2778,6 +2834,12 @@ add_function_test(
     test_native_autodiff_rollout_non_default_stream,
     devices=get_cuda_test_devices(mode="basic"),
     torch_required=True,
+)
+add_function_test(
+    TestRuntimeOptimizationExamples,
+    "test_gradient_safe_intermediate_lifetime_correctness",
+    test_gradient_safe_intermediate_lifetime_correctness,
+    devices=get_test_devices(mode="basic"),
 )
 
 

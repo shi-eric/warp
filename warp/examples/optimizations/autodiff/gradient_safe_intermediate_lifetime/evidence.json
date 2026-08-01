@@ -1,0 +1,589 @@
+{
+  "records": [
+    {
+      "correctness": {
+        "outputs": {
+          "final_state": {
+            "atol": 2e-06,
+            "finite": true,
+            "max_abs": 0.0,
+            "max_normalized": 0.0,
+            "max_rel": 0.0,
+            "name": "final_state",
+            "passed": true,
+            "rtol": 2e-05
+          },
+          "input_gradient": {
+            "atol": 2e-06,
+            "finite": true,
+            "max_abs": 0.0,
+            "max_normalized": 0.0,
+            "max_rel": 0.0,
+            "name": "input_gradient",
+            "passed": true,
+            "rtol": 2e-05
+          }
+        },
+        "passed": true
+      },
+      "environment": {
+        "cpu": {
+          "affinity_cpu_count": 192,
+          "logical_cpu_count": 192,
+          "model": "AMD EPYC 9B45"
+        },
+        "cuda": {
+          "driver": [
+            13,
+            0
+          ],
+          "toolkit": [
+            13,
+            0
+          ]
+        },
+        "device": {
+          "alias": "cuda:0",
+          "architecture": 120,
+          "is_cuda": true,
+          "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+          "total_memory_bytes": 101973950464
+        },
+        "git": {
+          "repository_dirty": false,
+          "revision": "e4eb24ae31645001dcf49a1d3e6314ebeb2ed602",
+          "runtime_sources_dirty": false
+        },
+        "machine": "x86_64",
+        "os": "Linux-6.8.0-1054-gke-x86_64-with-glibc2.35",
+        "python": "3.12.13",
+        "timestamp_utc": "2026-07-30T03:52:30.850023+00:00",
+        "warp": "1.17.0.dev0",
+        "workload": {
+          "derivative_depends_on_state": false,
+          "seed": 20260730,
+          "size": 262144,
+          "steps": 64
+        }
+      },
+      "example_id": "gradient-safe-intermediate-lifetime",
+      "limitations": [
+        "Covers a one-dimensional float32 affine recurrence with a constant derivative.",
+        "The manual adjoint is invalid when a step derivative depends on overwritten primal values.",
+        "Runtime impact depends on device, state size, step count, and autodiff overhead.",
+        "The standard workload uses no checkpointing."
+      ],
+      "measured_contract": {
+        "compatibility": {
+          "device": {
+            "affinity_cpu_count": null,
+            "architecture": 120,
+            "class": "cuda",
+            "cpu_model": null,
+            "logical_cpu_count": null,
+            "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "total_memory_bytes": 101973950464
+          },
+          "devices": [
+            "cpu",
+            "cuda"
+          ],
+          "equivalence_band": {
+            "high": 1.02,
+            "low": 0.98
+          },
+          "warp": {
+            "measured_version": "1.17.0.dev0",
+            "specifier": ">=1.17"
+          }
+        },
+        "declared_workload": {
+          "derivative_depends_on_state": false,
+          "seed": 20260730,
+          "size": 262144,
+          "steps": 64
+        },
+        "digest_sha256": "a4d17347d572943c3b7bceb40d4bd29d26cde6c2e40190717bd12af5cb4a2c08",
+        "example_id": "gradient-safe-intermediate-lifetime",
+        "outputs": {
+          "final_state": {
+            "atol": 2e-06,
+            "rtol": 2e-05
+          },
+          "input_gradient": {
+            "atol": 2e-06,
+            "rtol": 2e-05
+          }
+        },
+        "protocol": {
+          "bootstrap_seed": 271828,
+          "pairs": 20,
+          "resamples": 10000,
+          "warmups": 3
+        },
+        "protocol_requirements": {
+          "bootstrap_seed": 271828,
+          "pairs": 20,
+          "resamples": 10000,
+          "warmups": 3
+        },
+        "source_hashes": {
+          "artifacts": {
+            "baseline": {
+              "path": "before.py",
+              "sha256": "819d943c21a1fb9011949075c325fd986a60fa2c4e38ed7775dab8a0b0ace9e6"
+            },
+            "benchmark": {
+              "path": "benchmark.py",
+              "sha256": "2fea138effff4a0b860ecfeeb3e5727b1a4d3a039422786f8e865b68498688de"
+            },
+            "candidate": {
+              "path": "after.py",
+              "sha256": "50852cbc1e309e6b6e36aa7c0f6a3a6af6707f9c3bb50ee2b89d4143e70e3239"
+            },
+            "correctness": {
+              "path": "test_correctness.py",
+              "sha256": "ba749e3cb46161094ecc4a87315e78443af08f6629a1c4d4d43e2ce7a465ad19"
+            }
+          },
+          "shared": [
+            {
+              "path": "harness/__init__.py",
+              "sha256": "9ef0bcb51a7a77ba0a2d8b1227405d9513afb41b8aac0cc47c933a4d669cbbba"
+            },
+            {
+              "path": "harness/benchmark.py",
+              "sha256": "a54ea50740a5b2882e3888d2f26df875dcdc8e374eaec144f4f7e1b8e9a928d9"
+            },
+            {
+              "path": "harness/clean_room.py",
+              "sha256": "2cc1f263cb6b3c1df227ee994be8231f89103e6f0c8f7e59700aaabf41bc9a73"
+            },
+            {
+              "path": "harness/correctness.py",
+              "sha256": "4edcfe5a5c2b0652c5ce1ba89ec94613c023466bb55bc148de1d1ea3c7b33a2d"
+            },
+            {
+              "path": "harness/environment.py",
+              "sha256": "7f0e6f76ca5dbbeb5397ca2aed3c5fac2dc234c750b274437e0ea9b5e9105ed8"
+            },
+            {
+              "path": "harness/evidence.py",
+              "sha256": "edfe9260dc1685c45d2b094d4685c93b08b96f52a23070a10095eea472376aa9"
+            },
+            {
+              "path": "harness/json_utils.py",
+              "sha256": "93f26e1cade65ad8a9095df3d9ae483f5f4f4ef1436277e54203b6b35a75f49f"
+            },
+            {
+              "path": "harness/manifest.py",
+              "sha256": "d9146eacc00147fc60e881e0a78f8600bc73e46d0b356dd5439c570e8aeaa8fd"
+            },
+            {
+              "path": "harness/model.py",
+              "sha256": "9cbecb172a6747c064dc8e997cc0146e4591c9d77b0639898ecfd4b6eb9a9f0a"
+            },
+            {
+              "path": "harness/registry.py",
+              "sha256": "c67106aac4c6a85a713637aa3037ae41621d08c4cfcefbc7bb70d7eabece8f9e"
+            },
+            {
+              "path": "harness/statistics.py",
+              "sha256": "b30a7ce43fe014df8591b5f21f34a4f7dbb9b6a69261e287586a4ed21a47856b"
+            },
+            {
+              "path": "run.py",
+              "sha256": "c1af4d1044f427a128d6f743036ea9af558d3e76c4566f32b24fdc1a7db1b832"
+            }
+          ]
+        },
+        "workload": {
+          "derivative_depends_on_state": false,
+          "seed": 20260730,
+          "size": 262144,
+          "steps": 64
+        }
+      },
+      "protocol": {
+        "bootstrap_seed": 271828,
+        "pairs": 20,
+        "resamples": 10000,
+        "warmups": 3
+      },
+      "record_format_version": 2,
+      "record_id": "93e2fd0d20ab4b32922e127e020fb48a",
+      "result": "improved",
+      "samples": {
+        "baseline_ns": [
+          1534049,
+          1554500,
+          1554939,
+          1555539,
+          1553270,
+          1540699,
+          1544950,
+          1547260,
+          1545550,
+          1548420,
+          1532520,
+          1547630,
+          1543010,
+          1540290,
+          1543730,
+          1551430,
+          1540529,
+          1540640,
+          1536579,
+          1545540
+        ],
+        "candidate_ns": [
+          1164230,
+          1163790,
+          1174670,
+          1170420,
+          1171760,
+          1166550,
+          1157690,
+          1158030,
+          1160010,
+          1157190,
+          1158120,
+          1158899,
+          1159519,
+          1153240,
+          1162759,
+          1158930,
+          1158650,
+          1162070,
+          1165250,
+          1161560
+        ],
+        "order": [
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first"
+        ]
+      },
+      "statistics": {
+        "baseline_mad_ns": 4660.5,
+        "baseline_median_ns": 1545245.0,
+        "candidate_mad_ns": 2880.0,
+        "candidate_median_ns": 1160785.0,
+        "median_ratio": 0.751833932509828,
+        "pairs": 20,
+        "ratio_ci_high": 0.7543300662817362,
+        "ratio_ci_low": 0.7490799565418221
+      }
+    },
+    {
+      "correctness": {
+        "outputs": {
+          "final_state": {
+            "atol": 2e-06,
+            "finite": true,
+            "max_abs": 0.0,
+            "max_normalized": 0.0,
+            "max_rel": 0.0,
+            "name": "final_state",
+            "passed": true,
+            "rtol": 2e-05
+          },
+          "input_gradient": {
+            "atol": 2e-06,
+            "finite": true,
+            "max_abs": 0.0,
+            "max_normalized": 0.0,
+            "max_rel": 0.0,
+            "name": "input_gradient",
+            "passed": true,
+            "rtol": 2e-05
+          }
+        },
+        "passed": true
+      },
+      "environment": {
+        "cpu": {
+          "affinity_cpu_count": 192,
+          "logical_cpu_count": 192,
+          "model": "AMD EPYC 9B45"
+        },
+        "cuda": {
+          "driver": [
+            13,
+            0
+          ],
+          "toolkit": [
+            13,
+            0
+          ]
+        },
+        "device": {
+          "alias": "cpu",
+          "architecture": 0,
+          "is_cuda": false,
+          "name": "x86_64",
+          "total_memory_bytes": 760420753408
+        },
+        "git": {
+          "repository_dirty": false,
+          "revision": "e4eb24ae31645001dcf49a1d3e6314ebeb2ed602",
+          "runtime_sources_dirty": false
+        },
+        "machine": "x86_64",
+        "os": "Linux-6.8.0-1054-gke-x86_64-with-glibc2.35",
+        "python": "3.12.13",
+        "timestamp_utc": "2026-07-30T03:52:39.283555+00:00",
+        "warp": "1.17.0.dev0",
+        "workload": {
+          "derivative_depends_on_state": false,
+          "seed": 20260730,
+          "size": 262144,
+          "steps": 64
+        }
+      },
+      "example_id": "gradient-safe-intermediate-lifetime",
+      "limitations": [
+        "Covers a one-dimensional float32 affine recurrence with a constant derivative.",
+        "The manual adjoint is invalid when a step derivative depends on overwritten primal values.",
+        "Runtime impact depends on device, state size, step count, and autodiff overhead.",
+        "The standard workload uses no checkpointing."
+      ],
+      "measured_contract": {
+        "compatibility": {
+          "device": {
+            "affinity_cpu_count": 192,
+            "architecture": 0,
+            "class": "cpu",
+            "cpu_model": "AMD EPYC 9B45",
+            "logical_cpu_count": 192,
+            "name": "x86_64",
+            "total_memory_bytes": 760420753408
+          },
+          "devices": [
+            "cpu",
+            "cuda"
+          ],
+          "equivalence_band": {
+            "high": 1.02,
+            "low": 0.98
+          },
+          "warp": {
+            "measured_version": "1.17.0.dev0",
+            "specifier": ">=1.17"
+          }
+        },
+        "declared_workload": {
+          "derivative_depends_on_state": false,
+          "seed": 20260730,
+          "size": 262144,
+          "steps": 64
+        },
+        "digest_sha256": "98e654bda246ebf875b2fa9f5ff5fc24fcde718da8c6cc0cc3be5f1221b7e356",
+        "example_id": "gradient-safe-intermediate-lifetime",
+        "outputs": {
+          "final_state": {
+            "atol": 2e-06,
+            "rtol": 2e-05
+          },
+          "input_gradient": {
+            "atol": 2e-06,
+            "rtol": 2e-05
+          }
+        },
+        "protocol": {
+          "bootstrap_seed": 271828,
+          "pairs": 20,
+          "resamples": 10000,
+          "warmups": 3
+        },
+        "protocol_requirements": {
+          "bootstrap_seed": 271828,
+          "pairs": 20,
+          "resamples": 10000,
+          "warmups": 3
+        },
+        "source_hashes": {
+          "artifacts": {
+            "baseline": {
+              "path": "before.py",
+              "sha256": "819d943c21a1fb9011949075c325fd986a60fa2c4e38ed7775dab8a0b0ace9e6"
+            },
+            "benchmark": {
+              "path": "benchmark.py",
+              "sha256": "2fea138effff4a0b860ecfeeb3e5727b1a4d3a039422786f8e865b68498688de"
+            },
+            "candidate": {
+              "path": "after.py",
+              "sha256": "50852cbc1e309e6b6e36aa7c0f6a3a6af6707f9c3bb50ee2b89d4143e70e3239"
+            },
+            "correctness": {
+              "path": "test_correctness.py",
+              "sha256": "ba749e3cb46161094ecc4a87315e78443af08f6629a1c4d4d43e2ce7a465ad19"
+            }
+          },
+          "shared": [
+            {
+              "path": "harness/__init__.py",
+              "sha256": "9ef0bcb51a7a77ba0a2d8b1227405d9513afb41b8aac0cc47c933a4d669cbbba"
+            },
+            {
+              "path": "harness/benchmark.py",
+              "sha256": "a54ea50740a5b2882e3888d2f26df875dcdc8e374eaec144f4f7e1b8e9a928d9"
+            },
+            {
+              "path": "harness/clean_room.py",
+              "sha256": "2cc1f263cb6b3c1df227ee994be8231f89103e6f0c8f7e59700aaabf41bc9a73"
+            },
+            {
+              "path": "harness/correctness.py",
+              "sha256": "4edcfe5a5c2b0652c5ce1ba89ec94613c023466bb55bc148de1d1ea3c7b33a2d"
+            },
+            {
+              "path": "harness/environment.py",
+              "sha256": "7f0e6f76ca5dbbeb5397ca2aed3c5fac2dc234c750b274437e0ea9b5e9105ed8"
+            },
+            {
+              "path": "harness/evidence.py",
+              "sha256": "edfe9260dc1685c45d2b094d4685c93b08b96f52a23070a10095eea472376aa9"
+            },
+            {
+              "path": "harness/json_utils.py",
+              "sha256": "93f26e1cade65ad8a9095df3d9ae483f5f4f4ef1436277e54203b6b35a75f49f"
+            },
+            {
+              "path": "harness/manifest.py",
+              "sha256": "d9146eacc00147fc60e881e0a78f8600bc73e46d0b356dd5439c570e8aeaa8fd"
+            },
+            {
+              "path": "harness/model.py",
+              "sha256": "9cbecb172a6747c064dc8e997cc0146e4591c9d77b0639898ecfd4b6eb9a9f0a"
+            },
+            {
+              "path": "harness/registry.py",
+              "sha256": "c67106aac4c6a85a713637aa3037ae41621d08c4cfcefbc7bb70d7eabece8f9e"
+            },
+            {
+              "path": "harness/statistics.py",
+              "sha256": "b30a7ce43fe014df8591b5f21f34a4f7dbb9b6a69261e287586a4ed21a47856b"
+            },
+            {
+              "path": "run.py",
+              "sha256": "c1af4d1044f427a128d6f743036ea9af558d3e76c4566f32b24fdc1a7db1b832"
+            }
+          ]
+        },
+        "workload": {
+          "derivative_depends_on_state": false,
+          "seed": 20260730,
+          "size": 262144,
+          "steps": 64
+        }
+      },
+      "protocol": {
+        "bootstrap_seed": 271828,
+        "pairs": 20,
+        "resamples": 10000,
+        "warmups": 3
+      },
+      "record_format_version": 2,
+      "record_id": "67e403c24bcf4a80ba7aa41be4082cf0",
+      "result": "improved",
+      "samples": {
+        "baseline_ns": [
+          68461007,
+          68479178,
+          68720597,
+          68471408,
+          68431278,
+          68652407,
+          68827027,
+          68454687,
+          68604547,
+          68558517,
+          68455257,
+          68429567,
+          68473297,
+          68421867,
+          68458347,
+          68474218,
+          68389058,
+          69097457,
+          68553557,
+          68544777
+        ],
+        "candidate_ns": [
+          34943603,
+          34714944,
+          34773903,
+          34711804,
+          34880223,
+          34725353,
+          34763934,
+          34721543,
+          34823134,
+          34737433,
+          35110653,
+          34782334,
+          34815833,
+          34690414,
+          34692913,
+          34796114,
+          34767033,
+          34826264,
+          34866504,
+          34747793
+        ],
+        "order": [
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first"
+        ]
+      },
+      "statistics": {
+        "baseline_mad_ns": 48040.5,
+        "baseline_median_ns": 68473757.5,
+        "candidate_mad_ns": 50795.5,
+        "candidate_median_ns": 34770468.0,
+        "median_ratio": 0.507113537696794,
+        "pairs": 20,
+        "ratio_ci_high": 0.5083326087114441,
+        "ratio_ci_low": 0.5068548583955204
+      }
+    }
+  ],
+  "schema_version": 1
+}

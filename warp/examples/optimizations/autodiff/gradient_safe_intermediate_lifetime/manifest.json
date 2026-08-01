@@ -1,0 +1,142 @@
+{
+  "applicability": {
+    "contraindications": [
+      "step_derivative_depends_on_overwritten_primal_values",
+      "custom_manual_adjoint_has_not_been_independently_validated",
+      "intermediate_primal_states_are_observable"
+    ],
+    "preconditions": [
+      "step_derivative_is_independent_of_overwritten_primal_values",
+      "forward_steps_share_one_fixed_shape_dtype_and_device",
+      "only_final_state_and_input_gradient_are_observable"
+    ]
+  },
+  "artifacts": {
+    "baseline": "before.py",
+    "benchmark": "benchmark.py",
+    "candidate": "after.py",
+    "correctness": "test_correctness.py",
+    "evidence": "evidence.json",
+    "explanation": "explanation.md",
+    "python_module": "warp.examples.optimizations.autodiff.gradient_safe_intermediate_lifetime.benchmark"
+  },
+  "benchmark": {
+    "bootstrap_seed": 271828,
+    "equivalence_band": {
+      "high": 1.02,
+      "low": 0.98
+    },
+    "estimated_peak_bytes": 201326592,
+    "pairs": 20,
+    "resamples": 10000,
+    "warmups": 3,
+    "workload": {
+      "derivative_depends_on_state": false,
+      "seed": 20260730,
+      "size": 262144,
+      "steps": 64
+    }
+  },
+  "category": "memory-runtime-tradeoff",
+  "claims": {
+    "cpu": [
+      {
+        "impact": "improved",
+        "scope": {
+          "device": {
+            "affinity_cpu_count": 192,
+            "architecture": 0,
+            "class": "cpu",
+            "cpu_model": "AMD EPYC 9B45",
+            "logical_cpu_count": 192,
+            "name": "x86_64",
+            "total_memory_bytes": 760420753408
+          },
+          "workload": {
+            "derivative_depends_on_state": false,
+            "seed": 20260730,
+            "size": 262144,
+            "steps": 64
+          }
+        },
+        "supporting_record_ids": [
+          "67e403c24bcf4a80ba7aa41be4082cf0"
+        ]
+      }
+    ],
+    "cuda": [
+      {
+        "impact": "improved",
+        "scope": {
+          "device": {
+            "affinity_cpu_count": null,
+            "architecture": 120,
+            "class": "cuda",
+            "cpu_model": null,
+            "logical_cpu_count": null,
+            "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "total_memory_bytes": 101973950464
+          },
+          "workload": {
+            "derivative_depends_on_state": false,
+            "seed": 20260730,
+            "size": 262144,
+            "steps": 64
+          }
+        },
+        "supporting_record_ids": [
+          "93e2fd0d20ab4b32922e127e020fb48a"
+        ]
+      }
+    ]
+  },
+  "clean_room": {
+    "declaration": "Independently authored from the general rule that discarded primal values are safe only when the adjoint does not use them.",
+    "derived_from_private_source": false,
+    "synthetic": true
+  },
+  "compatibility": {
+    "devices": [
+      "cpu",
+      "cuda"
+    ],
+    "evidence_max_age_days": 365,
+    "limitations": [
+      "Covers a one-dimensional float32 affine recurrence with a constant derivative.",
+      "The manual adjoint is invalid when a step derivative depends on overwritten primal values.",
+      "Runtime impact depends on device, state size, step count, and autodiff overhead.",
+      "The standard workload uses no checkpointing."
+    ],
+    "warp": ">=1.17"
+  },
+  "id": "gradient-safe-intermediate-lifetime",
+  "impact": {
+    "cpu": "improved",
+    "cuda": "improved",
+    "mechanism": [
+      "reduces_retained_forward_intermediate_storage",
+      "uses_two_forward_and_two_adjoint_buffers"
+    ]
+  },
+  "recognition": {
+    "signals": [
+      "full_tape_retains_one_unique_state_per_step",
+      "step_derivative_is_constant_with_respect_to_primal_state",
+      "discarded_intermediate_primal_values_have_no_backward_consumer"
+    ]
+  },
+  "schema_version": 1,
+  "semantics": {
+    "observable_outputs": [
+      "final_state",
+      "input_gradient"
+    ],
+    "tolerance": {
+      "absolute": 2e-06,
+      "relative": 2e-05
+    }
+  },
+  "status": "recommended",
+  "summary": "Compare unique Tape states with two-buffer affine forward and adjoint rollouts.",
+  "title": "Reuse only gradient-safe intermediates"
+}
