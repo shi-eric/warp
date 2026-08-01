@@ -3,6 +3,8 @@
 
 """Test the shared protocol used by runtime-optimization example cards."""
 
+import hashlib
+import inspect
 import io
 import json
 import multiprocessing
@@ -14,31 +16,36 @@ import tempfile
 import unittest
 from contextlib import contextmanager, redirect_stdout
 from copy import deepcopy
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+from uuid import uuid4
 
 import numpy as np
 
 import warp.examples.optimizations.harness.environment as environment_module
+import warp.examples.optimizations.harness.evidence as evidence_module
 import warp.examples.optimizations.run as runner_module
-from warp.examples.optimizations.harness.benchmark import PairedSamples, run_paired
-from warp.examples.optimizations.harness.clean_room import scan_prohibited
-from warp.examples.optimizations.harness.correctness import CorrectnessResult, OutputError, check_correctness
-from warp.examples.optimizations.harness.environment import capture_environment
-from warp.examples.optimizations.harness.evidence import (
+from warp.examples.optimizations.harness import (
     append_evidence,
-    build_evidence_record,
     classify_summary,
+    evidence_staleness_reasons,
     is_evidence_stale,
     validate_evidence_document,
     validate_evidence_record,
 )
+from warp.examples.optimizations.harness.benchmark import PairedSamples, run_paired
+from warp.examples.optimizations.harness.clean_room import scan_prohibited
+from warp.examples.optimizations.harness.correctness import CorrectnessResult, OutputError, check_correctness
+from warp.examples.optimizations.harness.environment import capture_environment
 from warp.examples.optimizations.harness.manifest import load_manifest, validate_manifest
 from warp.examples.optimizations.harness.model import OptimizationCase, Tolerance, Variant
 from warp.examples.optimizations.harness.registry import discover_examples
 from warp.examples.optimizations.harness.statistics import PairedSummary, summarize_paired
+from warp.tests.unittest_suites import default_suite
+from warp.tests.unittest_utils import add_function_test, get_test_devices
 
 
 def make_valid_manifest():
@@ -63,9 +70,13 @@ def make_valid_manifest():
             "cpu": "unverified",
             "mechanism": ["reduces_global_memory_traffic"],
         },
+        "claims": {
+            "cuda": [],
+            "cpu": [],
+        },
         "compatibility": {
             "warp": ">=1.17",
-            "devices": ["cuda"],
+            "devices": ["cpu", "cuda"],
             "evidence_max_age_days": 365,
             "limitations": ["Synthetic test fixture."],
         },
@@ -85,6 +96,7 @@ def make_valid_manifest():
             "pairs": 10,
             "bootstrap_seed": 17,
             "resamples": 10000,
+            "equivalence_band": {"low": 0.98, "high": 1.02},
         },
         "clean_room": {
             "synthetic": True,
@@ -121,6 +133,92 @@ def make_fake_case(baseline, candidate, tolerances=None):
     )
 
 
+def _canonical_digest(value):
+    payload = json.dumps(
+        value,
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _sha256_file(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def write_contract_sources(card_root, manifest):
+    card_root.mkdir(parents=True, exist_ok=True)
+    for role in ("baseline", "candidate", "benchmark", "correctness"):
+        path = card_root / manifest["artifacts"][role]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"# Synthetic {role} source.\n", encoding="utf-8")
+
+
+def make_measured_contract(manifest, environment, correctness, protocol, card_root=None):
+    artifact_hashes = {}
+    for role in ("baseline", "candidate", "benchmark", "correctness"):
+        relative_path = manifest["artifacts"][role]
+        artifact_hashes[role] = {
+            "path": relative_path,
+            "sha256": "0" * 64 if card_root is None else _sha256_file(card_root / relative_path),
+        }
+
+    if card_root is None:
+        shared_hashes = [{"path": "harness/evidence.py", "sha256": "1" * 64}]
+    else:
+        optimization_root = Path(evidence_module.__file__).resolve().parents[1]
+        shared_paths = [*sorted((optimization_root / "harness").glob("*.py")), optimization_root / "run.py"]
+        shared_hashes = [
+            {
+                "path": path.relative_to(optimization_root).as_posix(),
+                "sha256": _sha256_file(path),
+            }
+            for path in shared_paths
+        ]
+
+    device = environment["device"]
+    cpu = environment["cpu"]
+    contract = {
+        "example_id": manifest["id"],
+        "workload": dict(environment["workload"]),
+        "declared_workload": dict(manifest["benchmark"]["workload"]),
+        "protocol": dict(protocol),
+        "protocol_requirements": {
+            name: manifest["benchmark"][name] for name in ("warmups", "pairs", "bootstrap_seed", "resamples")
+        },
+        "outputs": {
+            name: {
+                "atol": output["atol"],
+                "rtol": output["rtol"],
+            }
+            for name, output in correctness["outputs"].items()
+        },
+        "compatibility": {
+            "warp": {
+                "measured_version": environment["warp"],
+                "specifier": manifest["compatibility"]["warp"],
+            },
+            "devices": list(manifest["compatibility"]["devices"]),
+            "equivalence_band": dict(manifest["benchmark"]["equivalence_band"]),
+            "device": {
+                "class": "cuda" if device["is_cuda"] else "cpu",
+                "name": device["name"],
+                "architecture": device["architecture"],
+                "total_memory_bytes": device["total_memory_bytes"],
+                "cpu_model": None if device["is_cuda"] else cpu["model"],
+                "logical_cpu_count": None if device["is_cuda"] else cpu["logical_cpu_count"],
+                "affinity_cpu_count": None if device["is_cuda"] else cpu["affinity_cpu_count"],
+            },
+        },
+        "source_hashes": {
+            "artifacts": artifact_hashes,
+            "shared": shared_hashes,
+        },
+    }
+    return {"digest_sha256": _canonical_digest(contract), **contract}
+
+
 def make_evidence_record(
     *,
     timestamp="2026-07-29T00:00:00+00:00",
@@ -128,7 +226,12 @@ def make_evidence_record(
     is_cuda=False,
     runtime_sources_dirty=False,
     candidate_ns=None,
+    manifest=None,
+    card_root=None,
+    warp_version=None,
 ):
+    if manifest is None:
+        manifest = make_valid_manifest()
     if candidate_ns is None:
         candidate_ns = (70, 71, 69, 72, 68, 71, 67, 70, 69, 68)
     samples = PairedSamples(
@@ -137,22 +240,27 @@ def make_evidence_record(
         order=("baseline-first", "candidate-first") * 5,
     )
     summary = summarize_paired(samples, bootstrap_seed=17, resamples=10_000)
-    correctness = CorrectnessResult(
-        passed=True,
-        outputs={
-            "result": OutputError(
-                name="result",
-                max_abs=0.0,
-                max_rel=0.0,
-                finite=True,
-                passed=True,
-            )
+    correctness = {
+        "passed": True,
+        "outputs": {
+            "result": {
+                "name": "result",
+                "max_abs": 0.0,
+                "max_rel": 0.0,
+                "finite": True,
+                "atol": 1.0e-6,
+                "rtol": 1.0e-5,
+                "max_normalized": 0.0,
+                "passed": True,
+            }
         },
-    )
+    }
+    if warp_version is None:
+        warp_version = environment_module.wp.__version__
     environment = {
         "timestamp_utc": timestamp,
         "python": "3.12.0",
-        "warp": "1.17.0",
+        "warp": warp_version,
         "os": "Linux",
         "machine": "x86_64",
         "git": {
@@ -168,19 +276,81 @@ def make_evidence_record(
             "total_memory_bytes": 1024,
         },
         "cuda": {"toolkit": [13, 0], "driver": [13, 0]},
-        "workload": {"size": 1024, "iterations": 4, "seed": 17},
+        "cpu": {
+            "model": "Synthetic CPU Model",
+            "logical_cpu_count": 16,
+            "affinity_cpu_count": 8,
+        },
+        "workload": dict(manifest["benchmark"]["workload"]),
     }
-    return build_evidence_record(
-        example_id="synthetic-card",
-        environment=environment,
-        correctness=correctness,
-        samples=samples,
-        summary=summary,
-        warmups=3,
-        bootstrap_seed=17,
-        resamples=10_000,
-        limitations=["Synthetic test fixture."],
-    )
+    protocol = {
+        "warmups": 3,
+        "pairs": summary.pairs,
+        "bootstrap_seed": 17,
+        "resamples": 10_000,
+    }
+    return {
+        "record_format_version": 2,
+        "record_id": uuid4().hex,
+        "example_id": manifest["id"],
+        "environment": environment,
+        "correctness": correctness,
+        "protocol": protocol,
+        "samples": {
+            "baseline_ns": list(samples.baseline_ns),
+            "candidate_ns": list(samples.candidate_ns),
+            "order": list(samples.order),
+        },
+        "statistics": summary.as_dict(),
+        "result": classify_summary(summary),
+        "limitations": list(manifest["compatibility"]["limitations"]),
+        "measured_contract": make_measured_contract(
+            manifest,
+            environment,
+            correctness,
+            protocol,
+            card_root,
+        ),
+    }
+
+
+def add_manifest_claim(manifest, platform, record, impact=None, workload=None):
+    if impact is None:
+        impact = record["result"] if record["result"] != "inconclusive" else "unverified"
+    if workload is None:
+        workload = record["measured_contract"]["workload"]
+    claim = {
+        "impact": impact,
+        "supporting_record_ids": [record["record_id"]],
+        "scope": {
+            "workload": dict(workload),
+            "device": dict(record["measured_contract"]["compatibility"]["device"]),
+        },
+    }
+    manifest["claims"][platform].append(claim)
+    manifest["impact"][platform] = impact
+    return claim
+
+
+def refresh_contract_digest(record):
+    contract = record["measured_contract"]
+    payload = {name: value for name, value in contract.items() if name != "digest_sha256"}
+    contract["digest_sha256"] = _canonical_digest(payload)
+
+
+@contextmanager
+def current_evidence_record(*, manifest=None, **record_arguments):
+    if manifest is None:
+        manifest = make_valid_manifest()
+    with tempfile.TemporaryDirectory(prefix="synthetic_contract_card_") as directory:
+        card_root = Path(directory)
+        write_contract_sources(card_root, manifest)
+        record = make_evidence_record(
+            manifest=manifest,
+            card_root=card_root,
+            **record_arguments,
+        )
+        yield record, card_root
 
 
 def append_evidence_in_process(path, record, start_event, result_queue):
@@ -194,11 +364,11 @@ def append_evidence_in_process(path, record, start_event, result_queue):
         result_queue.put(None)
 
 
-def append_evidence_for_manifest_in_process(path, record, manifest, start_event, result_queue):
+def append_evidence_for_manifest_in_process(path, record, manifest, card_root, start_event, result_queue):
     try:
         if not start_event.wait(timeout=30):
             raise TimeoutError("append start event timed out")
-        append_evidence(Path(path), record, manifest=manifest)
+        append_evidence(Path(path), record, manifest=manifest, card_root=Path(card_root))
     except Exception as error:
         result_queue.put(type(error).__name__)
     else:
@@ -206,11 +376,20 @@ def append_evidence_for_manifest_in_process(path, record, manifest, start_event,
 
 
 @contextmanager
-def temporary_runner_card(*, case_atol=1.0e-6, case_rtol=1.0e-5, status="unverified"):
-    optimization_root = Path(__file__).resolve().parents[1] / "examples" / "optimizations"
-    with tempfile.TemporaryDirectory(prefix="synthetic_runner_card_", dir=optimization_root) as directory:
-        card_root = Path(directory)
-        package_name = card_root.name
+def temporary_runner_card(
+    *,
+    case_atol=1.0e-6,
+    case_rtol=1.0e-5,
+    case_size_as_boolean=False,
+    case_workload_proxy=False,
+    status="unverified",
+    manifest_pairs=10,
+):
+    with tempfile.TemporaryDirectory(prefix="synthetic_runner_registry_") as directory:
+        registry_root = Path(directory)
+        package_name = f"synthetic_runner_card_{uuid4().hex}"
+        card_root = registry_root / package_name
+        card_root.mkdir()
         manifest = make_valid_manifest()
         manifest["id"] = "synthetic-runner-card"
         manifest["title"] = "Synthetic runner card"
@@ -221,11 +400,12 @@ def temporary_runner_card(*, case_atol=1.0e-6, case_rtol=1.0e-5, status="unverif
             "workload": {"size": 4, "scale": 1.0},
             "estimated_peak_bytes": 32,
             "warmups": 3,
-            "pairs": 10,
+            "pairs": manifest_pairs,
             "bootstrap_seed": 17,
             "resamples": 10000,
+            "equivalence_band": {"low": 0.98, "high": 1.02},
         }
-        manifest["artifacts"]["python_module"] = f"warp.examples.optimizations.{package_name}.benchmark"
+        manifest["artifacts"]["python_module"] = f"{package_name}.benchmark"
 
         (card_root / "__init__.py").write_text("", encoding="utf-8")
         (card_root / "before.py").write_text("# Synthetic baseline fixture.\n", encoding="utf-8")
@@ -238,6 +418,7 @@ def temporary_runner_card(*, case_atol=1.0e-6, case_rtol=1.0e-5, status="unverif
 import os
 from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
 
 import numpy as np
 
@@ -248,6 +429,10 @@ from warp.examples.optimizations.harness.model import (
     UnsupportedWorkload,
     Variant,
 )
+
+import_marker = os.environ.get("WARP_RUNNER_IMPORT_SENTINEL")
+if import_marker:
+    Path(import_marker).write_text("imported\\n", encoding="utf-8")
 
 
 def _mark_execution():
@@ -276,9 +461,15 @@ def build_case(device: str, workload: Mapping[str, JSONScalar]) -> OptimizationC
     def run_candidate():
         candidate_output[:] = np.arange(size, dtype=np.float32) * float(scale)
 
+    returned_workload = dict(workload)
+    if {case_size_as_boolean!r}:
+        returned_workload["size"] = True
+    if {case_workload_proxy!r}:
+        returned_workload = MappingProxyType(returned_workload)
+
     return OptimizationCase(
         example_id="synthetic-runner-card",
-        workload=dict(workload),
+        workload=returned_workload,
         baseline=Variant(
             label="baseline",
             prepare_trial=prepare,
@@ -301,7 +492,14 @@ def build_case(device: str, workload: Mapping[str, JSONScalar]) -> OptimizationC
             encoding="utf-8",
         )
         (card_root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-        yield card_root, manifest
+        sys.path.insert(0, str(registry_root))
+        try:
+            yield card_root, manifest, registry_root
+        finally:
+            sys.path.remove(str(registry_root))
+            for module_name in tuple(sys.modules):
+                if module_name == package_name or module_name.startswith(f"{package_name}."):
+                    del sys.modules[module_name]
 
 
 class TestOptimizationModels(unittest.TestCase):
@@ -464,6 +662,19 @@ class TestOptimizationHarness(unittest.TestCase):
 
         self.assertTrue(check_correctness(case).passed)
 
+    def test_correctness_compares_large_integer_outputs_exactly(self):
+        case = make_fake_case(
+            baseline={"result": np.array([2**53], dtype=np.int64)},
+            candidate={"result": np.array([2**53 + 1], dtype=np.int64)},
+            tolerances={"result": Tolerance(atol=0.0, rtol=0.0)},
+        )
+
+        output = check_correctness(case).outputs["result"]
+
+        self.assertFalse(output.passed)
+        self.assertEqual(output.max_abs, 1.0)
+        self.assertIsNone(output.max_normalized)
+
     def test_correctness_uses_per_output_tolerance(self):
         case = make_fake_case(
             baseline={"loose": np.array([1.0]), "strict": np.array([1.0])},
@@ -476,6 +687,35 @@ class TestOptimizationHarness(unittest.TestCase):
         result = check_correctness(case)
         self.assertTrue(result.outputs["loose"].passed)
         self.assertFalse(result.outputs["strict"].passed)
+
+    def test_correctness_records_tolerance_and_normalized_margin(self):
+        case = make_fake_case(
+            baseline={"result": np.array([10.0])},
+            candidate={"result": np.array([10.15])},
+            tolerances={"result": Tolerance(atol=0.1, rtol=0.01)},
+        )
+
+        output = check_correctness(case).outputs["result"]
+
+        self.assertEqual(output.atol, 0.1)
+        self.assertEqual(output.rtol, 0.01)
+        self.assertAlmostEqual(output.max_normalized, 0.75)
+        self.assertTrue(output.passed)
+
+    def test_nonfinite_correctness_failure_serializes_with_null_metrics(self):
+        case = make_fake_case(
+            baseline={"result": np.array([1.0])},
+            candidate={"result": np.array([np.inf])},
+        )
+
+        result = check_correctness(case)
+        serialized = json.dumps(asdict(result), allow_nan=False)
+
+        self.assertFalse(result.passed)
+        self.assertIsNone(result.outputs["result"].max_abs)
+        self.assertIsNone(result.outputs["result"].max_rel)
+        self.assertIsNone(result.outputs["result"].max_normalized)
+        self.assertIn('"max_normalized": null', serialized)
 
     def test_run_paired_warms_up_and_alternates_measurement_order(self):
         events = []
@@ -652,6 +892,11 @@ class TestOptimizationManifests(unittest.TestCase):
                 "artifacts.baseline",
             ),
             (
+                "Windows rooted artifact path",
+                lambda manifest: manifest["artifacts"].__setitem__("baseline", r"\\outside.py"),
+                "artifacts.baseline",
+            ),
+            (
                 "parent traversal artifact path",
                 lambda manifest: manifest["artifacts"].__setitem__("baseline", "../before.py"),
                 "artifacts.baseline",
@@ -729,8 +974,64 @@ class TestOptimizationManifests(unittest.TestCase):
         pattern = schema["$defs"]["relativePath"]["pattern"]
 
         self.assertIsNone(re.fullmatch(pattern, r"C:\outside.py"))
+        self.assertIsNone(re.fullmatch(pattern, r"\outside.py"))
         self.assertIsNone(re.fullmatch(pattern, "../before.py"))
         self.assertIsNotNone(re.fullmatch(pattern, "before.py"))
+
+    def test_recommended_claim_must_bind_the_default_workload(self):
+        manifest = make_valid_manifest()
+        record = make_evidence_record(
+            device_alias="cuda:0",
+            is_cuda=True,
+            manifest=manifest,
+        )
+        manifest["status"] = "recommended"
+        add_manifest_claim(
+            manifest,
+            "cuda",
+            record,
+            impact="improved",
+            workload={"size": 2048, "iterations": 4, "seed": 17},
+        )
+
+        with self.assertRaisesRegex(ValueError, "default workload"):
+            validate_manifest(manifest)
+
+    def test_conditional_claim_requires_an_explicit_bounded_scope(self):
+        manifest = make_valid_manifest()
+        record = make_evidence_record(
+            device_alias="cuda:0",
+            is_cuda=True,
+            manifest=manifest,
+        )
+        manifest["status"] = "conditional"
+        claim = add_manifest_claim(manifest, "cuda", record, impact="improved")
+        del claim["scope"]
+
+        with self.assertRaisesRegex(ValueError, "scope"):
+            validate_manifest(manifest)
+
+    def test_unverified_manifest_cannot_publish_cuda_claims(self):
+        manifest = make_valid_manifest()
+        record = make_evidence_record(
+            manifest=manifest,
+            device_alias="cuda:0",
+            is_cuda=True,
+        )
+        add_manifest_claim(manifest, "cuda", record, impact="improved")
+
+        with self.assertRaisesRegex(ValueError, "unverified"):
+            validate_manifest(manifest)
+
+    def test_manifest_claim_device_must_be_declared_compatible(self):
+        manifest = make_valid_manifest()
+        manifest["status"] = "rejected"
+        manifest["compatibility"]["devices"] = ["cuda"]
+        record = make_evidence_record(manifest=manifest)
+        add_manifest_claim(manifest, "cpu", record, impact="improved")
+
+        with self.assertRaisesRegex(ValueError, "compatibility.devices"):
+            validate_manifest(manifest)
 
     def test_registry_rejects_duplicate_ids(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -756,10 +1057,13 @@ class TestOptimizationEvidence(unittest.TestCase):
 
         self.assertIn('"alias": "cpu"', serialized)
         self.assertFalse(environment["device"]["is_cuda"])
+        self.assertTrue(environment["cpu"]["model"])
+        self.assertGreaterEqual(environment["cpu"]["logical_cpu_count"], 1)
+        self.assertGreaterEqual(environment["cpu"]["affinity_cpu_count"], 1)
         self.assertEqual(environment["workload"], {"size": 1024, "optional_packages": []})
         self.assertEqual(
             set(environment),
-            {"timestamp_utc", "python", "warp", "os", "machine", "git", "device", "cuda", "workload"},
+            {"timestamp_utc", "python", "warp", "os", "machine", "git", "device", "cuda", "cpu", "workload"},
         )
 
     def test_environment_omits_git_for_untracked_or_outside_package_source(self):
@@ -826,31 +1130,324 @@ class TestOptimizationEvidence(unittest.TestCase):
             with self.subTest(summary=summary):
                 self.assertEqual(classify_summary(summary), "inconclusive")
 
+    def test_legacy_history_remains_intrinsically_valid_but_stale(self):
+        evidence_path = (
+            Path(__file__).resolve().parents[1]
+            / "examples"
+            / "optimizations"
+            / "kernel_fusion"
+            / "fused_elementwise_pipeline"
+            / "evidence.json"
+        )
+        document = json.loads(evidence_path.read_text(encoding="utf-8"))
+        legacy_records = document["records"][:2]
+        self.assertEqual(
+            _canonical_digest(legacy_records),
+            "2fff76a72e65707c6e72f0668d98da602b9e168427a653bea86bf95fb48cb7f1",
+        )
+
+        evolved_manifest = make_valid_manifest()
+        evolved_manifest["id"] = "fused-elementwise-pipeline"
+        evolved_manifest["benchmark"]["workload"]["size"] = 2048
+        evolved_manifest["benchmark"]["pairs"] = 20
+        for record in legacy_records:
+            with self.subTest(record_id=record["record_id"]):
+                validate_evidence_record(record)
+                self.assertTrue(
+                    is_evidence_stale(
+                        record,
+                        evolved_manifest,
+                        card_root=evidence_path.parent,
+                    )
+                )
+
+    def test_v2_evidence_stales_when_current_source_contract_or_warp_changes(self):
+        now = datetime(2026, 7, 29, tzinfo=timezone.utc)
+        manifest = make_valid_manifest()
+        cases = ("source", "protocol contract", "output contract", "warp")
+        for change in cases:
+            with (
+                self.subTest(change=change),
+                current_evidence_record(
+                    manifest=manifest,
+                    timestamp=now.isoformat(),
+                ) as (record, card_root),
+            ):
+                self.assertFalse(
+                    is_evidence_stale(
+                        record,
+                        manifest,
+                        now=now,
+                        card_root=card_root,
+                        current_warp_version=record["environment"]["warp"],
+                    )
+                )
+                current_manifest = deepcopy(manifest)
+                current_warp_version = record["environment"]["warp"]
+                if change == "source":
+                    (card_root / current_manifest["artifacts"]["baseline"]).write_text(
+                        "# Changed baseline source.\n",
+                        encoding="utf-8",
+                    )
+                elif change == "protocol contract":
+                    current_manifest["benchmark"]["pairs"] += 1
+                elif change == "output contract":
+                    current_manifest["semantics"]["tolerance"]["absolute"] *= 2.0
+                else:
+                    current_warp_version = "999.0"
+
+                self.assertTrue(
+                    is_evidence_stale(
+                        record,
+                        current_manifest,
+                        now=now,
+                        card_root=card_root,
+                        current_warp_version=current_warp_version,
+                    )
+                )
+
+    def test_currentness_apis_require_card_root_after_hashed_source_changes(self):
+        now = datetime(2026, 7, 29, tzinfo=timezone.utc)
+        manifest = make_valid_manifest()
+        with current_evidence_record(
+            manifest=manifest,
+            timestamp=now.isoformat(),
+        ) as (record, card_root):
+            (card_root / manifest["artifacts"]["baseline"]).write_text(
+                "# Changed baseline source.\n",
+                encoding="utf-8",
+            )
+
+            for currentness_operation in (evidence_staleness_reasons, is_evidence_stale):
+                with (
+                    self.subTest(operation=currentness_operation.__name__),
+                    self.assertRaisesRegex(TypeError, "card_root"),
+                ):
+                    currentness_operation(
+                        record,
+                        manifest,
+                        now=now,
+                        current_warp_version=record["environment"]["warp"],
+                    )
+
+            self.assertIn(
+                "current source hashes changed",
+                evidence_staleness_reasons(
+                    record,
+                    manifest,
+                    now=now,
+                    card_root=card_root,
+                    current_warp_version=record["environment"]["warp"],
+                ),
+            )
+
+    def test_manifest_append_without_card_root_rejects_before_mutation(self):
+        manifest = make_valid_manifest()
+        with current_evidence_record(manifest=manifest) as (record, card_root):
+            (card_root / manifest["artifacts"]["baseline"]).write_text(
+                "# Changed baseline source.\n",
+                encoding="utf-8",
+            )
+            with tempfile.TemporaryDirectory() as directory:
+                evidence_path = Path(directory) / "evidence.json"
+
+                with self.assertRaisesRegex(ValueError, "card_root"):
+                    append_evidence(evidence_path, record, manifest=manifest)
+
+                self.assertFalse(evidence_path.exists())
+                self.assertFalse(evidence_path.with_name(f".{evidence_path.name}.lock").exists())
+
+    def test_record_validation_is_intrinsic_for_prior_example_ids(self):
+        evidence_path = (
+            Path(__file__).resolve().parents[1]
+            / "examples"
+            / "optimizations"
+            / "kernel_fusion"
+            / "fused_elementwise_pipeline"
+            / "evidence.json"
+        )
+        legacy = json.loads(evidence_path.read_text(encoding="utf-8"))["records"][0]
+        old_v2 = make_evidence_record()
+
+        validate_evidence_record(legacy)
+        validate_evidence_record(old_v2)
+        self.assertNotIn("manifest", inspect.signature(validate_evidence_record).parameters)
+
+    def test_v2_evidence_rejects_tampered_contract_digest(self):
+        record = make_evidence_record()
+        record["measured_contract"]["protocol"]["pairs"] += 1
+
+        with self.assertRaisesRegex(ValueError, "digest"):
+            validate_evidence_record(record)
+
+    def test_v2_correctness_pass_is_derived_from_normalized_error(self):
+        mutations = (
+            (
+                lambda output: output.__setitem__("passed", False),
+                "passed",
+            ),
+            (
+                lambda output: (
+                    output.__setitem__("max_normalized", 1.5),
+                    output.__setitem__("passed", True),
+                ),
+                "passed",
+            ),
+            (
+                lambda output: output.__setitem__("atol", 2.0e-6),
+                "contract",
+            ),
+        )
+        for mutate, message in mutations:
+            with self.subTest(message=message):
+                record = make_evidence_record()
+                mutate(record["correctness"]["outputs"]["result"])
+                with self.assertRaisesRegex(ValueError, message):
+                    validate_evidence_record(record)
+
+    def test_publication_rejects_contradictory_cuda_and_cpu_labels(self):
+        now = datetime(2026, 7, 29, tzinfo=timezone.utc)
+        for platform, record_arguments in (
+            ("cuda", {"device_alias": "cuda:0", "is_cuda": True}),
+            ("cpu", {}),
+        ):
+            with self.subTest(platform=platform):
+                manifest = make_valid_manifest()
+                manifest["status"] = "rejected"
+                with current_evidence_record(
+                    manifest=manifest,
+                    timestamp=now.isoformat(),
+                    **record_arguments,
+                ) as (record, card_root):
+                    add_manifest_claim(
+                        manifest,
+                        platform,
+                        record,
+                        impact="harmful",
+                    )
+                    with self.assertRaisesRegex(ValueError, "harmful"):
+                        validate_evidence_document(
+                            {"schema_version": 1, "records": [record]},
+                            manifest,
+                            now=now,
+                            card_root=card_root,
+                        )
+
+    def test_cpu_claim_is_independent_of_unverified_cuda_status(self):
+        now = datetime(2026, 7, 29, tzinfo=timezone.utc)
+        manifest = make_valid_manifest()
+        with current_evidence_record(
+            manifest=manifest,
+            timestamp=now.isoformat(),
+        ) as (record, card_root):
+            add_manifest_claim(manifest, "cpu", record, impact="improved")
+
+            validate_evidence_document(
+                {"schema_version": 1, "records": [record]},
+                manifest,
+                now=now,
+                card_root=card_root,
+            )
+
     def test_evidence_rejects_mismatched_sample_lengths(self):
         manifest = make_valid_manifest()
         record = make_evidence_record()
         record["samples"]["candidate_ns"].pop()
 
         with self.assertRaisesRegex(ValueError, "matching lengths"):
-            validate_evidence_record(record, manifest)
+            validate_evidence_record(record)
 
-    def test_evidence_rejects_fewer_pairs_than_manifest(self):
-        manifest = make_valid_manifest()
-        manifest["benchmark"]["pairs"] = 11
+    def test_intrinsic_validation_does_not_reinterpret_record_with_current_protocol(self):
         record = make_evidence_record()
 
-        with self.assertRaisesRegex(ValueError, "manifest requires at least 11"):
-            validate_evidence_record(record, manifest)
+        try:
+            validate_evidence_record(record)
+        except ValueError as error:
+            self.fail(str(error))
 
     def test_evidence_accepts_overridden_workload_with_declared_keys(self):
         manifest = make_valid_manifest()
         record = make_evidence_record()
         record["environment"]["workload"] = {"size": 2048, "iterations": 7, "seed": 29}
+        record["measured_contract"]["workload"] = dict(record["environment"]["workload"])
+        refresh_contract_digest(record)
 
         try:
-            validate_evidence_record(record, manifest)
+            validate_evidence_record(record)
         except ValueError as error:
             self.fail(str(error))
+
+    def test_v2_contract_rejects_workload_key_or_protocol_requirement_drift(self):
+        mutations = (
+            (
+                lambda record: (
+                    record["environment"]["workload"].pop("seed"),
+                    record["measured_contract"]["workload"].pop("seed"),
+                ),
+                "workload keys",
+            ),
+            (
+                lambda record: record["measured_contract"]["protocol_requirements"].__setitem__(
+                    "pairs",
+                    11,
+                ),
+                "protocol.pairs",
+            ),
+        )
+        for mutate, message in mutations:
+            with self.subTest(message=message):
+                record = make_evidence_record()
+                mutate(record)
+                refresh_contract_digest(record)
+                with self.assertRaisesRegex(ValueError, message):
+                    validate_evidence_record(record)
+
+    def test_workload_contract_equality_distinguishes_booleans_from_integers(self):
+        manifest = make_valid_manifest()
+        manifest["benchmark"]["workload"]["size"] = 1
+        record = make_evidence_record(manifest=manifest)
+        record["environment"]["workload"]["size"] = True
+
+        with self.assertRaisesRegex(ValueError, "workload"):
+            validate_evidence_record(record)
+
+    def test_workload_type_evolution_marks_evidence_stale(self):
+        manifest = make_valid_manifest()
+        manifest["benchmark"]["workload"]["size"] = 1
+        with current_evidence_record(manifest=manifest) as (record, card_root):
+            evolved_manifest = deepcopy(manifest)
+            evolved_manifest["benchmark"]["workload"]["size"] = True
+
+            self.assertTrue(
+                is_evidence_stale(
+                    record,
+                    evolved_manifest,
+                    card_root=card_root,
+                    current_warp_version=record["environment"]["warp"],
+                )
+            )
+
+    def test_claim_scope_equality_distinguishes_booleans_from_integers(self):
+        now = datetime(2026, 7, 29, tzinfo=timezone.utc)
+        manifest = make_valid_manifest()
+        manifest["benchmark"]["workload"]["size"] = 1
+        manifest["status"] = "recommended"
+        with current_evidence_record(
+            manifest=manifest,
+            timestamp=now.isoformat(),
+            device_alias="cuda:0",
+            is_cuda=True,
+        ) as (record, card_root):
+            claim = add_manifest_claim(manifest, "cuda", record, impact="improved")
+            claim["scope"]["workload"]["size"] = True
+
+            with self.assertRaisesRegex(ValueError, "workload"):
+                validate_evidence_document(
+                    {"schema_version": 1, "records": [record]},
+                    manifest,
+                    now=now,
+                    card_root=card_root,
+                )
 
     def test_evidence_rejects_workload_key_drift(self):
         manifest = make_valid_manifest()
@@ -861,40 +1458,53 @@ class TestOptimizationEvidence(unittest.TestCase):
             with self.subTest(workload=workload):
                 record = make_evidence_record()
                 record["environment"]["workload"] = workload
-                with self.assertRaisesRegex(ValueError, "workload keys"):
-                    validate_evidence_record(record, manifest)
+                with self.assertRaisesRegex(ValueError, "measured contract"):
+                    validate_evidence_record(record)
 
     def test_recommended_manifest_requires_passing_cuda_evidence(self):
         manifest = make_valid_manifest()
         manifest["status"] = "recommended"
-        record = make_evidence_record()
-
-        with self.assertRaisesRegex(ValueError, "non-stale improved CUDA"):
-            validate_evidence_document({"schema_version": 1, "records": [record]}, manifest)
+        now = datetime(2026, 7, 29, tzinfo=timezone.utc)
+        with current_evidence_record(
+            manifest=manifest,
+            timestamp=now.isoformat(),
+            device_alias="cuda:0",
+            is_cuda=True,
+        ) as (record, card_root):
+            output = record["correctness"]["outputs"]["result"]
+            output["max_normalized"] = 1.5
+            output["passed"] = False
+            record["correctness"]["passed"] = False
+            add_manifest_claim(manifest, "cuda", record, impact="improved")
+            with self.assertRaisesRegex(ValueError, "passing correctness"):
+                validate_evidence_document(
+                    {"schema_version": 1, "records": [record]},
+                    manifest,
+                    now=now,
+                    card_root=card_root,
+                )
 
     def test_record_validation_does_not_apply_document_claim_gate(self):
         manifest = make_valid_manifest()
         manifest["status"] = "recommended"
+        record = make_evidence_record(device_alias="cuda:0", is_cuda=True)
+        add_manifest_claim(manifest, "cuda", record, impact="improved")
 
-        validate_evidence_record(make_evidence_record(), manifest)
+        validate_evidence_record(record)
 
     def test_temp_history_validation_accepts_non_supporting_records(self):
-        cases = (
-            ("recommended", make_evidence_record()),
-            (
-                "conditional",
-                make_evidence_record(
-                    device_alias="cuda:0",
-                    is_cuda=True,
-                    candidate_ns=(90, 92, 94, 96, 98, 102, 104, 106, 108, 110),
-                ),
+        records = (
+            make_evidence_record(),
+            make_evidence_record(
+                device_alias="cuda:0",
+                is_cuda=True,
+                candidate_ns=(90, 92, 94, 96, 98, 102, 104, 106, 108, 110),
             ),
         )
 
-        for status, record in cases:
-            with self.subTest(status=status, result=record["result"]):
+        for record in records:
+            with self.subTest(result=record["result"]):
                 manifest = make_valid_manifest()
-                manifest["status"] = status
                 try:
                     validate_evidence_document(
                         {"schema_version": 1, "records": [record]},
@@ -906,32 +1516,38 @@ class TestOptimizationEvidence(unittest.TestCase):
 
     def test_manifest_append_accepts_standalone_inconclusive_cuda_record(self):
         manifest = make_valid_manifest()
-        manifest["status"] = "conditional"
-        record = make_evidence_record(
+        with current_evidence_record(
+            manifest=manifest,
             device_alias="cuda:0",
             is_cuda=True,
             candidate_ns=(90, 92, 94, 96, 98, 102, 104, 106, 108, 110),
-        )
-        self.assertEqual(record["result"], "inconclusive")
+        ) as (record, card_root):
+            self.assertEqual(record["result"], "inconclusive")
 
-        with tempfile.TemporaryDirectory() as directory:
-            evidence_path = Path(directory) / "evidence.json"
-            evidence_path.write_text('{"schema_version": 1, "records": []}\n', encoding="utf-8")
+            with tempfile.TemporaryDirectory() as directory:
+                evidence_path = Path(directory) / "evidence.json"
+                evidence_path.write_text('{"schema_version": 1, "records": []}\n', encoding="utf-8")
 
-            try:
-                append_evidence(evidence_path, record, manifest=manifest)
-            except ValueError as error:
-                self.fail(str(error))
+                try:
+                    append_evidence(
+                        evidence_path,
+                        record,
+                        manifest=manifest,
+                        card_root=card_root,
+                    )
+                except ValueError as error:
+                    self.fail(str(error))
 
-            document = json.loads(evidence_path.read_text(encoding="utf-8"))
-            self.assertEqual(document["records"], [record])
-            with self.assertRaisesRegex(ValueError, "non-stale improved CUDA"):
-                validate_evidence_document(document, manifest)
+                document = json.loads(evidence_path.read_text(encoding="utf-8"))
+                self.assertEqual(document["records"], [record])
+                validate_evidence_document(
+                    document,
+                    manifest,
+                    require_claim_support=False,
+                )
 
     def test_manifest_append_rejects_invalid_history_atomically(self):
         manifest = make_valid_manifest()
-        manifest["status"] = "recommended"
-        supporting = make_evidence_record(device_alias="cuda:0", is_cuda=True)
         mixed_card = make_evidence_record()
         mixed_card["example_id"] = "other-synthetic-card"
         duplicate = make_evidence_record()
@@ -945,6 +1561,14 @@ class TestOptimizationEvidence(unittest.TestCase):
         )
 
         with tempfile.TemporaryDirectory() as directory:
+            card_root = Path(directory) / "card"
+            write_contract_sources(card_root, manifest)
+            supporting = make_evidence_record(
+                manifest=manifest,
+                card_root=card_root,
+                device_alias="cuda:0",
+                is_cuda=True,
+            )
             evidence_path = Path(directory) / "evidence.json"
             for index, history in enumerate(histories):
                 with self.subTest(index=index):
@@ -952,7 +1576,12 @@ class TestOptimizationEvidence(unittest.TestCase):
                     before = evidence_path.read_bytes()
 
                     with self.assertRaises(ValueError):
-                        append_evidence(evidence_path, supporting, manifest=manifest)
+                        append_evidence(
+                            evidence_path,
+                            supporting,
+                            manifest=manifest,
+                            card_root=card_root,
+                        )
 
                     self.assertEqual(evidence_path.read_bytes(), before)
 
@@ -961,27 +1590,46 @@ class TestOptimizationEvidence(unittest.TestCase):
         manifest["status"] = "recommended"
         manifest["compatibility"]["evidence_max_age_days"] = 30
         now = datetime(2026, 7, 29, tzinfo=timezone.utc)
-        records = [
-            make_evidence_record(timestamp=now.isoformat()),
-            make_evidence_record(
-                timestamp="2025-01-01T00:00:00+00:00",
-                device_alias="cuda:0",
-                is_cuda=True,
-            ),
-            make_evidence_record(
-                timestamp=now.isoformat(),
-                device_alias="cuda:0",
-                is_cuda=True,
-                candidate_ns=(90, 92, 94, 96, 98, 102, 104, 106, 108, 110),
-            ),
-            make_evidence_record(
-                timestamp=now.isoformat(),
-                device_alias="cuda:0",
-                is_cuda=True,
-            ),
-        ]
+        with tempfile.TemporaryDirectory(prefix="synthetic_contract_card_") as directory:
+            card_root = Path(directory)
+            write_contract_sources(card_root, manifest)
+            records = [
+                make_evidence_record(
+                    manifest=manifest,
+                    card_root=card_root,
+                    timestamp=now.isoformat(),
+                ),
+                make_evidence_record(
+                    manifest=manifest,
+                    card_root=card_root,
+                    timestamp="2025-01-01T00:00:00+00:00",
+                    device_alias="cuda:0",
+                    is_cuda=True,
+                ),
+                make_evidence_record(
+                    manifest=manifest,
+                    card_root=card_root,
+                    timestamp=now.isoformat(),
+                    device_alias="cuda:0",
+                    is_cuda=True,
+                    candidate_ns=(90, 92, 94, 96, 98, 102, 104, 106, 108, 110),
+                ),
+                make_evidence_record(
+                    manifest=manifest,
+                    card_root=card_root,
+                    timestamp=now.isoformat(),
+                    device_alias="cuda:0",
+                    is_cuda=True,
+                ),
+            ]
+            add_manifest_claim(manifest, "cuda", records[-1], impact="improved")
 
-        validate_evidence_document({"schema_version": 1, "records": records}, manifest, now=now)
+            validate_evidence_document(
+                {"schema_version": 1, "records": records},
+                manifest,
+                now=now,
+                card_root=card_root,
+            )
 
     def test_append_preserves_first_record_when_adding_second(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -999,6 +1647,76 @@ class TestOptimizationEvidence(unittest.TestCase):
                 [record["record_id"] for record in second_document["records"]],
                 [first["record_id"], second["record_id"]],
             )
+
+    def test_evolved_example_id_retains_legacy_and_v2_history_as_stale(self):
+        evidence_path = (
+            Path(__file__).resolve().parents[1]
+            / "examples"
+            / "optimizations"
+            / "kernel_fusion"
+            / "fused_elementwise_pipeline"
+            / "evidence.json"
+        )
+        legacy = json.loads(evidence_path.read_text(encoding="utf-8"))["records"][0]
+        old_manifest = make_valid_manifest()
+        evolved_manifest = deepcopy(old_manifest)
+        evolved_manifest["id"] = "renamed-synthetic-card"
+
+        with tempfile.TemporaryDirectory() as directory:
+            card_root = Path(directory) / "card"
+            write_contract_sources(card_root, old_manifest)
+            old_v2 = make_evidence_record(
+                manifest=old_manifest,
+                card_root=card_root,
+            )
+            new_v2 = make_evidence_record(
+                manifest=evolved_manifest,
+                card_root=card_root,
+            )
+            retained = {"schema_version": 1, "records": [legacy, old_v2]}
+            validate_evidence_document(
+                retained,
+                evolved_manifest,
+                require_claim_support=False,
+            )
+            self.assertTrue(
+                is_evidence_stale(
+                    legacy,
+                    evolved_manifest,
+                    card_root=card_root,
+                )
+            )
+            self.assertIn(
+                "example ID differs from the current manifest",
+                evidence_staleness_reasons(
+                    old_v2,
+                    evolved_manifest,
+                    card_root=card_root,
+                    current_warp_version=old_v2["environment"]["warp"],
+                ),
+            )
+
+            output_path = Path(directory) / "evidence.json"
+            output_path.write_text(json.dumps(retained), encoding="utf-8")
+            before = output_path.read_bytes()
+            with self.assertRaisesRegex(ValueError, "example_id"):
+                append_evidence(
+                    output_path,
+                    old_v2,
+                    manifest=evolved_manifest,
+                    card_root=card_root,
+                )
+            self.assertEqual(output_path.read_bytes(), before)
+
+            append_evidence(
+                output_path,
+                new_v2,
+                manifest=evolved_manifest,
+                card_root=card_root,
+            )
+            updated = json.loads(output_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(updated["records"], [legacy, old_v2, new_v2])
 
     def test_append_rejects_duplicate_ids_already_in_history(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1041,13 +1759,21 @@ class TestOptimizationEvidence(unittest.TestCase):
 
     def test_manifest_append_keeps_exploratory_record_with_supporting_history(self):
         manifest = make_valid_manifest()
-        manifest["status"] = "recommended"
-        supporting = make_evidence_record(device_alias="cuda:0", is_cuda=True)
-        exploratory = make_evidence_record(
-            candidate_ns=(90, 92, 94, 96, 98, 102, 104, 106, 108, 110),
-        )
 
         with tempfile.TemporaryDirectory() as directory:
+            card_root = Path(directory) / "card"
+            write_contract_sources(card_root, manifest)
+            supporting = make_evidence_record(
+                manifest=manifest,
+                card_root=card_root,
+                device_alias="cuda:0",
+                is_cuda=True,
+            )
+            exploratory = make_evidence_record(
+                manifest=manifest,
+                card_root=card_root,
+                candidate_ns=(90, 92, 94, 96, 98, 102, 104, 106, 108, 110),
+            )
             evidence_path = Path(directory) / "evidence.json"
             evidence_path.write_text(
                 json.dumps({"schema_version": 1, "records": [supporting]}),
@@ -1055,7 +1781,12 @@ class TestOptimizationEvidence(unittest.TestCase):
             )
 
             try:
-                append_evidence(evidence_path, exploratory, manifest=manifest)
+                append_evidence(
+                    evidence_path,
+                    exploratory,
+                    manifest=manifest,
+                    card_root=card_root,
+                )
             except TypeError as error:
                 self.fail(str(error))
 
@@ -1064,17 +1795,27 @@ class TestOptimizationEvidence(unittest.TestCase):
                 {record["record_id"] for record in document["records"]},
                 {supporting["record_id"], exploratory["record_id"]},
             )
-            validate_evidence_document(document, manifest)
+            validate_evidence_document(
+                document,
+                manifest,
+                require_claim_support=False,
+            )
 
     def test_manifest_append_rejects_mixed_card_history_under_writer_lock(self):
         manifest = make_valid_manifest()
-        valid = make_evidence_record()
-        other_manifest = deepcopy(manifest)
-        other_manifest["id"] = "other-synthetic-card"
-        wrong_card = make_evidence_record()
-        wrong_card["example_id"] = "other-synthetic-card"
 
         with tempfile.TemporaryDirectory() as directory:
+            card_root = Path(directory) / "card"
+            write_contract_sources(card_root, manifest)
+            valid = make_evidence_record(
+                manifest=manifest,
+                card_root=card_root,
+            )
+            wrong_card = make_evidence_record(
+                manifest=manifest,
+                card_root=card_root,
+            )
+            wrong_card["example_id"] = "other-synthetic-card"
             evidence_path = Path(directory) / "evidence.json"
             context = multiprocessing.get_context("spawn")
             start_event = context.Event()
@@ -1085,15 +1826,13 @@ class TestOptimizationEvidence(unittest.TestCase):
                     args=(
                         str(evidence_path),
                         record,
-                        selected_manifest,
+                        manifest,
+                        str(card_root),
                         start_event,
                         result_queue,
                     ),
                 )
-                for record, selected_manifest in (
-                    (valid, manifest),
-                    (wrong_card, other_manifest),
-                )
+                for record in (valid, wrong_card)
             ]
             for process in processes:
                 process.start()
@@ -1107,9 +1846,12 @@ class TestOptimizationEvidence(unittest.TestCase):
             document = json.loads(evidence_path.read_text(encoding="utf-8"))
             self.assertEqual(len(document["records"]), 1)
             retained = document["records"][0]
-            self.assertIn(retained["record_id"], {valid["record_id"], wrong_card["record_id"]})
-            selected_manifest = manifest if retained["record_id"] == valid["record_id"] else other_manifest
-            validate_evidence_document(document, selected_manifest)
+            self.assertEqual(retained["record_id"], valid["record_id"])
+            validate_evidence_document(
+                document,
+                manifest,
+                require_claim_support=False,
+            )
 
     def test_evidence_recomputes_and_rejects_tampered_statistics(self):
         manifest = make_valid_manifest()
@@ -1117,28 +1859,28 @@ class TestOptimizationEvidence(unittest.TestCase):
         record["statistics"]["median_ratio"] = 0.5
 
         with self.assertRaisesRegex(ValueError, "statistics.median_ratio"):
-            validate_evidence_record(record, manifest)
+            validate_evidence_record(record)
 
     def test_evidence_rejects_tampered_result_classification(self):
         record = make_evidence_record()
         record["result"] = "harmful"
 
         with self.assertRaisesRegex(ValueError, "result"):
-            validate_evidence_record(record, make_valid_manifest())
+            validate_evidence_record(record)
 
     def test_evidence_rejects_negative_correctness_errors(self):
         record = make_evidence_record()
         record["correctness"]["outputs"]["result"]["max_abs"] = -0.1
 
         with self.assertRaisesRegex(ValueError, "max_abs"):
-            validate_evidence_record(record, make_valid_manifest())
+            validate_evidence_record(record)
 
     def test_evidence_rejects_passed_nonfinite_output(self):
         record = make_evidence_record()
         record["correctness"]["outputs"]["result"]["finite"] = False
 
         with self.assertRaisesRegex(ValueError, "finite"):
-            validate_evidence_record(record, make_valid_manifest())
+            validate_evidence_record(record)
 
     def test_evidence_rejects_invalid_cuda_shape_and_versions(self):
         cases = (
@@ -1152,7 +1894,7 @@ class TestOptimizationEvidence(unittest.TestCase):
                 record = make_evidence_record()
                 mutate(record["environment"]["cuda"])
                 with self.assertRaisesRegex(ValueError, message):
-                    validate_evidence_record(record, make_valid_manifest())
+                    validate_evidence_record(record)
 
     def test_evidence_rejects_invalid_device_architecture_type(self):
         for architecture in (True, ["sm_120"]):
@@ -1160,30 +1902,48 @@ class TestOptimizationEvidence(unittest.TestCase):
                 record = make_evidence_record()
                 record["environment"]["device"]["architecture"] = architecture
                 with self.assertRaisesRegex(ValueError, "architecture"):
-                    validate_evidence_record(record, make_valid_manifest())
+                    validate_evidence_record(record)
 
     def test_evidence_rejects_non_scalar_workload_values(self):
         record = make_evidence_record()
         record["environment"]["workload"]["nested"] = {"value": 1}
 
         with self.assertRaisesRegex(ValueError, "JSON scalar"):
-            validate_evidence_record(record, make_valid_manifest())
+            validate_evidence_record(record)
 
     def test_evidence_rejects_non_alternating_pair_order(self):
         record = make_evidence_record()
         record["samples"]["order"][1] = "baseline-first"
 
         with self.assertRaisesRegex(ValueError, "alternate"):
-            validate_evidence_record(record, make_valid_manifest())
+            validate_evidence_record(record)
 
     def test_evidence_becomes_stale_after_manifest_maximum_age(self):
         manifest = make_valid_manifest()
         manifest["compatibility"]["evidence_max_age_days"] = 30
         timestamp = datetime(2026, 1, 1, tzinfo=timezone.utc)
-        record = make_evidence_record(timestamp=timestamp.isoformat())
-
-        self.assertFalse(is_evidence_stale(record, manifest, now=timestamp + timedelta(days=30)))
-        self.assertTrue(is_evidence_stale(record, manifest, now=timestamp + timedelta(days=30, seconds=1)))
+        with current_evidence_record(
+            manifest=manifest,
+            timestamp=timestamp.isoformat(),
+        ) as (record, card_root):
+            self.assertFalse(
+                is_evidence_stale(
+                    record,
+                    manifest,
+                    now=timestamp + timedelta(days=30),
+                    card_root=card_root,
+                    current_warp_version=record["environment"]["warp"],
+                )
+            )
+            self.assertTrue(
+                is_evidence_stale(
+                    record,
+                    manifest,
+                    now=timestamp + timedelta(days=30, seconds=1),
+                    card_root=card_root,
+                    current_warp_version=record["environment"]["warp"],
+                )
+            )
 
     def test_evidence_requires_canonical_utc_timestamp(self):
         for timestamp in ("2026-07-29T00:00:00Z", "2026-07-29T01:00:00+01:00"):
@@ -1191,22 +1951,21 @@ class TestOptimizationEvidence(unittest.TestCase):
                 record = make_evidence_record()
                 record["environment"]["timestamp_utc"] = timestamp
                 with self.assertRaisesRegex(ValueError, "canonical UTC"):
-                    validate_evidence_record(record, make_valid_manifest())
+                    validate_evidence_record(record)
 
     def test_evidence_rejects_implausibly_future_timestamp_with_explicit_skew(self):
         now = datetime(2026, 7, 29, tzinfo=timezone.utc)
         record = make_evidence_record(timestamp=(now + timedelta(minutes=6)).isoformat())
 
         with self.assertRaisesRegex(ValueError, "future"):
-            validate_evidence_record(record, make_valid_manifest(), now=now)
+            validate_evidence_record(record, now=now)
         validate_evidence_record(
             record,
-            make_valid_manifest(),
             now=now,
             future_skew=timedelta(minutes=10),
         )
 
-    def test_append_sorts_records_by_parsed_timestamp_then_id(self):
+    def test_append_retains_insertion_order_for_immutable_history(self):
         with tempfile.TemporaryDirectory() as directory:
             evidence_path = Path(directory) / "evidence.json"
             later = make_evidence_record(timestamp="2026-07-29T00:00:01+00:00")
@@ -1221,42 +1980,65 @@ class TestOptimizationEvidence(unittest.TestCase):
             document = json.loads(evidence_path.read_text(encoding="utf-8"))
             self.assertEqual(
                 [record["record_id"] for record in document["records"]],
-                [same_time_first_id["record_id"], earlier["record_id"], later["record_id"]],
+                [later["record_id"], earlier["record_id"], same_time_first_id["record_id"]],
             )
 
     def test_recommended_manifest_rejects_stale_improved_cuda_evidence(self):
         manifest = make_valid_manifest()
         manifest["status"] = "recommended"
         manifest["compatibility"]["evidence_max_age_days"] = 30
-        record = make_evidence_record(
+        now = datetime(2026, 7, 29, tzinfo=timezone.utc)
+        with current_evidence_record(
+            manifest=manifest,
             timestamp="2025-01-01T00:00:00+00:00",
             device_alias="cuda:0",
             is_cuda=True,
-        )
-
-        with self.assertRaisesRegex(ValueError, "non-stale improved CUDA"):
-            validate_evidence_document({"schema_version": 1, "records": [record]}, manifest)
+        ) as (record, card_root):
+            add_manifest_claim(manifest, "cuda", record, impact="improved")
+            with self.assertRaisesRegex(ValueError, "stale"):
+                validate_evidence_document(
+                    {"schema_version": 1, "records": [record]},
+                    manifest,
+                    now=now,
+                    card_root=card_root,
+                )
 
     def test_recommended_manifest_requires_clean_runtime_sources(self):
         manifest = make_valid_manifest()
         manifest["status"] = "conditional"
-        record = make_evidence_record(
+        now = datetime(2026, 7, 29, tzinfo=timezone.utc)
+        with current_evidence_record(
+            manifest=manifest,
+            timestamp=now.isoformat(),
             device_alias="cuda:0",
             is_cuda=True,
             runtime_sources_dirty=True,
-        )
-
-        with self.assertRaisesRegex(ValueError, "non-stale improved CUDA"):
-            validate_evidence_document({"schema_version": 1, "records": [record]}, manifest)
+        ) as (record, card_root):
+            add_manifest_claim(manifest, "cuda", record, impact="improved")
+            with self.assertRaisesRegex(ValueError, "clean runtime sources"):
+                validate_evidence_document(
+                    {"schema_version": 1, "records": [record]},
+                    manifest,
+                    now=now,
+                    card_root=card_root,
+                )
 
 
 class TestOptimizationRunner(unittest.TestCase):
-    def run_runner(self, *arguments, environment=None):
+    def run_runner(self, *arguments, environment=None, registry_root=None):
         process_environment = os.environ.copy()
         if environment is not None:
             process_environment.update(environment)
+        command = [sys.executable, "-m", "warp.examples.optimizations.run"]
+        if registry_root is not None:
+            command.extend(("--registry-root", str(registry_root)))
+            python_path = process_environment.get("PYTHONPATH")
+            process_environment["PYTHONPATH"] = (
+                str(registry_root) if not python_path else f"{registry_root}{os.pathsep}{python_path}"
+            )
+        command.extend(arguments)
         return subprocess.run(
-            [sys.executable, "-m", "warp.examples.optimizations.run", *arguments],
+            command,
             capture_output=True,
             check=False,
             env=process_environment,
@@ -1339,6 +2121,124 @@ class TestOptimizationRunner(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("--output", result.stderr)
 
+    def test_selected_manifest_protocol_under_ride_fails_before_card_import(self):
+        with (
+            temporary_runner_card(manifest_pairs=20) as (_, manifest, registry_root),
+            tempfile.TemporaryDirectory() as directory,
+        ):
+            marker = Path(directory) / "imported.txt"
+            result = self.run_runner(
+                "benchmark",
+                "--example",
+                manifest["id"],
+                "--device",
+                "cpu",
+                "--pairs",
+                "10",
+                "--output",
+                str(Path(directory) / "evidence.json"),
+                environment={"WARP_RUNNER_IMPORT_SENTINEL": str(marker)},
+                registry_root=registry_root,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("manifest requires at least 20", result.stderr)
+        self.assertFalse(marker.exists())
+
+    def test_invalid_output_parent_fails_before_card_import(self):
+        with (
+            temporary_runner_card() as (_, manifest, registry_root),
+            tempfile.TemporaryDirectory() as directory,
+        ):
+            marker = Path(directory) / "imported.txt"
+            output_path = Path(directory) / "missing-parent" / "evidence.json"
+            result = self.run_runner(
+                "benchmark",
+                "--example",
+                manifest["id"],
+                "--device",
+                "cpu",
+                "--output",
+                str(output_path),
+                environment={"WARP_RUNNER_IMPORT_SENTINEL": str(marker)},
+                registry_root=registry_root,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("output parent", result.stderr)
+        self.assertFalse(marker.exists())
+
+    def test_python_module_must_resolve_to_hashed_benchmark_artifact(self):
+        with (
+            temporary_runner_card() as (card_root, manifest, registry_root),
+            tempfile.TemporaryDirectory() as directory,
+        ):
+            marker = Path(directory) / "imported.txt"
+            external_package = registry_root / f"external_benchmark_{uuid4().hex}"
+            external_package.mkdir()
+            (external_package / "__init__.py").write_text(
+                """
+import os
+from pathlib import Path
+
+marker = os.environ.get("WARP_RUNNER_IMPORT_SENTINEL")
+if marker:
+    Path(marker).write_text("imported\\n", encoding="utf-8")
+""".lstrip(),
+                encoding="utf-8",
+            )
+            (external_package / "benchmark.py").write_text(
+                "# This external target must never be imported.\n",
+                encoding="utf-8",
+            )
+            manifest["artifacts"]["python_module"] = f"{external_package.name}.benchmark"
+            (card_root / "manifest.json").write_text(
+                json.dumps(manifest),
+                encoding="utf-8",
+            )
+
+            for command in (
+                ("check", "--example", manifest["id"], "--device", "cpu"),
+                ("validate",),
+            ):
+                with self.subTest(command=command):
+                    result = self.run_runner(
+                        *command,
+                        environment={"WARP_RUNNER_IMPORT_SENTINEL": str(marker)},
+                        registry_root=registry_root,
+                    )
+
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("hashed benchmark artifact", result.stderr)
+                    self.assertFalse(marker.exists())
+
+    def test_build_case_workload_equality_distinguishes_booleans_from_integers(self):
+        with temporary_runner_card(case_size_as_boolean=True) as (_, manifest, registry_root):
+            result = self.run_runner(
+                "check",
+                "--example",
+                manifest["id"],
+                "--device",
+                "cpu",
+                registry_root=registry_root,
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("changed the requested workload", result.stderr)
+
+    def test_build_case_accepts_a_generic_workload_mapping(self):
+        with temporary_runner_card(case_workload_proxy=True) as (_, manifest, registry_root):
+            result = self.run_runner(
+                "check",
+                "--example",
+                manifest["id"],
+                "--device",
+                "cpu",
+                registry_root=registry_root,
+            )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_workload_overrides_parse_json_scalars_deterministically(self):
         script = "\n".join(
             (
@@ -1392,13 +2292,14 @@ class TestOptimizationRunner(unittest.TestCase):
                 self.assertIn(message, result.stderr)
 
     def test_temporary_card_check_succeeds(self):
-        with temporary_runner_card() as (_, manifest):
+        with temporary_runner_card() as (_, manifest, registry_root):
             result = self.run_runner(
                 "check",
                 "--example",
                 manifest["id"],
                 "--device",
                 "cpu",
+                registry_root=registry_root,
             )
 
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -1406,14 +2307,25 @@ class TestOptimizationRunner(unittest.TestCase):
         self.assertIn("result", result.stdout)
 
     def test_temporary_card_validation_succeeds(self):
-        with temporary_runner_card() as (_, manifest):
-            result = self.run_runner("validate")
+        with temporary_runner_card() as (_, manifest, registry_root):
+            result = self.run_runner("validate", registry_root=registry_root)
 
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(f"{manifest['id']}: valid", result.stdout)
 
+    def test_injected_registry_does_not_leak_fixture_into_production_discovery(self):
+        with temporary_runner_card() as (_, manifest, registry_root):
+            fixture_list = self.run_runner("list", registry_root=registry_root)
+            production_list = self.run_runner("list")
+
+        self.assertEqual(fixture_list.returncode, 0, fixture_list.stderr)
+        self.assertIn(manifest["id"], fixture_list.stdout)
+        self.assertEqual(production_list.returncode, 0, production_list.stderr)
+        self.assertNotIn(manifest["id"], production_list.stdout)
+        self.assertIn("fused-elementwise-pipeline", production_list.stdout)
+
     def test_benchmark_override_produces_valid_card_evidence(self):
-        with temporary_runner_card() as (card_root, manifest):
+        with temporary_runner_card() as (card_root, manifest, registry_root):
             evidence_path = card_root / "evidence.json"
             benchmark = self.run_runner(
                 "benchmark",
@@ -1425,16 +2337,17 @@ class TestOptimizationRunner(unittest.TestCase):
                 "size=8",
                 "--output",
                 str(evidence_path),
+                registry_root=registry_root,
             )
             document = json.loads(evidence_path.read_text(encoding="utf-8"))
-            validation = self.run_runner("validate")
+            validation = self.run_runner("validate", registry_root=registry_root)
 
         self.assertEqual(benchmark.returncode, 0, benchmark.stderr)
         self.assertEqual(document["records"][0]["environment"]["workload"], {"size": 8, "scale": 1.0})
         self.assertEqual(validation.returncode, 0, validation.stderr)
 
-    def test_benchmark_accepts_standalone_cpu_evidence_for_recommended_card(self):
-        with temporary_runner_card(status="recommended") as (card_root, manifest):
+    def test_benchmark_output_accepts_standalone_exploratory_cpu_evidence(self):
+        with temporary_runner_card() as (card_root, manifest, registry_root):
             evidence_path = card_root / "evidence.json"
             first_benchmark = self.run_runner(
                 "benchmark",
@@ -1444,6 +2357,7 @@ class TestOptimizationRunner(unittest.TestCase):
                 "cpu",
                 "--output",
                 str(evidence_path),
+                registry_root=registry_root,
             )
             second_benchmark = self.run_runner(
                 "benchmark",
@@ -1453,20 +2367,20 @@ class TestOptimizationRunner(unittest.TestCase):
                 "cpu",
                 "--output",
                 str(evidence_path),
+                registry_root=registry_root,
             )
             document = json.loads(evidence_path.read_text(encoding="utf-8"))
-            validation = self.run_runner("validate")
+            validation = self.run_runner("validate", registry_root=registry_root)
 
         self.assertEqual(first_benchmark.returncode, 0, first_benchmark.stderr)
         self.assertEqual(second_benchmark.returncode, 0, second_benchmark.stderr)
         self.assertEqual(len(document["records"]), 2)
         self.assertTrue(all(not record["environment"]["device"]["is_cuda"] for record in document["records"]))
-        self.assertNotEqual(validation.returncode, 0)
-        self.assertIn("non-stale improved CUDA", validation.stderr)
+        self.assertEqual(validation.returncode, 0, validation.stderr)
 
     def test_case_tolerances_must_match_manifest_before_execution(self):
         with (
-            temporary_runner_card(case_atol=2.0e-6) as (_, manifest),
+            temporary_runner_card(case_atol=2.0e-6) as (_, manifest, registry_root),
             tempfile.TemporaryDirectory() as directory,
         ):
             marker = Path(directory) / "executed.txt"
@@ -1477,6 +2391,7 @@ class TestOptimizationRunner(unittest.TestCase):
                 "--device",
                 "cpu",
                 environment={"WARP_RUNNER_SENTINEL": str(marker)},
+                registry_root=registry_root,
             )
 
             self.assertNotEqual(result.returncode, 0)
@@ -1492,6 +2407,9 @@ class TestOptimizationRunner(unittest.TestCase):
                     max_abs=0.0,
                     max_rel=0.0,
                     finite=True,
+                    atol=1.0e-6,
+                    rtol=1.0e-5,
+                    max_normalized=0.0,
                     passed=True,
                 )
             },
@@ -1502,7 +2420,7 @@ class TestOptimizationRunner(unittest.TestCase):
             order=("baseline-first", "candidate-first") * 5,
         )
         with (
-            temporary_runner_card() as (_, manifest),
+            temporary_runner_card() as (_, manifest, registry_root),
             tempfile.TemporaryDirectory() as directory,
             patch.object(runner_module, "check_correctness", return_value=bad_correctness),
             patch.object(runner_module, "run_paired", return_value=samples),
@@ -1519,12 +2437,13 @@ class TestOptimizationRunner(unittest.TestCase):
                     bootstrap_seed=None,
                     resamples=None,
                     output=Path(directory) / "evidence.json",
+                    registry_root=registry_root,
                 )
             )
 
-    def test_existing_mixed_card_output_fails_before_execution(self):
+    def test_existing_prior_id_history_is_retained_when_appending(self):
         with (
-            temporary_runner_card() as (card_root, manifest),
+            temporary_runner_card() as (card_root, manifest, registry_root),
             tempfile.TemporaryDirectory() as directory,
         ):
             evidence_path = card_root / "evidence.json"
@@ -1536,10 +2455,14 @@ class TestOptimizationRunner(unittest.TestCase):
                 "cpu",
                 "--output",
                 str(evidence_path),
+                registry_root=registry_root,
             )
             self.assertEqual(initial.returncode, 0, initial.stderr)
             document = json.loads(evidence_path.read_text(encoding="utf-8"))
-            document["records"][0]["example_id"] = "other-synthetic-card"
+            retained = document["records"][0]
+            retained["example_id"] = "other-synthetic-card"
+            retained["measured_contract"]["example_id"] = "other-synthetic-card"
+            refresh_contract_digest(retained)
             evidence_path.write_text(json.dumps(document), encoding="utf-8")
 
             marker = Path(directory) / "executed.txt"
@@ -1552,15 +2475,21 @@ class TestOptimizationRunner(unittest.TestCase):
                 "--output",
                 str(evidence_path),
                 environment={"WARP_RUNNER_SENTINEL": str(marker)},
+                registry_root=registry_root,
             )
 
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("example_id does not match", result.stderr)
-            self.assertFalse(marker.exists())
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertTrue(marker.exists())
+            updated = json.loads(evidence_path.read_text(encoding="utf-8"))
+            self.assertEqual(len(updated["records"]), 2)
+            self.assertEqual(updated["records"][0], retained)
+            self.assertEqual(updated["records"][1]["example_id"], manifest["id"])
+            self.assertTrue(is_evidence_stale(retained, manifest, card_root=card_root))
+            validate_evidence_document(updated, manifest, card_root=card_root)
 
     def test_validate_rejects_artifact_symlink_outside_card_root(self):
         with (
-            temporary_runner_card() as (card_root, _),
+            temporary_runner_card() as (card_root, _, registry_root),
             tempfile.TemporaryDirectory() as directory,
         ):
             outside_evidence = Path(directory) / "evidence.json"
@@ -1572,10 +2501,72 @@ class TestOptimizationRunner(unittest.TestCase):
             except OSError as error:
                 self.skipTest(f"symbolic links unavailable: {error}")
 
-            result = self.run_runner("validate")
+            result = self.run_runner("validate", registry_root=registry_root)
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("outside card root", result.stderr)
+
+
+class TestRuntimeOptimizationExamples(unittest.TestCase):
+    def test_fused_elementwise_pipeline_card_is_registered(self):
+        examples = discover_examples()
+
+        self.assertEqual(set(examples), {"fused-elementwise-pipeline"})
+        record = examples["fused-elementwise-pipeline"]
+        validate_manifest(record.manifest, record.root / "manifest.json")
+        for name, relative_path in record.manifest["artifacts"].items():
+            if name != "python_module":
+                self.assertTrue((record.root / relative_path).is_file(), name)
+
+    def test_default_suite_registers_optimization_evidence(self):
+        loader = unittest.TestLoader()
+        loader.testNamePatterns = ["*TestOptimizationEvidence*"]
+        suite = default_suite(loader)
+
+        def iter_tests(test_suite):
+            for test in test_suite:
+                if isinstance(test, unittest.TestSuite):
+                    yield from iter_tests(test)
+                else:
+                    yield test
+
+        test_ids = [test.id() for test in iter_tests(suite)]
+
+        self.assertTrue(any(".TestOptimizationEvidence." in test_id for test_id in test_ids))
+
+
+def test_fused_elementwise_pipeline_correctness(test, device):
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "warp.examples.optimizations.kernel_fusion.fused_elementwise_pipeline.test_correctness",
+            "--device",
+            str(device),
+            "--size",
+            "1",
+            "--size",
+            "4096",
+            "--size",
+            "4097",
+            "--iterations",
+            "2",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    test.assertEqual(result.returncode, 0, f"{result.stdout}\n{result.stderr}")
+    for size in (1, 4096, 4097):
+        test.assertIn(f"size={size}: PASS", result.stdout)
+
+
+add_function_test(
+    TestRuntimeOptimizationExamples,
+    "test_fused_elementwise_pipeline_correctness",
+    test_fused_elementwise_pipeline_correctness,
+    devices=get_test_devices(mode="basic"),
+)
 
 
 if __name__ == "__main__":

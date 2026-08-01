@@ -1,0 +1,140 @@
+{
+  "applicability": {
+    "contraindications": [
+      "stage_requires_cross_thread_barrier",
+      "intermediate_value_is_observed_externally",
+      "fusion_causes_excessive_register_pressure",
+      "stages_have_substantially_divergent_control_flow",
+      "fusion_requires_a_larger_data_halo"
+    ],
+    "preconditions": [
+      "stages_share_the_same_iteration_domain",
+      "intermediate_values_are_not_observable",
+      "stages_are_pointwise_and_barrier_free"
+    ]
+  },
+  "artifacts": {
+    "baseline": "before.py",
+    "benchmark": "benchmark.py",
+    "candidate": "after.py",
+    "correctness": "test_correctness.py",
+    "evidence": "evidence.json",
+    "explanation": "explanation.md",
+    "python_module": "warp.examples.optimizations.kernel_fusion.fused_elementwise_pipeline.benchmark"
+  },
+  "benchmark": {
+    "bootstrap_seed": 1729,
+    "equivalence_band": {
+      "high": 1.02,
+      "low": 0.98
+    },
+    "estimated_peak_bytes": 41943040,
+    "pairs": 20,
+    "resamples": 10000,
+    "warmups": 3,
+    "workload": {
+      "iterations": 50,
+      "seed": 20260729,
+      "size": 1048576
+    }
+  },
+  "category": "kernel-fusion",
+  "claims": {
+    "cpu": [
+      {
+        "impact": "improved",
+        "scope": {
+          "device": {
+            "affinity_cpu_count": 192,
+            "architecture": 0,
+            "class": "cpu",
+            "cpu_model": "AMD EPYC 9B45",
+            "logical_cpu_count": 192,
+            "name": "x86_64",
+            "total_memory_bytes": 760420753408
+          },
+          "workload": {
+            "iterations": 50,
+            "seed": 20260729,
+            "size": 1048576
+          }
+        },
+        "supporting_record_ids": [
+          "d19540be9046429380e42dfc63e9d3be"
+        ]
+      }
+    ],
+    "cuda": [
+      {
+        "impact": "improved",
+        "scope": {
+          "device": {
+            "affinity_cpu_count": null,
+            "architecture": 120,
+            "class": "cuda",
+            "cpu_model": null,
+            "logical_cpu_count": null,
+            "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "total_memory_bytes": 101973950464
+          },
+          "workload": {
+            "iterations": 50,
+            "seed": 20260729,
+            "size": 1048576
+          }
+        },
+        "supporting_record_ids": [
+          "b21fce5d5550491ca22d3803158dde44"
+        ]
+      }
+    ]
+  },
+  "clean_room": {
+    "declaration": "Independently authored from the abstract pattern of compatible pointwise stages.",
+    "derived_from_private_source": false,
+    "synthetic": true
+  },
+  "compatibility": {
+    "devices": [
+      "cpu",
+      "cuda"
+    ],
+    "evidence_max_age_days": 365,
+    "limitations": [
+      "Measured only for one-dimensional float32 arrays and the declared operation sequence.",
+      "Intermediate stage values are not observable outputs.",
+      "Impact depends on device, workload size, and iteration count."
+    ],
+    "warp": ">=1.17"
+  },
+  "id": "fused-elementwise-pipeline",
+  "impact": {
+    "cpu": "improved",
+    "cuda": "improved",
+    "mechanism": [
+      "reduces_kernel_launches",
+      "reduces_global_memory_traffic",
+      "eliminates_full_size_intermediate_arrays"
+    ]
+  },
+  "recognition": {
+    "signals": [
+      "consecutive_pointwise_kernels_share_iteration_domain",
+      "full_size_intermediates_connect_only_adjacent_stages",
+      "multiple_operations_can_follow_each_global_read"
+    ]
+  },
+  "schema_version": 1,
+  "semantics": {
+    "observable_outputs": [
+      "result"
+    ],
+    "tolerance": {
+      "absolute": 2e-06,
+      "relative": 2e-05
+    }
+  },
+  "status": "recommended",
+  "summary": "Compare three pointwise launches with a single fused launch.",
+  "title": "Fuse a compatible elementwise pipeline"
+}
