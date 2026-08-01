@@ -2518,6 +2518,7 @@ class TestRuntimeOptimizationExamples(unittest.TestCase):
         self.assertEqual(
             set(examples),
             {
+                "direct-tape-without-checkpointing",
                 "device-resident-spectral-transform",
                 "fused-elementwise-pipeline",
                 "gradient-safe-intermediate-lifetime",
@@ -2606,6 +2607,68 @@ class TestRuntimeOptimizationExamples(unittest.TestCase):
                     "steps": 2,
                 },
             )
+
+    def test_direct_tape_without_checkpointing_card_is_registered(self):
+        examples = discover_examples()
+
+        record = examples["direct-tape-without-checkpointing"]
+        validate_manifest(record.manifest, record.root / "manifest.json")
+        self.assertEqual(
+            set(record.manifest["semantics"]["observable_outputs"]),
+            {"final_state", "input_gradient"},
+        )
+        self.assertEqual(record.manifest["benchmark"]["workload"]["segment_length"], 8)
+        self.assertIn(
+            "full_tape_exceeds_memory_budget",
+            record.manifest["applicability"]["contraindications"],
+        )
+        for name, relative_path in record.manifest["artifacts"].items():
+            if name != "python_module":
+                self.assertTrue((record.root / relative_path).is_file(), name)
+
+    def test_direct_tape_without_checkpointing_capacity_guard_counts_gradients_before_allocation(self):
+        from warp.examples.optimizations.memory_tradeoffs.direct_tape_without_checkpointing.benchmark import (  # noqa: PLC0415
+            build_case,
+        )
+
+        constrained_device = SimpleNamespace(is_cuda=True, free_memory=4000)
+        workload = {
+            "seed": 20260730,
+            "segment_length": 2,
+            "size": 16,
+            "steps": 8,
+        }
+        with (
+            patch(
+                "warp.examples.optimizations.memory_tradeoffs."
+                "direct_tape_without_checkpointing.benchmark.wp.get_device",
+                return_value=constrained_device,
+            ),
+            self.assertRaisesRegex(UnsupportedWorkload, "25%.*free memory"),
+        ):
+            build_case("cuda:0", workload)
+
+    def test_direct_tape_without_checkpointing_rejects_partial_segments(self):
+        from warp.examples.optimizations.memory_tradeoffs.direct_tape_without_checkpointing.benchmark import (  # noqa: PLC0415
+            build_case,
+        )
+
+        roomy_device = SimpleNamespace(is_cuda=True, free_memory=1 << 30)
+        workload = {
+            "seed": 20260730,
+            "segment_length": 3,
+            "size": 16,
+            "steps": 8,
+        }
+        with (
+            patch(
+                "warp.examples.optimizations.memory_tradeoffs."
+                "direct_tape_without_checkpointing.benchmark.wp.get_device",
+                return_value=roomy_device,
+            ),
+            self.assertRaisesRegex(UnsupportedWorkload, "segment_length.*divide steps"),
+        ):
+            build_case("cuda:0", workload)
 
     def test_native_autodiff_rollout_torch_runtime_errors_are_not_skipped(self):
         original_import = __import__
@@ -2803,6 +2866,29 @@ def test_gradient_safe_intermediate_lifetime_correctness(test, device):
     test.assertIn("nonlinear_counterexample: PASS", result.stdout)
 
 
+def test_direct_tape_without_checkpointing_correctness(test, device):
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "warp.examples.optimizations.memory_tradeoffs.direct_tape_without_checkpointing.test_correctness",
+            "--device",
+            str(device),
+            "--size",
+            "1024",
+            "--steps",
+            "8",
+            "--segment-length",
+            "2",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    test.assertEqual(result.returncode, 0, f"{result.stdout}\n{result.stderr}")
+    test.assertIn("size=1024 steps=8 segment_length=2: PASS", result.stdout)
+
+
 add_function_test(
     TestRuntimeOptimizationExamples,
     "test_fused_elementwise_pipeline_correctness",
@@ -2840,6 +2926,12 @@ add_function_test(
     "test_gradient_safe_intermediate_lifetime_correctness",
     test_gradient_safe_intermediate_lifetime_correctness,
     devices=get_test_devices(mode="basic"),
+)
+add_function_test(
+    TestRuntimeOptimizationExamples,
+    "test_direct_tape_without_checkpointing_correctness",
+    test_direct_tape_without_checkpointing_correctness,
+    devices=get_cuda_test_devices(mode="basic"),
 )
 
 

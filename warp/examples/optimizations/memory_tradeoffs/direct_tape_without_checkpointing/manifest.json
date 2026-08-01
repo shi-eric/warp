@@ -1,0 +1,118 @@
+{
+  "applicability": {
+    "contraindications": [
+      "full_tape_exceeds_memory_budget",
+      "measured_memory_pressure_requires_checkpointing",
+      "rollout_shape_or_step_count_is_unbounded"
+    ],
+    "preconditions": [
+      "direct_tape_estimate_is_within_one_quarter_of_free_device_memory",
+      "rollout_uses_fixed_shape_float32_state",
+      "only_final_state_and_input_gradient_are_observable"
+    ]
+  },
+  "artifacts": {
+    "baseline": "before.py",
+    "benchmark": "benchmark.py",
+    "candidate": "after.py",
+    "correctness": "test_correctness.py",
+    "evidence": "evidence.json",
+    "explanation": "explanation.md",
+    "python_module": "warp.examples.optimizations.memory_tradeoffs.direct_tape_without_checkpointing.benchmark"
+  },
+  "benchmark": {
+    "bootstrap_seed": 141421,
+    "equivalence_band": {
+      "high": 1.02,
+      "low": 0.98
+    },
+    "estimated_peak_bytes": 134217728,
+    "pairs": 20,
+    "resamples": 10000,
+    "warmups": 3,
+    "workload": {
+      "seed": 20260730,
+      "segment_length": 8,
+      "size": 131072,
+      "steps": 64
+    }
+  },
+  "category": "memory-runtime-tradeoff",
+  "claims": {
+    "cpu": [],
+    "cuda": [
+      {
+        "impact": "improved",
+        "scope": {
+          "device": {
+            "affinity_cpu_count": null,
+            "architecture": 120,
+            "class": "cuda",
+            "cpu_model": null,
+            "logical_cpu_count": null,
+            "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "total_memory_bytes": 101973950464
+          },
+          "workload": {
+            "seed": 20260730,
+            "segment_length": 8,
+            "size": 131072,
+            "steps": 64
+          }
+        },
+        "supporting_record_ids": [
+          "d63b7583a4a44f4f8b0609e2d8dd3614"
+        ]
+      }
+    ]
+  },
+  "clean_room": {
+    "declaration": "Independently authored from the general tradeoff between retained autodiff state and segmented recomputation.",
+    "derived_from_private_source": false,
+    "synthetic": true
+  },
+  "compatibility": {
+    "devices": [
+      "cuda"
+    ],
+    "evidence_max_age_days": 365,
+    "limitations": [
+      "Covers one-dimensional float32 state and one bounded nonlinear recurrence.",
+      "CPU correctness and runtime impact are unsupported and unverified.",
+      "Runtime impact depends on device, state size, step count, and segment length.",
+      "The direct-Tape capacity estimate is analytical rather than a peak-memory measurement."
+    ],
+    "warp": ">=1.17"
+  },
+  "id": "direct-tape-without-checkpointing",
+  "impact": {
+    "cpu": "unverified",
+    "cuda": "improved",
+    "mechanism": [
+      "removes_segment_forward_recomputation",
+      "reduces_segment_tape_construction_and_gradient_propagation",
+      "retains_the_complete_bounded_rollout"
+    ]
+  },
+  "recognition": {
+    "signals": [
+      "checkpoint_recomputation_has_no_measured_memory_trigger",
+      "full_tape_fits_the_declared_memory_budget",
+      "segmented_backward_relaunches_forward_work"
+    ]
+  },
+  "schema_version": 1,
+  "semantics": {
+    "observable_outputs": [
+      "final_state",
+      "input_gradient"
+    ],
+    "tolerance": {
+      "absolute": 3e-05,
+      "relative": 0.0003
+    }
+  },
+  "status": "recommended",
+  "summary": "Compare segmented recomputation with one direct Warp Tape for a bounded rollout.",
+  "title": "Keep a bounded rollout on one Tape"
+}
