@@ -1,0 +1,121 @@
+{
+  "applicability": {
+    "contraindications": [
+      "the_storage_owner_can_expire_before_asynchronous_work_completes",
+      "the_tensor_dtype_or_strides_are_not_supported_by_the_view",
+      "aliasing_or_in_place_mutation_is_not_allowed",
+      "producer_and_consumer_stream_ordering_cannot_be_established"
+    ],
+    "preconditions": [
+      "the_pytorch_tensor_owns_storage_for_every_warp_use",
+      "the_owner_and_all_views_remain_alive_until_stream_completion",
+      "the_tensor_has_float32_dtype",
+      "the_tensor_is_contiguous_with_supported_strides",
+      "the_tensor_and_warp_view_target_the_same_cuda_device",
+      "in_place_aliasing_and_mutation_are_acceptable",
+      "producer_warp_consumer_operations_share_an_ordered_cuda_stream"
+    ]
+  },
+  "artifacts": {
+    "baseline": "before.py",
+    "benchmark": "benchmark.py",
+    "candidate": "after.py",
+    "correctness": "test_correctness.py",
+    "evidence": "evidence.json",
+    "explanation": "explanation.md",
+    "python_module": "warp.examples.optimizations.interoperability.device_resident_torch_exchange.benchmark"
+  },
+  "benchmark": {
+    "bootstrap_seed": 161803,
+    "equivalence_band": {
+      "high": 1.02,
+      "low": 0.98
+    },
+    "estimated_peak_bytes": 67108864,
+    "pairs": 20,
+    "resamples": 10000,
+    "warmups": 3,
+    "workload": {
+      "iterations": 20,
+      "seed": 20260730,
+      "size": 1048576
+    }
+  },
+  "category": "interoperability",
+  "claims": {
+    "cpu": [],
+    "cuda": [
+      {
+        "impact": "improved",
+        "scope": {
+          "device": {
+            "affinity_cpu_count": null,
+            "architecture": 120,
+            "class": "cuda",
+            "cpu_model": null,
+            "logical_cpu_count": null,
+            "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "total_memory_bytes": 101973950464
+          },
+          "workload": {
+            "iterations": 20,
+            "seed": 20260730,
+            "size": 1048576
+          }
+        },
+        "supporting_record_ids": [
+          "4dae121b697440f0a1250100949a1fab"
+        ]
+      }
+    ]
+  },
+  "clean_room": {
+    "declaration": "Independently authored from the general pattern of retaining compatible framework data on one CUDA device.",
+    "derived_from_private_source": false,
+    "synthetic": true
+  },
+  "compatibility": {
+    "devices": [
+      "cuda"
+    ],
+    "evidence_max_age_days": 365,
+    "limitations": [
+      "Published CUDA evidence used PyTorch 2.13.0+cu130 with Warp 1.17.0.dev0.",
+      "Covers contiguous one-dimensional float32 tensors and in-place mutation.",
+      "Requires explicit producer and consumer ordering on a shared CUDA stream.",
+      "CPU correctness and runtime impact are unsupported and unverified.",
+      "Runtime impact depends on framework versions, device, size, and iteration count."
+    ],
+    "warp": ">=1.17"
+  },
+  "id": "device-resident-torch-exchange",
+  "impact": {
+    "cpu": "unverified",
+    "cuda": "improved",
+    "mechanism": [
+      "removes_per_iteration_device_host_device_transfers",
+      "removes_per_iteration_cross_framework_allocations",
+      "reuses_one_zero_copy_cuda_view"
+    ]
+  },
+  "recognition": {
+    "signals": [
+      "cuda_tensor_values_are_staged_through_host_memory_each_iteration",
+      "the_same_cuda_buffer_crosses_a_framework_boundary_repeatedly",
+      "warp_mutation_can_be_observed_by_pytorch_only_at_the_endpoint"
+    ]
+  },
+  "schema_version": 1,
+  "semantics": {
+    "observable_outputs": [
+      "values"
+    ],
+    "tolerance": {
+      "absolute": 2e-06,
+      "relative": 2e-05
+    }
+  },
+  "status": "recommended",
+  "summary": "Compare repeated host staging with one shared CUDA buffer.",
+  "title": "Preserve a CUDA buffer across frameworks"
+}

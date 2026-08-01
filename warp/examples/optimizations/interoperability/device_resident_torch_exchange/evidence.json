@@ -1,0 +1,280 @@
+{
+  "records": [
+    {
+      "correctness": {
+        "outputs": {
+          "values": {
+            "atol": 2e-06,
+            "finite": true,
+            "max_abs": 0.0,
+            "max_normalized": 0.0,
+            "max_rel": 0.0,
+            "name": "values",
+            "passed": true,
+            "rtol": 2e-05
+          }
+        },
+        "passed": true
+      },
+      "environment": {
+        "cpu": {
+          "affinity_cpu_count": 192,
+          "logical_cpu_count": 192,
+          "model": "AMD EPYC 9B45"
+        },
+        "cuda": {
+          "driver": [
+            13,
+            0
+          ],
+          "toolkit": [
+            13,
+            0
+          ]
+        },
+        "device": {
+          "alias": "cuda:0",
+          "architecture": 120,
+          "is_cuda": true,
+          "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+          "total_memory_bytes": 101973950464
+        },
+        "git": {
+          "repository_dirty": false,
+          "revision": "cfda1dfa89d3338a6bd6823d100cce34ffa67a1b",
+          "runtime_sources_dirty": false
+        },
+        "machine": "x86_64",
+        "os": "Linux-6.8.0-1054-gke-x86_64-with-glibc2.35",
+        "python": "3.12.13",
+        "timestamp_utc": "2026-07-30T06:06:24.026268+00:00",
+        "warp": "1.17.0.dev0",
+        "workload": {
+          "iterations": 20,
+          "seed": 20260730,
+          "size": 1048576
+        }
+      },
+      "example_id": "device-resident-torch-exchange",
+      "limitations": [
+        "Requires CUDA-enabled PyTorch compatible with the Warp CUDA environment.",
+        "Covers contiguous one-dimensional float32 tensors and in-place mutation.",
+        "Requires explicit producer and consumer ordering on a shared CUDA stream.",
+        "CPU correctness and runtime impact are unsupported and unverified.",
+        "Runtime impact depends on framework versions, device, size, and iteration count."
+      ],
+      "measured_contract": {
+        "compatibility": {
+          "device": {
+            "affinity_cpu_count": null,
+            "architecture": 120,
+            "class": "cuda",
+            "cpu_model": null,
+            "logical_cpu_count": null,
+            "name": "NVIDIA RTX PRO 6000 Blackwell Server Edition",
+            "total_memory_bytes": 101973950464
+          },
+          "devices": [
+            "cuda"
+          ],
+          "equivalence_band": {
+            "high": 1.02,
+            "low": 0.98
+          },
+          "warp": {
+            "measured_version": "1.17.0.dev0",
+            "specifier": ">=1.17"
+          }
+        },
+        "declared_workload": {
+          "iterations": 20,
+          "seed": 20260730,
+          "size": 1048576
+        },
+        "digest_sha256": "6d1ddfbe51a97bcea8b7f4fb63691aa2d3b81e7808dfff36c0890ae369af4799",
+        "example_id": "device-resident-torch-exchange",
+        "outputs": {
+          "values": {
+            "atol": 2e-06,
+            "rtol": 2e-05
+          }
+        },
+        "protocol": {
+          "bootstrap_seed": 161803,
+          "pairs": 20,
+          "resamples": 10000,
+          "warmups": 3
+        },
+        "protocol_requirements": {
+          "bootstrap_seed": 161803,
+          "pairs": 20,
+          "resamples": 10000,
+          "warmups": 3
+        },
+        "source_hashes": {
+          "artifacts": {
+            "baseline": {
+              "path": "before.py",
+              "sha256": "6a3b283c730a6d91e4a7d6274f5d0c4e51a67cb502a1adc34924731d9114e1fb"
+            },
+            "benchmark": {
+              "path": "benchmark.py",
+              "sha256": "1bbfc2b02dc9654a4d0a459a7d73eb81863f109bfda7ed1c594c939c5edf654a"
+            },
+            "candidate": {
+              "path": "after.py",
+              "sha256": "daf4386b4f038d0a484f73d1e41cadd801fe843394d5ac51a15684dbdd91b650"
+            },
+            "correctness": {
+              "path": "test_correctness.py",
+              "sha256": "3ff365a8544b7bbfb0794a3bf658a8c3994eeec0cb9784e5dd05d6a7c732e980"
+            }
+          },
+          "shared": [
+            {
+              "path": "harness/__init__.py",
+              "sha256": "9ef0bcb51a7a77ba0a2d8b1227405d9513afb41b8aac0cc47c933a4d669cbbba"
+            },
+            {
+              "path": "harness/benchmark.py",
+              "sha256": "a54ea50740a5b2882e3888d2f26df875dcdc8e374eaec144f4f7e1b8e9a928d9"
+            },
+            {
+              "path": "harness/clean_room.py",
+              "sha256": "2cc1f263cb6b3c1df227ee994be8231f89103e6f0c8f7e59700aaabf41bc9a73"
+            },
+            {
+              "path": "harness/correctness.py",
+              "sha256": "4edcfe5a5c2b0652c5ce1ba89ec94613c023466bb55bc148de1d1ea3c7b33a2d"
+            },
+            {
+              "path": "harness/environment.py",
+              "sha256": "7f0e6f76ca5dbbeb5397ca2aed3c5fac2dc234c750b274437e0ea9b5e9105ed8"
+            },
+            {
+              "path": "harness/evidence.py",
+              "sha256": "edfe9260dc1685c45d2b094d4685c93b08b96f52a23070a10095eea472376aa9"
+            },
+            {
+              "path": "harness/json_utils.py",
+              "sha256": "93f26e1cade65ad8a9095df3d9ae483f5f4f4ef1436277e54203b6b35a75f49f"
+            },
+            {
+              "path": "harness/manifest.py",
+              "sha256": "d9146eacc00147fc60e881e0a78f8600bc73e46d0b356dd5439c570e8aeaa8fd"
+            },
+            {
+              "path": "harness/model.py",
+              "sha256": "9cbecb172a6747c064dc8e997cc0146e4591c9d77b0639898ecfd4b6eb9a9f0a"
+            },
+            {
+              "path": "harness/registry.py",
+              "sha256": "c67106aac4c6a85a713637aa3037ae41621d08c4cfcefbc7bb70d7eabece8f9e"
+            },
+            {
+              "path": "harness/statistics.py",
+              "sha256": "b30a7ce43fe014df8591b5f21f34a4f7dbb9b6a69261e287586a4ed21a47856b"
+            },
+            {
+              "path": "run.py",
+              "sha256": "c1af4d1044f427a128d6f743036ea9af558d3e76c4566f32b24fdc1a7db1b832"
+            }
+          ]
+        },
+        "workload": {
+          "iterations": 20,
+          "seed": 20260730,
+          "size": 1048576
+        }
+      },
+      "protocol": {
+        "bootstrap_seed": 161803,
+        "pairs": 20,
+        "resamples": 10000,
+        "warmups": 3
+      },
+      "record_format_version": 2,
+      "record_id": "4dae121b697440f0a1250100949a1fab",
+      "result": "improved",
+      "samples": {
+        "baseline_ns": [
+          14849077,
+          14876838,
+          14772907,
+          14828948,
+          14825987,
+          15877727,
+          14800078,
+          14793567,
+          14810258,
+          14828947,
+          14807788,
+          14829867,
+          14854778,
+          14776677,
+          14821158,
+          14791867,
+          14765608,
+          14741317,
+          14760628,
+          14810187
+        ],
+        "candidate_ns": [
+          216070,
+          189760,
+          217870,
+          190580,
+          219710,
+          191240,
+          217420,
+          203040,
+          230520,
+          191810,
+          213570,
+          191500,
+          219560,
+          189140,
+          218590,
+          206980,
+          230210,
+          190580,
+          217630,
+          188840
+        ],
+        "order": [
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first",
+          "baseline-first",
+          "candidate-first"
+        ]
+      },
+      "statistics": {
+        "baseline_mad_ns": 19185.0,
+        "baseline_median_ns": 14810222.5,
+        "candidate_mad_ns": 13950.0,
+        "candidate_median_ns": 210275.0,
+        "median_ratio": 0.014207820228111913,
+        "pairs": 20,
+        "ratio_ci_high": 0.01474594813987275,
+        "ratio_ci_low": 0.012920709267062404
+      }
+    }
+  ],
+  "schema_version": 1
+}

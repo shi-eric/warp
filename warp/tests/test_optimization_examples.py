@@ -2519,6 +2519,7 @@ class TestRuntimeOptimizationExamples(unittest.TestCase):
             set(examples),
             {
                 "direct-tape-without-checkpointing",
+                "device-resident-torch-exchange",
                 "device-resident-spectral-transform",
                 "expanded-halo-fusion",
                 "fused-elementwise-pipeline",
@@ -2532,6 +2533,92 @@ class TestRuntimeOptimizationExamples(unittest.TestCase):
         for name, relative_path in record.manifest["artifacts"].items():
             if name != "python_module":
                 self.assertTrue((record.root / relative_path).is_file(), name)
+
+    def test_device_resident_torch_exchange_card_is_registered(self):
+        examples = discover_examples()
+
+        record = examples["device-resident-torch-exchange"]
+        validate_manifest(record.manifest, record.root / "manifest.json")
+        self.assertEqual(record.manifest["compatibility"]["devices"], ["cuda"])
+        self.assertEqual(record.manifest["semantics"]["observable_outputs"], ["values"])
+        self.assertEqual(
+            record.manifest["benchmark"]["workload"],
+            {
+                "iterations": 20,
+                "seed": 20260730,
+                "size": 1_048_576,
+            },
+        )
+        for name, relative_path in record.manifest["artifacts"].items():
+            if name != "python_module":
+                self.assertTrue((record.root / relative_path).is_file(), name)
+
+    def test_device_resident_torch_exchange_rejects_invalid_workloads(self):
+        from warp.examples.optimizations.interoperability.device_resident_torch_exchange.benchmark import (  # noqa: PLC0415
+            build_case,
+        )
+
+        valid = {
+            "iterations": 2,
+            "seed": 20260730,
+            "size": 4096,
+        }
+        invalid = (
+            ({name: value for name, value in valid.items() if name != "size"}, "exactly"),
+            ({**valid, "extra": 1}, "exactly"),
+            ({**valid, "size": True}, "size"),
+            ({**valid, "size": 0}, "size"),
+            ({**valid, "iterations": 0}, "iterations"),
+            ({**valid, "seed": True}, "seed"),
+            ({**valid, "seed": -1}, "seed"),
+        )
+        for workload, message in invalid:
+            with (
+                self.subTest(workload=workload),
+                self.assertRaisesRegex(UnsupportedWorkload, message),
+            ):
+                build_case("cuda:0", workload)
+
+        with self.assertRaisesRegex(UnsupportedWorkload, "CUDA"):
+            build_case("cpu", valid)
+
+    def test_device_resident_torch_exchange_rejection_does_not_import_torch(self):
+        script = """
+import builtins
+
+from warp.examples.optimizations.harness import UnsupportedWorkload
+
+original_import = builtins.__import__
+
+
+def reject_torch(name, *args, **kwargs):
+    if name == "torch" or name.startswith("torch."):
+        raise AssertionError("PyTorch was imported before workload rejection")
+    return original_import(name, *args, **kwargs)
+
+
+builtins.__import__ = reject_torch
+from warp.examples.optimizations.interoperability.device_resident_torch_exchange.benchmark import build_case
+
+valid = {"iterations": 2, "seed": 20260730, "size": 4096}
+for device, workload in (
+    ("cuda:0", {"iterations": 2, "seed": 20260730}),
+    ("cpu", valid),
+):
+    try:
+        build_case(device, workload)
+    except UnsupportedWorkload:
+        pass
+    else:
+        raise AssertionError("workload should have been rejected")
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            check=False,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, f"{result.stdout}\n{result.stderr}")
 
     def test_expanded_halo_fusion_card_is_registered(self):
         examples = discover_examples()
@@ -2843,16 +2930,71 @@ def test_reused_iteration_workspace_correctness(test, device):
     test.assertIn("size=4096 iterations=3: PASS", result.stdout)
 
 
+def _require_torch_cuda(test):
+    try:
+        import torch  # noqa: PLC0415
+    except ModuleNotFoundError as error:
+        if error.name != "torch":
+            raise
+        test.skipTest(f"{error}")
+    if not torch.cuda.is_available():
+        raise RuntimeError("Torch CUDA support is required")
+
+
+def test_device_resident_torch_exchange_correctness(test, device, torch_required):
+    if torch_required:
+        _require_torch_cuda(test)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "warp.examples.optimizations.interoperability.device_resident_torch_exchange.test_correctness",
+            "--device",
+            str(device),
+            "--size",
+            "4096",
+            "--iterations",
+            "2",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    test.assertEqual(result.returncode, 0, f"{result.stdout}\n{result.stderr}")
+    test.assertIn("size=4096 iterations=2: PASS", result.stdout)
+    test.assertIn("storage_alias=PASS", result.stdout)
+
+
+def test_device_resident_torch_exchange_non_default_stream(test, device, torch_required):
+    if torch_required:
+        _require_torch_cuda(test)
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "warp.examples.optimizations.interoperability.device_resident_torch_exchange.test_correctness",
+            "--device",
+            str(device),
+            "--size",
+            "4096",
+            "--iterations",
+            "2",
+            "--verify-ordering",
+        ],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    test.assertEqual(result.returncode, 0, f"{result.stdout}\n{result.stderr}")
+    test.assertIn("stream=non-default", result.stdout)
+    test.assertIn("producer_warp_consumer=PASS", result.stdout)
+
+
 def test_native_autodiff_rollout_correctness(test, device, torch_required):
     if torch_required:
-        try:
-            import torch  # noqa: PLC0415
-        except ModuleNotFoundError as error:
-            if error.name != "torch":
-                raise
-            test.skipTest(f"{error}")
-        if not torch.cuda.is_available():
-            raise RuntimeError("Torch CUDA support is required")
+        _require_torch_cuda(test)
 
     result = subprocess.run(
         [
@@ -3000,6 +3142,20 @@ add_function_test(
     "test_reused_iteration_workspace_correctness",
     test_reused_iteration_workspace_correctness,
     devices=get_test_devices(mode="basic"),
+)
+add_function_test(
+    TestRuntimeOptimizationExamples,
+    "test_device_resident_torch_exchange_correctness",
+    test_device_resident_torch_exchange_correctness,
+    devices=get_cuda_test_devices(mode="basic"),
+    torch_required=True,
+)
+add_function_test(
+    TestRuntimeOptimizationExamples,
+    "test_device_resident_torch_exchange_non_default_stream",
+    test_device_resident_torch_exchange_non_default_stream,
+    devices=get_cuda_test_devices(mode="basic"),
+    torch_required=True,
 )
 add_function_test(
     TestRuntimeOptimizationExamples,
