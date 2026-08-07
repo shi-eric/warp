@@ -35,6 +35,7 @@ from typing import (
     Any,
     Literal,
     NamedTuple,
+    NoReturn,
     Protocol,
     TypeVar,
     get_args,
@@ -3346,6 +3347,28 @@ def _check_and_raise_long_path_error(e: FileNotFoundError):
     ) from e
 
 
+def _raise_recorded_build_error(build_error: Exception) -> NoReturn:
+    """Re-raise a build error recorded by an earlier failed build.
+
+    Raising the recorded exception itself appends the current frames to its
+    ``__traceback__`` every time, so a kernel relaunched in a loop accumulates
+    one traceback per attempt.  Building a fresh instance from the original
+    arguments avoids that.
+
+    Reconstruction assumes ``__init__`` accepts ``args`` positionally, which
+    every exception on this path satisfies today.  A type that does not would
+    otherwise replace the build error with a confusing failure from this
+    function, so fall back to the recorded exception and accept the growing
+    traceback: reporting the real error matters more.
+    """
+    try:
+        replay = type(build_error)(*build_error.args)
+    except Exception:
+        raise build_error from None
+
+    raise replay from None
+
+
 # -----------------------------------------------------
 # stores all functions and kernels for a Python module
 # creates a hash of the function to use for checking
@@ -4157,11 +4180,10 @@ class Module:
         # Replay the recorded failure instead of rebuilding, which keeps the error
         # spew down without going quiet: returning None here reads to callers as
         # "nothing to do" and silently skips every kernel in the module, including
-        # the ones that had nothing to do with the failure. A fresh instance keeps
-        # the traceback from growing across repeated launches.
+        # the ones that had nothing to do with the failure.
         build_error = self.failed_builds.get((device.context, active_block_dim))
         if build_error is not None:
-            raise type(build_error)(*build_error.args) from None
+            _raise_recorded_build_error(build_error)
 
         module_hash = self.get_module_hash(active_block_dim)
         options = self.resolved_options[active_block_dim]
@@ -10687,10 +10709,8 @@ def launch(
             # This kernel's codegen already failed. Its module still builds, so the
             # module's other kernels keep working, but this kernel cannot: report the
             # original error instead of launching the partial code that the failed
-            # build left behind. Raising a fresh instance keeps the traceback from
-            # growing across repeated launches.
-            build_error = kernel.adj.build_error
-            raise type(build_error)(*build_error.args) from None
+            # build left behind.
+            _raise_recorded_build_error(kernel.adj.build_error)
 
         # delay load modules, including new overload if needed
         try:

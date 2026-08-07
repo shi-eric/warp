@@ -10,6 +10,7 @@ import uuid
 from importlib import util
 
 import warp as wp
+from warp._src.context import _raise_recorded_build_error
 from warp.tests.unittest_utils import *
 
 
@@ -198,6 +199,42 @@ def sibling_kernel(a: wp.array[float]):
         # say so rather than returning as though the kernel had run.
         with self.assertRaises(type(caught.exception)):
             wp.launch(module.sibling_kernel, dim=4, inputs=[a], device=device)
+
+
+class TestRecordedBuildErrorReplay(unittest.TestCase):
+    """Verify how a recorded build error is re-raised on later launches."""
+
+    def test_replay_builds_a_fresh_instance(self):
+        """Verify that replaying reconstructs the error instead of reusing the object."""
+        original = wp.WarpCodegenError("kernel did not build")
+
+        with self.assertRaises(wp.WarpCodegenError) as caught:
+            _raise_recorded_build_error(original)
+
+        # Reusing the object would append this call's frames to its traceback on
+        # every launch, so the replay has to be a separate instance.
+        self.assertIsNot(caught.exception, original)
+        self.assertEqual(caught.exception.args, original.args)
+
+    def test_replay_falls_back_when_reconstruction_fails(self):
+        """Verify that an error that cannot be rebuilt is re-raised as-is."""
+
+        class PickyError(RuntimeError):
+            """An error whose constructor rejects its own ``args``."""
+
+            def __init__(self, code, *, detail):
+                super().__init__(f"{code}: {detail}")
+                self.code = code
+
+        original = PickyError("E42", detail="native compiler said no")
+
+        with self.assertRaises(PickyError) as caught:
+            _raise_recorded_build_error(original)
+
+        # Reconstruction raises TypeError here. Reporting that instead of the
+        # build error would bury the reason the kernel failed to build.
+        self.assertIs(caught.exception, original)
+        self.assertEqual(caught.exception.code, "E42")
 
 
 devices = get_test_devices()
