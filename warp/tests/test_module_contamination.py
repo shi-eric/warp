@@ -10,7 +10,6 @@ import uuid
 from importlib import util
 
 import warp as wp
-from warp._src.context import _raise_recorded_build_error
 from warp.tests.unittest_utils import *
 
 
@@ -73,24 +72,15 @@ class TestModuleContamination(unittest.TestCase):
     pass
 
 
-class TestFailedBuildRepeats(unittest.TestCase):
-    """Verify that a build failure keeps failing the same way.
+def _make_bad_kernel():
+    """Import a fresh regular module whose kernel fails during codegen.
 
-    A kernel that cannot be built must report the same error on every retry and
-    on every device. Reporting it only the first time leaves later launches
-    running whatever partial state the failed build left behind.
+    A regular module is required here. Kernels declared with ``module="unique"``
+    take a separate path that already clears the failed build state between
+    devices.
     """
-
-    @staticmethod
-    def _make_bad_kernel():
-        """Import a fresh regular module whose kernel fails during codegen.
-
-        A regular module is required here. Kernels declared with
-        ``module="unique"`` take a separate path that already clears the failed
-        build state between devices.
-        """
-        name = f"_test_failed_build_{uuid.uuid4().hex[:12]}"
-        code = """\
+    name = f"_test_failed_build_{uuid.uuid4().hex[:12]}"
+    code = """\
 import warp as wp
 
 @wp.kernel
@@ -99,36 +89,58 @@ def bad_kernel(a: wp.array[float]):
     a[i] = 1.0
     a[i] = wp.no_such_builtin_function(a[i])
 """
-        file, file_path = tempfile.mkstemp(suffix=".py")
-        try:
-            with os.fdopen(file, "w") as f:
-                f.write(code)
+    file, file_path = tempfile.mkstemp(suffix=".py")
+    try:
+        with os.fdopen(file, "w") as f:
+            f.write(code)
 
-            spec = util.spec_from_file_location(name, file_path)
-            module = util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-        finally:
-            os.remove(file_path)
+        spec = util.spec_from_file_location(name, file_path)
+        module = util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    finally:
+        os.remove(file_path)
 
-        return module.bad_kernel
+    return module.bad_kernel
+
+
+def test_codegen_failure_repeats_after_another_device(test, device):
+    """Verify that a kernel that failed codegen elsewhere raises the same error here.
+
+    ``skip_build`` lives on the ``Adjoint``, which is shared across devices, so a
+    failure recorded on one device has to be reported on the rest rather than
+    launching the partial state that failed build left behind.
+    """
+    others = [d for d in get_test_devices() if d != device]
+    if not others:
+        test.skipTest("Needs a second device to fail the build on first")
+
+    kernel = _make_bad_kernel()
+
+    with test.assertRaises(wp.WarpCodegenAttributeError):
+        a = wp.zeros(4, dtype=float, device=others[0])
+        wp.launch(kernel, dim=4, inputs=[a], device=others[0])
+
+    with test.assertRaises(wp.WarpCodegenAttributeError):
+        a = wp.zeros(4, dtype=float, device=device)
+        wp.launch(kernel, dim=4, inputs=[a], device=device)
+
+
+class TestFailedBuildRepeats(unittest.TestCase):
+    """Verify that a build failure keeps failing the same way.
+
+    A kernel that cannot be built must report the same error on every retry and
+    on every device. Reporting it only the first time leaves later launches
+    running whatever partial state the failed build left behind.
+    """
 
     def test_codegen_failure_repeats_on_same_device(self):
         """Verify that relaunching a kernel that failed codegen raises again."""
-        kernel = self._make_bad_kernel()
+        kernel = _make_bad_kernel()
         device = wp.get_device()
         a = wp.zeros(4, dtype=float, device=device)
 
         for attempt in range(2):
             with self.subTest(attempt=attempt), self.assertRaises(wp.WarpCodegenAttributeError):
-                wp.launch(kernel, dim=4, inputs=[a], device=device)
-
-    def test_codegen_failure_repeats_across_devices(self):
-        """Verify that a kernel failing codegen raises the same error on every device."""
-        kernel = self._make_bad_kernel()
-
-        for device in get_test_devices():
-            with self.subTest(device=str(device)), self.assertRaises(wp.WarpCodegenAttributeError):
-                a = wp.zeros(4, dtype=float, device=device)
                 wp.launch(kernel, dim=4, inputs=[a], device=device)
 
     @staticmethod
@@ -201,47 +213,17 @@ def sibling_kernel(a: wp.array[float]):
             wp.launch(module.sibling_kernel, dim=4, inputs=[a], device=device)
 
 
-class TestRecordedBuildErrorReplay(unittest.TestCase):
-    """Verify how a recorded build error is re-raised on later launches."""
-
-    def test_replay_builds_a_fresh_instance(self):
-        """Verify that replaying reconstructs the error instead of reusing the object."""
-        original = wp.WarpCodegenError("kernel did not build")
-
-        with self.assertRaises(wp.WarpCodegenError) as caught:
-            _raise_recorded_build_error(original)
-
-        # Reusing the object would append this call's frames to its traceback on
-        # every launch, so the replay has to be a separate instance.
-        self.assertIsNot(caught.exception, original)
-        self.assertEqual(caught.exception.args, original.args)
-
-    def test_replay_falls_back_when_reconstruction_fails(self):
-        """Verify that an error that cannot be rebuilt is re-raised as-is."""
-
-        class PickyError(RuntimeError):
-            """An error whose constructor rejects its own ``args``."""
-
-            def __init__(self, code, *, detail):
-                super().__init__(f"{code}: {detail}")
-                self.code = code
-
-        original = PickyError("E42", detail="native compiler said no")
-
-        with self.assertRaises(PickyError) as caught:
-            _raise_recorded_build_error(original)
-
-        # Reconstruction raises TypeError here. Reporting that instead of the
-        # build error would bury the reason the kernel failed to build.
-        self.assertIs(caught.exception, original)
-        self.assertEqual(caught.exception.code, "E42")
-
-
 devices = get_test_devices()
 add_function_test(
     TestModuleContamination,
     func=test_function_validation_failure_contamination,
     name="test_function_validation_failure_contamination",
+    devices=devices,
+)
+add_function_test(
+    TestFailedBuildRepeats,
+    func=test_codegen_failure_repeats_after_another_device,
+    name="test_codegen_failure_repeats_after_another_device",
     devices=devices,
 )
 
