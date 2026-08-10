@@ -34,7 +34,7 @@
     <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=8f2a1f02" />
     <link rel="stylesheet" type="text/css" href="../_static/styles/nvidia-sphinx-theme.css?v=933278ad" />
     <link rel="stylesheet" type="text/css" href="../_static/copybutton.css?v=76b2166b" />
-    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=3d681599" />
+    <link rel="stylesheet" type="text/css" href="../_static/custom.css?v=21194238" />
   
   <!-- So that users can add custom icons -->
   <script defer src="../_static/scripts/fontawesome.js?digest=90905a2f556bf617f1a9"></script>
@@ -742,6 +742,8 @@ False
  [-1.  9. -1. 11.]]
 </pre></div>
 </div>
+<p>As with Python slices, a slice step of zero raises
+<code class="docutils literal notranslate"><span class="pre">ValueError(&quot;slice</span> <span class="pre">step</span> <span class="pre">cannot</span> <span class="pre">be</span> <span class="pre">zero&quot;)</span></code>.</p>
 <p>Scalar item indexing is intentionally not supported on <code class="docutils literal notranslate"><span class="pre">wp.array</span></code> objects at
 Python scope, so <code class="docutils literal notranslate"><span class="pre">a[0,</span> <span class="pre">0]</span></code> raises an error. Use slicing to create array views,
 or convert to NumPy with <a class="reference internal" href="../api_reference/_generated/warp.array.html#warp.array.numpy" title="warp.array.numpy"><code class="xref py py-meth docutils literal notranslate"><span class="pre">array.numpy</span></code></a> when reading
