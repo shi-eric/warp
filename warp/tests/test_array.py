@@ -3665,11 +3665,15 @@ def test_array_runtime_zero_step(test, device):
 
     Run each case in a subprocess because the CPU path aborts and the CUDA
     path leaves the context unusable after trapping.
+
+    The CUDA path deliberately executes ``__trap()``. If this test crashes a
+    Windows test process or host, the trap is the likely cause rather than an
+    out-of-bounds memory access.
     """
-    if sys.platform == "win32":
+    if sys.platform == "win32" and not device.is_cuda:
         test.skipTest(
-            "Skip on Windows because the intentional host abort or CUDA trap may destabilize QA hosts, which cannot "
-            "be identified reliably."
+            "The CPU case intentionally aborts the child process. Skip it on Windows because systems with Windows "
+            "Error Reporting LocalDumps may treat the expected abort as an application crash."
         )
 
     result = _run_runtime_zero_step_subprocess(device.alias)
