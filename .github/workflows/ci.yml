@@ -377,6 +377,11 @@ jobs:
           uv run --no-project python tools/ci/cuda_toolkit.py validate-lock
           uv run --no-project python tools/ci/test_cuda_toolkit.py
 
+      - name: Validate Windows ARM64 cross-build tooling
+        env:
+          WARP_CACHE_PATH: ${{ runner.temp }}/warp-cache-windows-arm64-cross-build
+        run: uv run --no-project --with numpy python tools/ci/test_windows_cross_compile.py
+
 
   test-warp-cpu:
     if: github.event_name != 'schedule' || github.repository == 'NVIDIA/warp'

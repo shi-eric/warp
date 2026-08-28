@@ -152,7 +152,6 @@ def validate_libmathdx_path(libmathdx_path: str) -> bool:
 
     Args:
         libmathdx_path: Path to libmathdx installation to validate.
-
     Returns:
         True if valid, False otherwise (with error message printed).
     """
@@ -297,6 +296,12 @@ def main(argv: list[str] | None = None) -> int:
         default=False,
         help="Generate compilation profiling trace file 'build_warp_time_trace.json' (does not affect output binary)",
     )
+    parser.add_argument(
+        "--target-arch",
+        choices=["x86_64", "aarch64"],
+        default=None,
+        help="Target CPU architecture for cross-compilation; Windows cross-builds require --no-cuda",
+    )
 
     # Toolchain paths
     group_toolchain = parser.add_argument_group("Toolchain Paths")
@@ -412,11 +417,27 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
+    args.host_arch = machine_architecture()
+    args.target_arch = args.target_arch or args.host_arch
+    is_cross = platform.system() == "Windows" and args.host_arch == "x86_64" and args.target_arch == "aarch64"
+    if args.target_arch != args.host_arch and not is_cross:
+        print(
+            f"Error: cross-compiling from {args.host_arch} to {args.target_arch} "
+            f"is not supported on {platform.system()}."
+        )
+        return 1
+    args.bin_subdir = "arm64" if is_cross else ""
+
     # Validate mutually exclusive LLVM options
     if args.llvm_path and args.build_llvm:
         print("Error: --llvm-path and --build-llvm are mutually exclusive.")
         print("  Use --llvm-path to use an existing LLVM installation")
         print("  Use --build-llvm to build LLVM from source")
+        return 1
+
+    if is_cross and args.build_llvm:
+        print("Error: --build-llvm cannot cross-compile LLVM from source for Windows ARM64.")
+        print("  Use the public LLVM SDK (the default) or provide an ARM64 SDK with --llvm-path.")
         return 1
 
     # Validate --no-cuda conflicts
@@ -430,6 +451,20 @@ def main(argv: list[str] | None = None) -> int:
         if args.use_dynamic_cuda:
             print("Error: --use-dynamic-cuda requires CUDA (incompatible with --no-cuda).")
             return 1
+
+    if is_cross and args.cuda:
+        print("Error: Windows ARM64 cross-compilation currently supports CPU-only builds.")
+        print("  Use --no-cuda to build without CUDA support.")
+        return 1
+
+    if is_cross:
+        print("=" * 80)
+        print("WARNING: Cross-compiling Warp for ARM64 Windows on x86-64")
+        print("=" * 80)
+        print("The resulting binaries will NOT run on this x86-64 machine.")
+        print("Output will be placed in: warp/bin/arm64/")
+        print("=" * 80)
+        print()
 
     # Warn if building on Intel Mac (cross-compiling for ARM64)
     if platform.system() == "Darwin" and machine_architecture() == "x86_64":
@@ -493,10 +528,18 @@ def main(argv: list[str] | None = None) -> int:
             if not (args.msvc_path and args.sdk_path):
                 print("Error: --msvc-path and --sdk-path must be used together")
                 return 1
-            args.host_compiler = build_dll.set_msvc_env(msvc_path=args.msvc_path, sdk_path=args.sdk_path)
+            args.host_compiler = build_dll.set_msvc_env(
+                msvc_path=args.msvc_path,
+                sdk_path=args.sdk_path,
+                host_arch=args.host_arch,
+                target_arch=args.target_arch,
+            )
         else:
             # attempt to find MSVC in environment (will set vcvars)
-            args.host_compiler = build_dll.find_host_compiler()
+            args.host_compiler = build_dll.find_host_compiler(
+                host_arch=args.host_arch,
+                target_arch=args.target_arch,
+            )
             if not args.host_compiler:
                 print("Warp build error: Could not find MSVC compiler")
                 return 1
@@ -581,7 +624,11 @@ def main(argv: list[str] | None = None) -> int:
                 print("    - Use --no-use-libmathdx to build without MathDx support")
                 return 1
 
-        warp_dll_path = os.path.join(build_path, f"bin/{lib_name('warp')}")
+        bin_dir = (
+            os.path.join(build_path, "bin", args.bin_subdir) if args.bin_subdir else os.path.join(build_path, "bin")
+        )
+        os.makedirs(bin_dir, exist_ok=True)
+        warp_dll_path = os.path.join(bin_dir, lib_name("warp"))
 
         # Build warp.dll and warp-clang.dll in parallel (only when not building LLVM from source)
         # Object files use unique names per target (derived from dll_path) to avoid conflicts
@@ -631,11 +678,15 @@ def main(argv: list[str] | None = None) -> int:
         is_gitlab_ci_windows = os.getenv("GITLAB_CI") is not None and platform.system() == "Windows"
         is_intel_mac = platform.system() == "Darwin" and machine_architecture() == "x86_64"
 
-        if is_gitlab_ci_windows or is_intel_mac:
+        if is_gitlab_ci_windows or is_intel_mac or is_cross:
             if is_gitlab_ci_windows:
                 print("Skipping kernel cache clearing in GitLab CI on Windows")
             if is_intel_mac:
                 print("Skipping kernel cache clearing on Intel Mac (binaries built for ARM64)")
+            if is_cross:
+                print(
+                    "Skipping kernel cache clearing for ARM64 cross-compiled binaries (cannot execute on x86-64 host)"
+                )
         else:
             # On Linux, an ASan-instrumented warp.so aborts at load time unless the ASan
             # runtime comes first in the initial library list. The post-build helper

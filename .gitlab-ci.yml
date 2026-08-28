@@ -249,6 +249,7 @@ pre-commit checks:
     - .ipp_lnx_x86_64_cpu_micro
   script:
     - uvx pre-commit run --all-files --show-diff-on-failure
+    - WARP_CACHE_PATH="$CI_PROJECT_DIR/.cache/warp-windows-arm64-cross-build-$CI_JOB_ID" uv run --no-project --with numpy python tools/ci/test_windows_cross_compile.py
 
 validate fragments:
   stage: quality

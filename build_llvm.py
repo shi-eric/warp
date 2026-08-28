@@ -426,12 +426,13 @@ def build_llvm_clang_from_source(args) -> None:
     else:
         llvm_source = llvm_project_path
 
-    # On macOS, always build for ARM64 (may be cross-compiled from Intel Mac)
-    # On other platforms, build for the machine's architecture
+    # On macOS, always build for ARM64 (may be cross-compiled from Intel Mac).
+    # On other platforms, use the requested target architecture.
     if sys.platform == "darwin":
         build_llvm_clang_from_source_for_arch(args, "aarch64", llvm_source)
     else:
-        build_llvm_clang_from_source_for_arch(args, machine_architecture(), llvm_source)
+        target_arch = getattr(args, "target_arch", None) or machine_architecture()
+        build_llvm_clang_from_source_for_arch(args, target_arch, llvm_source)
 
 
 # build warp-clang.dll
@@ -443,7 +444,10 @@ def build_warp_clang_for_arch(args, lib_name: str, arch: str) -> None:
         ]
         clang_cpp_paths = [os.path.join(build_path, cpp) for cpp in cpp_sources]
 
-        clang_dll_path = os.path.join(build_path, "bin", lib_name)
+        bin_subdir = getattr(args, "bin_subdir", "")
+        bin_dir = os.path.join(build_path, "bin", bin_subdir) if bin_subdir else os.path.join(build_path, "bin")
+        os.makedirs(bin_dir, exist_ok=True)
+        clang_dll_path = os.path.join(bin_dir, lib_name)
 
         if hasattr(args, "llvm_path") and args.llvm_path:
             # Use an LLVM installation supplied by the caller
@@ -521,4 +525,5 @@ def build_warp_clang(args, lib_name: str) -> None:
         # build for ARM64 only (may be cross-compiled from Intel Mac)
         build_warp_clang_for_arch(args, lib_name, "aarch64")
     else:
-        build_warp_clang_for_arch(args, lib_name, machine_architecture())
+        target_arch = getattr(args, "target_arch", None) or machine_architecture()
+        build_warp_clang_for_arch(args, lib_name, target_arch)

@@ -57,19 +57,27 @@ def _parse_vcvars_environment(output: str) -> dict[str, str]:
     return env
 
 
-def _msvc_toolchain_layout(arch: Architecture) -> tuple[str, str]:
-    if arch == "aarch64":
-        return "HostARM64", "arm64"
-    return "HostX64", "x64"
+def _msvc_toolchain_layout(host_arch: Architecture, target_arch: Architecture | None = None) -> tuple[str, str]:
+    target_arch = target_arch or host_arch
+    host_directory = "HostARM64" if host_arch == "aarch64" else "HostX64"
+    target_directory = "arm64" if target_arch == "aarch64" else "x64"
+    return host_directory, target_directory
 
 
-def _msvc_environment_script(vs_path: str, arch: Architecture) -> tuple[str, list[str]]:
-    if arch == "aarch64":
+def _msvc_environment_script(
+    vs_path: str, host_arch: Architecture, target_arch: Architecture | None = None
+) -> tuple[str, list[str]]:
+    target_arch = target_arch or host_arch
+    if host_arch == target_arch == "aarch64":
         return (
             os.path.join(vs_path, "Common7", "Tools", "VsDevCmd.bat"),
             ["-arch=arm64", "-host_arch=arm64"],
         )
-    return os.path.join(vs_path, "VC", "Auxiliary", "Build", "vcvars64.bat"), []
+    if host_arch == "x86_64" and target_arch == "aarch64":
+        return os.path.join(vs_path, "VC", "Auxiliary", "Build", "vcvarsall.bat"), ["amd64_arm64"]
+    if host_arch == target_arch == "x86_64":
+        return os.path.join(vs_path, "VC", "Auxiliary", "Build", "vcvars64.bat"), []
+    raise RuntimeError(f"Unsupported MSVC cross-compilation from {host_arch} to {target_arch}")
 
 
 def packman_llvm_platform(arch: str) -> str:
@@ -112,9 +120,15 @@ def run_cmd(cmd, print_success_output=True):
 
 # Cut-down version of the MSVC environment script that allows using
 # custom toolchain locations, returns the compiler program path
-def set_msvc_env(msvc_path, sdk_path, host_arch: Architecture | None = None) -> str:
+def set_msvc_env(
+    msvc_path,
+    sdk_path,
+    host_arch: Architecture | None = None,
+    target_arch: Architecture | None = None,
+) -> str:
     host_arch = host_arch or machine_architecture()
-    host_directory, target_directory = _msvc_toolchain_layout(host_arch)
+    target_arch = target_arch or host_arch
+    host_directory, target_directory = _msvc_toolchain_layout(host_arch, target_arch)
 
     if "INCLUDE" not in os.environ:
         os.environ["INCLUDE"] = ""
@@ -136,32 +150,46 @@ def set_msvc_env(msvc_path, sdk_path, host_arch: Architecture | None = None) -> 
     os.environ["LIB"] += os.pathsep + os.path.join(sdk_path, "lib", "um", target_directory)
 
     os.environ["PATH"] += os.pathsep + os.path.join(msvc_path, "bin", host_directory, target_directory)
-    os.environ["PATH"] += os.pathsep + os.path.join(sdk_path, "bin", target_directory)
+    if host_arch != target_arch:
+        _, host_target_directory = _msvc_toolchain_layout(host_arch)
+        os.environ["PATH"] += os.pathsep + os.path.join(msvc_path, "bin", host_directory, host_target_directory)
+    sdk_host_directory = "arm64" if host_arch == "aarch64" else "x64"
+    os.environ["PATH"] += os.pathsep + os.path.join(sdk_path, "bin", sdk_host_directory)
 
     return os.path.join(msvc_path, "bin", host_directory, target_directory, "cl.exe")
 
 
-def find_host_compiler(host_arch: Architecture | None = None) -> str:
+def find_host_compiler(host_arch: Architecture | None = None, target_arch: Architecture | None = None) -> str:
     """Find the host C++ compiler.
 
-    On Windows, checks for pre-configured Visual Studio environment before
-    attempting auto-configuration. On Unix/Linux, respects $CXX environment
-    variable if set.
+    On Windows, checks for a pre-configured Visual Studio environment before
+    attempting auto-configuration for the requested host and target pair. On
+    Unix/Linux, respects $CXX environment variable if set.
+
+    Args:
+        host_arch: Architecture of the machine running the compiler.
+        target_arch: Architecture of the generated binaries. Defaults to
+            ``host_arch``.
 
     Returns:
         Path to compiler executable, or empty string if not found (Windows only).
         Note: Empty string return allows build_lib.py to handle error gracefully.
     """
     host_arch = host_arch or machine_architecture()
+    target_arch = target_arch or host_arch
 
     if os.name == "nt":
         # Check if Visual Studio environment already configured (conda, Docker, etc.)
         # VCINSTALLDIR and VCToolsVersion are set by the MSVC environment script.
         if os.environ.get("VCINSTALLDIR") or os.environ.get("VCToolsVersion"):
-            arm_environment_matches = (
-                os.environ.get("VSCMD_ARG_HOST_ARCH") == "arm64" and os.environ.get("VSCMD_ARG_TGT_ARCH") == "arm64"
+            expected_host_arch = "arm64" if host_arch == "aarch64" else "x64"
+            expected_target_arch = "arm64" if target_arch == "aarch64" else "x64"
+            environment_matches = (
+                os.environ.get("VSCMD_ARG_HOST_ARCH") == expected_host_arch
+                and os.environ.get("VSCMD_ARG_TGT_ARCH") == expected_target_arch
             )
-            if host_arch != "aarch64" or arm_environment_matches:
+            requires_arch_check = host_arch == "aarch64" or target_arch != host_arch
+            if not requires_arch_check or environment_matches:
                 if verbose_cmd:
                     print("Visual Studio environment already configured, skipping MSVC environment script")
 
@@ -175,7 +203,10 @@ def find_host_compiler(host_arch: Architecture | None = None) -> str:
                     print("Warning: VS environment variables set but cl.exe not found, attempting auto-configuration")
             else:
                 if verbose_cmd:
-                    print("Warning: VS environment is not configured for native ARM64, attempting auto-configuration")
+                    print(
+                        f"Warning: VS environment is not configured for {host_arch} to {target_arch}, "
+                        "attempting auto-configuration"
+                    )
 
         vswhere_path = r"%ProgramFiles(x86)%/Microsoft Visual Studio/Installer/vswhere.exe"
         vswhere_path = os.path.expandvars(vswhere_path)
@@ -184,13 +215,13 @@ def find_host_compiler(host_arch: Architecture | None = None) -> str:
 
         component = (
             "Microsoft.VisualStudio.Component.VC.Tools.ARM64"
-            if host_arch == "aarch64"
+            if target_arch == "aarch64"
             else "Microsoft.VisualStudio.Component.VC.Tools.x86.x64"
         )
         vs_path = (
             run_cmd(f'"{vswhere_path}" -latest -requires {component} -property installationPath').decode().rstrip()
         )
-        vsvars_path, vsvars_arguments = _msvc_environment_script(vs_path, host_arch)
+        vsvars_path, vsvars_arguments = _msvc_environment_script(vs_path, host_arch, target_arch)
 
         if not os.path.isfile(vsvars_path):
             return ""  # Signal to caller that VS environment script not found
@@ -210,8 +241,11 @@ def find_host_compiler(host_arch: Architecture | None = None) -> str:
         if not vc_tools_version:
             return ""  # Signal to caller that VS environment script did not configure MSVC
 
-        if host_arch == "aarch64" and (
-            os.environ.get("VSCMD_ARG_HOST_ARCH") != "arm64" or os.environ.get("VSCMD_ARG_TGT_ARCH") != "arm64"
+        expected_host_arch = "arm64" if host_arch == "aarch64" else "x64"
+        expected_target_arch = "arm64" if target_arch == "aarch64" else "x64"
+        if (host_arch == "aarch64" or target_arch != host_arch) and (
+            os.environ.get("VSCMD_ARG_HOST_ARCH") != expected_host_arch
+            or os.environ.get("VSCMD_ARG_TGT_ARCH") != expected_target_arch
         ):
             return ""  # Signal to caller that the MSVC environment script selected the wrong architecture
 
@@ -622,7 +656,6 @@ def build_dll_for_arch(
             raise Exception(
                 f"CUDA Toolkit version {MIN_CTK_VERSION[0]}.{MIN_CTK_VERSION[1]}+ is required (found {ctk_version[0]}.{ctk_version[1]} in {cuda_home})"
             )
-
         # Get architecture flags based on CUDA version
         if ctk_version >= (13, 0):
             gencode_opts, clang_arch_flags = _get_architectures_cu13(ctk_version, arch, sys.platform, args.quick)
@@ -679,6 +712,9 @@ def build_dll_for_arch(
         mathdx_enabled = "WP_ENABLE_MATHDX=0"
 
     if os.name == "nt":
+        host_arch = getattr(args, "host_arch", None) or machine_architecture()
+        is_cross_compile = arch != host_arch
+
         if args.host_compiler:
             host_linker = os.path.join(os.path.dirname(args.host_compiler), "link.exe")
         else:
@@ -710,6 +746,9 @@ def build_dll_for_arch(
             linkopts = ["/DLL"]
         else:
             raise RuntimeError(f"Unrecognized build configuration (debug, release), got: {args.mode}")
+
+        if is_cross_compile:
+            linkopts.append("/MACHINE:ARM64")
 
         if args.verify_fp:
             cpp_flags += ' /D "WP_VERIFY_FP"'
@@ -992,4 +1031,5 @@ def build_dll(args, dll_path, cpp_paths, cu_paths, libs=None):
         # build for ARM64 only (may be cross-compiled from Intel Mac)
         build_dll_for_arch(args, dll_path, cpp_paths, cu_paths, "aarch64", libs)
     else:
-        build_dll_for_arch(args, dll_path, cpp_paths, cu_paths, machine_architecture(), libs)
+        target_arch = getattr(args, "target_arch", None) or machine_architecture()
+        build_dll_for_arch(args, dll_path, cpp_paths, cu_paths, target_arch, libs)
