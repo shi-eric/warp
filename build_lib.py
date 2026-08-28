@@ -28,7 +28,7 @@ import time
 import build_llvm
 import warp._src.build_dll as build_dll
 import warp.config as config
-from warp._src.build_architecture import machine_architecture
+from warp._src.build_architecture import Architecture, machine_architecture
 from warp._src.generated_files import generate_exports_header_file, generate_version_header
 
 
@@ -147,11 +147,14 @@ def resolve_libmathdx_path(libmathdx_path: str) -> str:
     return libmathdx_path
 
 
-def validate_libmathdx_path(libmathdx_path: str) -> bool:
+def validate_libmathdx_path(libmathdx_path: str, target_arch: Architecture | None = None) -> bool:
     """Validate that libmathdx path exists and has required directory structure.
 
     Args:
         libmathdx_path: Path to libmathdx installation to validate.
+        target_arch: Architecture of the libraries used by the build. Defaults
+            to the host architecture.
+
     Returns:
         True if valid, False otherwise (with error message printed).
     """
@@ -160,7 +163,11 @@ def validate_libmathdx_path(libmathdx_path: str) -> bool:
         return False
 
     # Check for required subdirectories
-    libmathdx_lib_subdir = "lib/x64" if platform.system() == "Windows" else "lib"
+    target_arch = target_arch or machine_architecture()
+    if platform.system() == "Windows":
+        libmathdx_lib_subdir = "lib/arm64" if target_arch == "aarch64" else "lib/x64"
+    else:
+        libmathdx_lib_subdir = "lib"
     required_dirs = {
         "include": os.path.join(libmathdx_path, "include"),
         libmathdx_lib_subdir: os.path.join(libmathdx_path, libmathdx_lib_subdir),
@@ -174,7 +181,12 @@ def validate_libmathdx_path(libmathdx_path: str) -> bool:
     return True
 
 
-def find_libmathdx(cuda_toolkit_major_version: int, base_path: str) -> str | None:
+def find_libmathdx(
+    cuda_toolkit_major_version: int,
+    base_path: str,
+    target_arch: Architecture | None = None,
+) -> str | None:
+    target_arch = target_arch or machine_architecture()
     libmathdx_path = os.environ.get("LIBMATHDX_HOME")
 
     if libmathdx_path:
@@ -194,7 +206,7 @@ def find_libmathdx(cuda_toolkit_major_version: int, base_path: str) -> str | Non
         "pull",
         "--verbose",
         "--platform",
-        f"{platform.system()}-{machine_architecture()}".lower(),
+        f"{platform.system()}-{target_arch}".lower(),
         "--include-tag",
         f"cu{cuda_toolkit_major_version}",
         os.path.join(base_path, "deps", "libmathdx-deps.packman.xml"),
@@ -300,7 +312,7 @@ def main(argv: list[str] | None = None) -> int:
         "--target-arch",
         choices=["x86_64", "aarch64"],
         default=None,
-        help="Target CPU architecture for cross-compilation; Windows cross-builds require --no-cuda",
+        help="Target CPU architecture for cross-compilation (defaults to the host architecture)",
     )
 
     # Toolchain paths
@@ -452,11 +464,6 @@ def main(argv: list[str] | None = None) -> int:
             print("Error: --use-dynamic-cuda requires CUDA (incompatible with --no-cuda).")
             return 1
 
-    if is_cross and args.cuda:
-        print("Error: Windows ARM64 cross-compilation currently supports CPU-only builds.")
-        print("  Use --no-cuda to build without CUDA support.")
-        return 1
-
     if is_cross:
         print("=" * 80)
         print("WARNING: Cross-compiling Warp for ARM64 Windows on x86-64")
@@ -497,6 +504,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Warp build error: {e}")
             return 1
 
+    libmathdx_explicit = bool(args.libmathdx_path) or bool(os.environ.get("LIBMATHDX_HOME"))
+
     # setup CUDA Toolkit path
     if platform.system() == "Darwin" or not args.cuda:
         if not args.cuda:
@@ -509,17 +518,32 @@ def main(argv: list[str] | None = None) -> int:
 
         # libmathdx needs to be used with a build of Warp that supports CUDA
         if args.use_libmathdx:
+            cuda_version = None
+            if is_cross and args.cuda_path:
+                cuda_version = build_dll.get_cuda_toolkit_version(args.cuda_path)
+                if cuda_version < (13, 4):
+                    print(
+                        f"Error: CUDA Toolkit 13.4+ is required for Windows ARM64 builds "
+                        f"(found {cuda_version[0]}.{cuda_version[1]} in {args.cuda_path})"
+                    )
+                    return 1
             if not args.libmathdx_path and args.cuda_path:
-                major, _ = build_dll.get_cuda_toolkit_version(args.cuda_path)
-                args.libmathdx_path = find_libmathdx(major, base_path)
+                major = cuda_version[0] if cuda_version else build_dll.get_cuda_toolkit_version(args.cuda_path)[0]
+                args.libmathdx_path = find_libmathdx(major, base_path, target_arch=args.target_arch)
         else:
             args.libmathdx_path = None
 
     # Validate libmathdx path (from any source: CLI, environment, or Packman)
     if args.libmathdx_path:
         args.libmathdx_path = resolve_libmathdx_path(args.libmathdx_path)
-        if not validate_libmathdx_path(args.libmathdx_path):
-            return 1
+        if not validate_libmathdx_path(args.libmathdx_path, target_arch=args.target_arch):
+            if is_cross and not libmathdx_explicit:
+                print("Warning: libmathdx has no ARM64 libraries, disabling MathDx for this cross-build.")
+                print("  Provide an ARM64-capable installation via --libmathdx-path to enable it.")
+                args.libmathdx_path = None
+                args.use_libmathdx = False
+            else:
+                return 1
 
     # setup MSVC and WinSDK paths
     if platform.system() == "Windows":
