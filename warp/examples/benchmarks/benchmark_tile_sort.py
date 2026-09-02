@@ -96,16 +96,28 @@ if __name__ == "__main__":
                         cmd.launch()
                     wp.synchronize()
 
+                output_keys_np = output_keys.numpy()
+                output_values_np = output_values.numpy()
                 if dtype == int:
-                    keys_match = np.array_equal(output_keys.numpy(), np_sorted_keys)
+                    key_mismatches = output_keys_np != np_sorted_keys
                 else:  # dtype == float
-                    keys_match = np.allclose(output_keys.numpy(), np_sorted_keys, atol=1e-6)  # Use tolerance for floats
+                    key_mismatches = ~np.isclose(output_keys_np, np_sorted_keys, atol=1e-6)
 
-                values_match = np.array_equal(output_values.numpy(), np_sorted_values)
+                value_mismatches = output_values_np != np_sorted_values
 
                 # Validate results
-                assert keys_match, f"Key sorting mismatch for dtype={dtype}!"
-                assert values_match, f"Value sorting mismatch for dtype={dtype}!"
+                if np.any(key_mismatches):
+                    mismatch_index = tuple(int(i) for i in np.argwhere(key_mismatches)[0])
+                    raise RuntimeError(
+                        f"Sorted key mismatch at index {mismatch_index} for dtype {dtype}: "
+                        f"expected {np_sorted_keys[mismatch_index]!r}, got {output_keys_np[mismatch_index]!r}"
+                    )
+                if np.any(value_mismatches):
+                    mismatch_index = tuple(int(i) for i in np.argwhere(value_mismatches)[0])
+                    raise RuntimeError(
+                        f"Sorted value mismatch at index {mismatch_index}: "
+                        f"expected {np_sorted_values[mismatch_index]!r}, got {output_values_np[mismatch_index]!r}"
+                    )
 
                 timing_results = [result.elapsed for result in timer.timing_results]
                 mean_timing = np.mean(timing_results)

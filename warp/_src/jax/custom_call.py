@@ -100,7 +100,10 @@ def _warp_custom_callback(stream, buffers, opaque, opaque_len):
     # Parse arguments.
     arg_strings = args_str.split(";")
     num_args = len(arg_strings)
-    assert num_args == len(kernel.adj.args), "Incorrect number of arguments"
+    if num_args != len(kernel.adj.args):
+        raise RuntimeError(
+            f"JAX descriptor for kernel '{kernel.key}' must contain {len(kernel.adj.args)} arguments; got {num_args}"
+        )
 
     # First param is the launch bounds.
     kernel_params = (ctypes.c_void_p * (1 + num_args))()
@@ -125,7 +128,10 @@ def _warp_custom_callback(stream, buffers, opaque, opaque_len):
     # Get kernel hooks.
     # Note: module was loaded during jit lowering.
     hooks = kernel.module.get_kernel_hooks(kernel, device)
-    assert hooks.forward, "Failed to find kernel entry point"
+    if not hooks.forward:
+        raise RuntimeError(
+            f"Expected a forward entry point for Warp kernel '{kernel.key}' on device '{device}'; got {hooks.forward!r}"
+        )
 
     # Reject non-cluster-aligned grids with a clear Python error instead of a
     # cryptic native CUDA error (block_dim=256, max_blocks=0 below).

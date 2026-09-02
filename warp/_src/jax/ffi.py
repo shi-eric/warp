@@ -476,8 +476,16 @@ class FfiKernel:
                 num_outputs = call_frame.contents.rets.size
                 outputs = ctypes.cast(call_frame.contents.rets.rets, ctypes.POINTER(ctypes.POINTER(XLA_FFI_Buffer)))
 
-                assert num_inputs == self.num_inputs
-                assert num_outputs == self.num_outputs
+                if num_inputs != self.num_inputs:
+                    return create_invalid_argument_ffi_error(
+                        call_frame.contents.api,
+                        f"Expected {self.num_inputs} JAX FFI input buffers, got {num_inputs}",
+                    )
+                if num_outputs != self.num_outputs:
+                    return create_invalid_argument_ffi_error(
+                        call_frame.contents.api,
+                        f"Expected {self.num_outputs} JAX FFI output buffers, got {num_outputs}",
+                    )
 
                 arg_refs = []
                 batch_size = None
@@ -902,8 +910,16 @@ class FfiCallable:
                 num_outputs = call_frame.contents.rets.size
                 outputs = ctypes.cast(call_frame.contents.rets.rets, ctypes.POINTER(ctypes.POINTER(XLA_FFI_Buffer)))
 
-                assert num_inputs == self.num_inputs
-                assert num_outputs == self.num_outputs
+                if num_inputs != self.num_inputs:
+                    return create_invalid_argument_ffi_error(
+                        call_frame.contents.api,
+                        f"Expected {self.num_inputs} JAX FFI input buffers, got {num_inputs}",
+                    )
+                if num_outputs != self.num_outputs:
+                    return create_invalid_argument_ffi_error(
+                        call_frame.contents.api,
+                        f"Expected {self.num_outputs} JAX FFI output buffers, got {num_outputs}",
+                    )
 
                 if platform == _FFI_PLATFORM_CPU:
                     if self.graph_mode not in (JaxCallableGraphMode.NONE, JaxCallableGraphMode.JAX):

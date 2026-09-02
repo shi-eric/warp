@@ -945,7 +945,11 @@ def call_builtin_from_desc(
     the underlying C function.
     """
     # Each `arg_types` item should have a corresponding `param_kinds` item.
-    assert len(builtin_desc.arg_types) == len(builtin_desc.param_kinds)
+    if len(builtin_desc.arg_types) != len(builtin_desc.param_kinds):
+        raise AssertionError(
+            "Built-in descriptor argument types and parameter kinds must have the same length; "
+            f"got {len(builtin_desc.arg_types)} argument types and {len(builtin_desc.param_kinds)} parameter kinds"
+        )
 
     # Try gathering the parameters that the function expects and pack them
     # into their corresponding C types.
@@ -2211,8 +2215,15 @@ def overload(kernel: Kernel | Callable, arg_types: dict[str, Any] | list[Any] | 
         # TODO: show we allow defining a new body for kernel overloads?
         source = textwrap.dedent(inspect.getsource(fn))
         tree = ast.parse(source)
-        assert isinstance(tree, ast.Module)
-        assert isinstance(tree.body[0], ast.FunctionDef)
+        if not isinstance(tree, ast.Module):
+            raise WarpCodegenError(
+                f"Expected overload source for kernel '{fn.__name__}' to parse as a module; got {type(tree).__name__}"
+            )
+        if not tree.body or not isinstance(tree.body[0], ast.FunctionDef):
+            node_type = type(tree.body[0]).__name__ if tree.body else "no statements"
+            raise WarpCodegenError(
+                f"Kernel overload '{fn.__name__}' must begin with a function definition; got {node_type}"
+            )
         func_body = tree.body[0].body
         for node in func_body:
             if isinstance(node, ast.Pass):
@@ -5597,7 +5608,10 @@ class Device:
 
         # if the device context is not primary, it cannot be None
         if ordinal != -1 and not is_primary:
-            assert context is not None
+            if context is None:
+                raise RuntimeError(
+                    f"A non-primary CUDA device requires a valid context; got context=None for device ordinal {ordinal}"
+                )
 
         # streams will be created when context is acquired
         self._stream = None
@@ -10498,7 +10512,10 @@ def pack_arg(kernel, arg_type, arg_name, value, device, adjoint=False):
         )
 
     elif isinstance(arg_type, warp._src.codegen.Struct):
-        assert value is not None
+        if value is None:
+            raise RuntimeError(
+                f"Error launching kernel '{kernel.key}', argument '{arg_name}' expects {arg_type.key} but got None"
+            )
         return value.__ctype__()
 
     # try to convert to a value type (vec3, mat33, etc)
