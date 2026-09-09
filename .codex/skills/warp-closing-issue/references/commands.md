@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All 
 SPDX-License-Identifier: Apache-2.0
 -->
 
-# Optional Commands
+# GitHub commands
 
 Prefer the GitHub app/MCP connector when it provides the needed issue/comment data.
 Use `gh` where it is simpler or connector coverage is missing; this machine has `gh`
@@ -51,20 +51,33 @@ Post comments through the GitHub app/MCP connector when available, or `gh` if ne
 Use `gh issue comment --body-file` for new issue comments with multiline bodies:
 
 ```bash
+set -euo pipefail
+
 body_file=$(mktemp)
 cat > "$body_file" <<'EOF'
 <exact reviewed comment body>
 EOF
 
 comment_url=$(gh issue comment <issue> --repo NVIDIA/warp --body-file "$body_file")
+comment_id=${comment_url##*issuecomment-}
+
+case "$comment_id" in
+  ""|*[!0-9]*)
+    printf 'Could not resolve comment ID from %s\n' "$comment_url" >&2
+    exit 1
+    ;;
+esac
 ```
 
 Use `gh api --input` with JSON for editing existing comments or other endpoints
 that do not support `--body-file`:
 
 ```bash
+set -euo pipefail
+
 body_file=$(mktemp)
 json_file=$(mktemp)
+comment_id=<comment-id>
 
 cat > "$body_file" <<'EOF'
 <exact reviewed comment body>
@@ -72,24 +85,41 @@ EOF
 
 jq -n --rawfile body "$body_file" '{body:$body}' > "$json_file"
 
-gh api -X PATCH repos/NVIDIA/warp/issues/comments/<comment-id> \
+gh api -X PATCH repos/NVIDIA/warp/issues/comments/"$comment_id" \
   --input "$json_file"
 ```
 
-Verify the public comment body before closing:
+Compare the public comment body exactly with the reviewed file before closing:
 
 ```bash
-gh api repos/NVIDIA/warp/issues/comments/<comment-id> \
-  --jq '{id,html_url,body}'
+set -euo pipefail
+
+if ! gh api repos/NVIDIA/warp/issues/comments/"$comment_id" \
+  | jq --exit-status --rawfile expected "$body_file" \
+      'select(.body == $expected) | {id,html_url,body}'; then
+  printf 'Comment body mismatch or read-back failed\n' >&2
+  exit 1
+fi
 ```
 
 Never use `gh api -f body=@file` or `gh api --raw-field body=@file` for
 multiline comment bodies; those forms can send `@file` literally.
 
-For closure:
+Before closure, fetch the issue again. Close only if it is still open and closure was
+explicitly confirmed:
 
 ```bash
-gh issue close <issue> --repo NVIDIA/warp --reason completed
+set -euo pipefail
+
+current_state=$(gh issue view <issue> --repo NVIDIA/warp --json state --jq .state)
+if [ "$current_state" != "OPEN" ]; then
+  printf 'Issue is no longer open; skipping close\n' >&2
+  exit 1
+fi
+if ! gh issue close <issue> --repo NVIDIA/warp --reason completed; then
+  printf 'Issue close failed\n' >&2
+  exit 1
+fi
 gh issue view <issue> --repo NVIDIA/warp \
   --json number,state,stateReason,closedAt,url,comments
 ```
