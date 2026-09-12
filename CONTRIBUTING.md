@@ -29,8 +29,9 @@ Some ways to contribute to the development of Warp include:
 
 Before opening a pull request, search [GitHub Issues](https://github.com/NVIDIA/warp/issues)
 and [Discussions](https://github.com/NVIDIA/warp/discussions) for earlier reports
-and relevant context. Report bugs in an issue first. For other substantial
-changes, start an issue or discussion.
+and relevant context. Report bugs and propose other substantial changes in an
+issue before opening a pull request. Use Discussions for questions and early
+exploration.
 
 Explain what the change would address and why it matters. If it affects an
 application, library, research project, or production system that uses Warp,
