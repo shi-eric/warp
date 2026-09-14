@@ -7,11 +7,12 @@ This variant uses the simulation and checkpointing scheme from
 :class:`warp.Tape` records one ``JacobiSolver`` callback instead of every
 Jacobi iteration.
 
-Each Jacobi iteration has the form
+Each damped iteration has the form
 
     p_next = J p + c div
 
-Here, ``J`` is the four-neighbor average and ``c = -DH**2 / 4``. Since
+Here, ``J = (1 - omega) I + omega A``, ``A`` is the four-neighbor average,
+and ``c = -omega * DH**2 / 4``, where ``omega = JACOBI_RELAXATION``. Since
 ``J`` and ``c`` are fixed, each reverse iteration can be computed from its
 incoming pressure gradient. Intermediate pressure and divergence values never
 enter the calculation.
@@ -57,6 +58,8 @@ except ImportError:
 
 N_GRID = wp.constant(512)
 DH = 1.0 / N_GRID  # Grid spacing
+# Damping makes the periodic checkerboard mode decay.
+JACOBI_RELAXATION = wp.constant(2.0 / 3.0)
 FLUID_COLUMN_WIDTH = N_GRID / 10.0
 
 
@@ -148,29 +151,20 @@ def advect(
 
 @wp.kernel
 def divergence(wx: wp.array2d[float], wy: wp.array2d[float], div: wp.array2d[float]):
-    """Compute centered-difference divergence."""
+    """Compute backward-difference divergence, paired with the forward pressure gradient."""
 
     i, j = wp.tid()
 
-    div[i, j] = (
-        0.5
-        * (
-            wx[cyclic_index(i + 1), j]
-            - wx[cyclic_index(i - 1), j]
-            + wy[i, cyclic_index(j + 1)]
-            - wy[i, cyclic_index(j - 1)]
-        )
-        / DH
-    )
+    div[i, j] = (wx[i, j] - wx[cyclic_index(i - 1), j] + wy[i, j] - wy[i, cyclic_index(j - 1)]) / DH
 
 
 @wp.kernel(enable_backward=False)
 def jacobi_iter(div: wp.array2d[float], p0: wp.array2d[float], p1: wp.array2d[float]):
-    """Calculate one Jacobi iteration for the pressure Poisson equation."""
+    """Calculate a single damped Jacobi iteration for the pressure Poisson equation."""
 
     i, j = wp.tid()
 
-    p1[i, j] = 0.25 * (
+    p1[i, j] = (1.0 - JACOBI_RELAXATION) * p0[i, j] + 0.25 * JACOBI_RELAXATION * (
         -DH * DH * div[i, j]
         + p0[cyclic_index(i - 1), j]
         + p0[cyclic_index(i + 1), j]
@@ -181,21 +175,22 @@ def jacobi_iter(div: wp.array2d[float], p0: wp.array2d[float], p1: wp.array2d[fl
 
 @wp.kernel(enable_backward=False)
 def jacobi_iter_adjoint(div_grad: wp.array2d[float], p1_grad: wp.array2d[float], p0_grad: wp.array2d[float]):
-    """Apply the adjoint of one Jacobi iteration.
+    """Apply the adjoint of one damped Jacobi iteration.
 
     Because ``div`` enters the forward iteration pointwise with coefficient
-    ``-0.25 * DH**2``, its adjoint adds that coefficient times ``p1_grad`` to
-    ``div_grad``.
+    ``-0.25 * JACOBI_RELAXATION * DH**2``, its adjoint adds that coefficient
+    times ``p1_grad`` to ``div_grad``.
 
-    Each ``p0`` cell affects ``p1`` at its four neighbors. Periodic boundaries
-    make these neighbor relationships symmetric, so the chain rule applies the
-    same four-neighbor average to ``p1_grad`` to compute ``p0_grad``. Each
-    thread gathers its four contributions without atomic operations.
+    Each ``p0`` cell affects ``p1`` at the same cell and at its four neighbors.
+    Periodic boundaries make these neighbor relationships symmetric, so the
+    chain rule applies the same weighted stencil to ``p1_grad`` to compute
+    ``p0_grad``. Each thread gathers its five contributions without atomic
+    operations.
     """
     i, j = wp.tid()
 
-    div_grad[i, j] += -0.25 * DH * DH * p1_grad[i, j]
-    p0_grad[i, j] = 0.25 * (
+    div_grad[i, j] += -0.25 * JACOBI_RELAXATION * DH * DH * p1_grad[i, j]
+    p0_grad[i, j] = (1.0 - JACOBI_RELAXATION) * p1_grad[i, j] + 0.25 * JACOBI_RELAXATION * (
         p1_grad[cyclic_index(i - 1), j]
         + p1_grad[cyclic_index(i + 1), j]
         + p1_grad[i, cyclic_index(j - 1)]
@@ -302,12 +297,12 @@ def update_velocities(
     vx: wp.array2d[float],
     vy: wp.array2d[float],
 ):
-    """Subtract the centered pressure gradient from the velocity."""
+    """Subtract the forward pressure gradient, paired with backward divergence."""
 
     i, j = wp.tid()
 
-    vx[i, j] = wx[i, j] - 0.5 * (p[cyclic_index(i + 1), j] - p[cyclic_index(i - 1), j]) / DH
-    vy[i, j] = wy[i, j] - 0.5 * (p[i, cyclic_index(j + 1)] - p[i, cyclic_index(j - 1)]) / DH
+    vx[i, j] = wx[i, j] - (p[cyclic_index(i + 1), j] - p[i, j]) / DH
+    vy[i, j] = wy[i, j] - (p[i, cyclic_index(j + 1)] - p[i, j]) / DH
 
 
 @wp.kernel
@@ -592,7 +587,7 @@ if __name__ == "__main__":
         "--pressure-iterations",
         type=int,
         default=50,
-        help="Fixed number of Jacobi iterations per pressure solve.",
+        help="Fixed number of damped Jacobi iterations per pressure solve.",
     )
     parser.add_argument(
         "--segment-size",

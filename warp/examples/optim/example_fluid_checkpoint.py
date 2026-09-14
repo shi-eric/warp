@@ -12,6 +12,11 @@ checkpointing scheme, but adds a custom backward pass for the pressure solve.
 By avoiding storage of the intermediate Jacobi states, it can use
 substantially less memory than checkpointing alone.
 
+Projection uses paired backward/forward differences so its remaining
+divergence equals the pressure-solve residual. These derivatives are
+first-order on the collocated grid; a fixed Jacobi budget does not guarantee
+convergence.
+
 Usage:
     python example_fluid_checkpoint.py --headless
 
@@ -46,6 +51,8 @@ except ImportError:
 
 N_GRID = wp.constant(512)
 DH = 1.0 / N_GRID  # Grid spacing
+# Damping makes the periodic checkerboard mode decay.
+JACOBI_RELAXATION = wp.constant(2.0 / 3.0)
 FLUID_COLUMN_WIDTH = N_GRID / 10.0
 
 
@@ -136,29 +143,20 @@ def advect(
 
 @wp.kernel
 def divergence(wx: wp.array2d[float], wy: wp.array2d[float], div: wp.array2d[float]):
-    """Compute centered-difference divergence."""
+    """Compute backward-difference divergence, paired with the forward pressure gradient."""
 
     i, j = wp.tid()
 
-    div[i, j] = (
-        0.5
-        * (
-            wx[cyclic_index(i + 1), j]
-            - wx[cyclic_index(i - 1), j]
-            + wy[i, cyclic_index(j + 1)]
-            - wy[i, cyclic_index(j - 1)]
-        )
-        / DH
-    )
+    div[i, j] = (wx[i, j] - wx[cyclic_index(i - 1), j] + wy[i, j] - wy[i, cyclic_index(j - 1)]) / DH
 
 
 @wp.kernel
 def jacobi_iter(div: wp.array2d[float], p0: wp.array2d[float], p1: wp.array2d[float]):
-    """Calculate one Jacobi iteration for the pressure Poisson equation."""
+    """Calculate a single damped Jacobi iteration for the pressure Poisson equation."""
 
     i, j = wp.tid()
 
-    p1[i, j] = 0.25 * (
+    p1[i, j] = (1.0 - JACOBI_RELAXATION) * p0[i, j] + 0.25 * JACOBI_RELAXATION * (
         -DH * DH * div[i, j]
         + p0[cyclic_index(i - 1), j]
         + p0[cyclic_index(i + 1), j]
@@ -175,12 +173,12 @@ def update_velocities(
     vx: wp.array2d[float],
     vy: wp.array2d[float],
 ):
-    """Subtract the centered pressure gradient from the velocity."""
+    """Subtract the forward pressure gradient, paired with backward divergence."""
 
     i, j = wp.tid()
 
-    vx[i, j] = wx[i, j] - 0.5 * (p[cyclic_index(i + 1), j] - p[cyclic_index(i - 1), j]) / DH
-    vy[i, j] = wy[i, j] - 0.5 * (p[i, cyclic_index(j + 1)] - p[i, cyclic_index(j - 1)]) / DH
+    vx[i, j] = wx[i, j] - (p[cyclic_index(i + 1), j] - p[i, j]) / DH
+    vy[i, j] = wy[i, j] - (p[i, cyclic_index(j + 1)] - p[i, j]) / DH
 
 
 @wp.kernel
@@ -469,7 +467,7 @@ if __name__ == "__main__":
         "--pressure-iterations",
         type=int,
         default=50,
-        help="Fixed number of Jacobi iterations per pressure solve.",
+        help="Fixed number of damped Jacobi iterations per pressure solve.",
     )
     parser.add_argument(
         "--segment-size",
