@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import enum
+import operator
 
 import numpy as np
 
@@ -95,6 +96,8 @@ def graph_coloring_balance(
     node_colors: wp.array,
     color_count: int,
     target_max_min_ratio: float,
+    *,
+    max_iterations: int | None = None,
 ) -> float:
     """Balance the sizes of color groups in a graph coloring.
 
@@ -113,12 +116,16 @@ def graph_coloring_balance(
         color_count: The number of colors in the current coloring (as returned by
             :func:`graph_coloring_assign`).
         target_max_min_ratio: The target ratio between the largest and smallest color
-            group sizes. The algorithm will stop when this ratio is achieved or when
-            no further improvements are possible.
+            group sizes. The algorithm will stop when this ratio is achieved, when no
+            further improvements are possible, or when ``max_iterations`` is reached.
+        max_iterations: The non-negative maximum number of node recolorings to perform.
+            If ``None``, the number of graph nodes is used. Values must fit in a
+            signed 32-bit integer.
 
     Returns:
         The actual max/min ratio achieved after balancing. This may be higher than
-        the target if the graph structure prevents further balancing.
+        the target if the graph structure prevents further balancing or the iteration
+        limit is reached.
 
     Example:
 
@@ -153,11 +160,27 @@ def graph_coloring_balance(
 
     node_count = node_colors.shape[0]
 
-    max_min_ratio = runtime.core.wp_balance_coloring(
+    if max_iterations is None:
+        max_iterations = node_count
+    elif isinstance(max_iterations, (bool, np.bool_)):
+        raise TypeError(f"max_iterations must be an integer or None, got {type(max_iterations).__name__}")
+    else:
+        try:
+            max_iterations = operator.index(max_iterations)
+        except TypeError:
+            raise TypeError(f"max_iterations must be an integer or None, got {type(max_iterations).__name__}") from None
+
+        if max_iterations < 0:
+            raise ValueError(f"max_iterations must be non-negative, got {max_iterations}")
+        if max_iterations > np.iinfo(np.int32).max:
+            raise ValueError(f"max_iterations must not exceed {np.iinfo(np.int32).max}, got {max_iterations}")
+
+    max_min_ratio = runtime.core.wp_balance_coloring_with_max_iterations(
         node_count,
         edges.__ctype__(),
         color_count,
         target_max_min_ratio,
+        max_iterations,
         node_colors.__ctype__(),
     )
 

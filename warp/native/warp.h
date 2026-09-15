@@ -946,6 +946,14 @@ WP_API int wp_graph_coloring(int num_nodes, wp::array_t<int> edges, int algorith
 WP_API float wp_balance_coloring(
     int num_nodes, wp::array_t<int> edges, int num_colors, float target_max_min_ratio, wp::array_t<int> node_colors
 );
+WP_API float wp_balance_coloring_with_max_iterations(
+    int num_nodes,
+    wp::array_t<int> edges,
+    int num_colors,
+    float target_max_min_ratio,
+    int max_iterations,
+    wp::array_t<int> node_colors
+);
 
 // allocation tracking
 WP_API void wp_alloc_tracker_enable(int enable);

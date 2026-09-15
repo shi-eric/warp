@@ -8211,6 +8211,16 @@ class Runtime:
             ]
             self.core.wp_balance_coloring.restype = ctypes.c_float
 
+            self.core.wp_balance_coloring_with_max_iterations.argtypes = [
+                ctypes.c_int,
+                warp._src.types.array_t,
+                ctypes.c_int,
+                ctypes.c_float,
+                ctypes.c_int,
+                warp._src.types.array_t,
+            ]
+            self.core.wp_balance_coloring_with_max_iterations.restype = ctypes.c_float
+
             self.core.wp_init.argtypes = [ctypes.c_char_p]
             self.core.wp_init.restype = ctypes.c_int
 
