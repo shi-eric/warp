@@ -148,18 +148,13 @@ Warp supports Python versions 3.10 onwards. Note that :ref:`some optional depend
 
 `NumPy <https://numpy.org>`_ must be installed.
 
-The following optional dependencies are required to support certain features:
+Some examples require additional Python packages. To install the common example dependencies up front, use:
 
-* `usd-core <https://pypi.org/project/usd-core>`_: Required for some Warp examples, tests, and the :class:`warp.render.UsdRenderer`.
-  On Linux aarch64 systems where ``usd-core`` wheels are not available,
-  `usd-exchange <https://pypi.org/project/usd-exchange>`_ can be installed as a drop-in replacement.
-  The ``[examples]`` extra handles this automatically.
-* `pyglet <https://pyglet.org/>`_: Required for some Warp examples and the :class:`warp.render.OpenGLRenderer`.
-* `JAX <https://docs.jax.dev/en/latest/installation.html>`_: Required for JAX interoperability (see :ref:`jax-interop`).
-* `PyTorch <https://pytorch.org/get-started/locally/>`_: Required for PyTorch interoperability (see :ref:`pytorch-interop`).
-* `Paddle <https://github.com/PaddlePaddle/Paddle>`_: Required for Paddle interoperability (see :ref:`paddle-interop`).
-* `NVTX for Python <https://github.com/NVIDIA/NVTX#python>`_: Required to use :class:`wp.ScopedTimer(use_nvtx=True) <warp.ScopedTimer>`.
-* `psutil <https://psutil.io/>`_: Required to query CPU memory info (`get_device("cpu").total_memory`, `get_device("cpu").free_memory`).
+.. code-block:: sh
+
+    $ pip install "warp-lang[examples]"
+
+Check the example source for any additional requirements.
 
 .. _building-from-source:
 
