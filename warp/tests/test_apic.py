@@ -8,9 +8,12 @@ import gc
 import os
 import struct
 import tempfile
+import threading
 import unittest
 import weakref
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
+from pathlib import Path
 from unittest import mock
 
 import numpy as np
@@ -81,7 +84,15 @@ def bvh_query_aabb_hits(bvh: wp.uint64, lower: wp.vec3, upper: wp.vec3, hits: wp
 
 
 class TestApic(unittest.TestCase):
-    pass
+    def test_capture_save_target_arch_validation_cpu(self):
+        with wp.ScopedCapture(device="cpu", apic=True, force_module_load=False) as capture:
+            pass
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "cpu_target")
+            with self.assertRaisesRegex(ValueError, "target_arch.*CUDA"):
+                wp.capture_save(capture.graph, path, target_arch=80)
+            self.assertFalse(os.path.exists(path + ".wrp"))
 
 
 # Must match APICSectionType in warp/native/apic_types.h.
@@ -95,6 +106,7 @@ _APIC_FORMAT_VERSION = 16
 
 # APICFileHeader prefix: magic, version, flags, section count, section-table offset.
 _APIC_FILE_HEADER_PREFIX = struct.Struct("<4sIIIQ")
+_APIC_FILE_TARGET_ARCH_OFFSET = 28
 
 # APICSectionEntry: type, flags, offset, stored size, uncompressed size.
 _APIC_SECTION_ENTRY = struct.Struct("<IIQQQ")
@@ -114,6 +126,12 @@ _APIC_OP_MEMTILE = 10
 _APIC_UINT32 = struct.Struct("<I")  # One serialized uint32_t.
 _APIC_OP_KERNEL_LAUNCH = 1
 _APIC_LAUNCH_SHAPE_OFFSET = _APIC_OP_HEADER.size
+
+
+def _read_apic_target_arch(path):
+    with open(path, "rb") as wrp_file:
+        wrp_file.seek(_APIC_FILE_TARGET_ARCH_OFFSET)
+        return _APIC_UINT32.unpack(wrp_file.read(_APIC_UINT32.size))[0]
 
 
 def _find_apic_section(wrp_data, requested_section_type):
@@ -582,6 +600,214 @@ def test_save_load_round_trip(test, device):
         result = wp.zeros(n, dtype=float, device=device)
         loaded.get_param("b", result)
         np.testing.assert_allclose(result.numpy(), expected)
+
+
+def test_capture_save_target_arch_round_trip(test, device):
+    n = 32
+    values = wp.zeros(n, dtype=float, device=device)
+    wp.load_module(device=device)
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        wp.launch(write_value_kernel, dim=n, inputs=[values, 9.0], device=device)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "target_round_trip")
+        wp.capture_save(
+            capture.graph,
+            path,
+            outputs={"values": values},
+            target_arch=device.arch,
+        )
+
+        module_files = os.listdir(path + "_modules")
+        test.assertTrue(module_files)
+        test.assertTrue(all(name.endswith(".cubin") for name in module_files))
+        test.assertEqual(_read_apic_target_arch(path + ".wrp"), device.arch)
+
+        loaded = wp.capture_load(path, device=device)
+        wp.capture_launch(loaded)
+        wp.synchronize_device(device)
+        result = wp.zeros(n, dtype=float, device=device)
+        loaded.get_param("values", result)
+        np.testing.assert_allclose(result.numpy(), np.full(n, 9.0, dtype=np.float32))
+
+
+def test_capture_save_target_arch_multiple_module_variants(test, device):
+    @wp.func
+    def write_block_dim(out: wp.array[int]):
+        tile = wp.tile(1)
+        out[0] = wp.static(len(tile))
+
+    @wp.kernel(module="unique", enable_backward=False)
+    def block_dim_kernel(out: wp.array[int]):
+        write_block_dim(out)
+
+    out_64_a = wp.zeros(1, dtype=int, device=device)
+    out_64_b = wp.zeros(1, dtype=int, device=device)
+    out_256 = wp.zeros(1, dtype=int, device=device)
+    wp.load_module(module=block_dim_kernel.module, device=device, block_dim=64)
+    wp.load_module(module=block_dim_kernel.module, device=device, block_dim=256)
+
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        wp.launch(block_dim_kernel, dim=1, outputs=[out_64_a], block_dim=64, device=device)
+        wp.launch(block_dim_kernel, dim=1, outputs=[out_64_b], block_dim=64, device=device)
+        wp.launch(block_dim_kernel, dim=1, outputs=[out_256], block_dim=256, device=device)
+
+    module_infos = capture.graph._apic_capture.collected_modules
+    test.assertEqual(len(module_infos), 2)
+    test.assertEqual({info["module_exec"].block_dim for info in module_infos.values()}, {64, 256})
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "multiple_variants")
+        wp.capture_save(
+            capture.graph,
+            path,
+            outputs={"out_64_a": out_64_a, "out_64_b": out_64_b, "out_256": out_256},
+            target_arch=device.arch,
+        )
+        module_files = os.listdir(path + "_modules")
+        test.assertEqual(len(module_files), 2)
+        test.assertTrue(all(name.endswith(".cubin") for name in module_files))
+
+        loaded = wp.capture_load(path, device=device)
+        wp.capture_launch(loaded)
+        wp.synchronize_device(device)
+        for name, expected in (("out_64_a", 64), ("out_64_b", 64), ("out_256", 256)):
+            result = wp.zeros(1, dtype=int, device=device)
+            loaded.get_param(name, result)
+            np.testing.assert_array_equal(result.numpy(), [expected])
+
+
+def test_capture_save_target_arch_other_arch(test, device):
+    other_arch = next(
+        (arch for arch in wp.get_cuda_supported_archs() if arch != device.arch),
+        None,
+    )
+    if other_arch is None:
+        test.skipTest("CUDA toolkit exposes only the capture device architecture")
+
+    @wp.kernel(module="unique", enable_backward=False)
+    def set_value(out: wp.array[int]):
+        out[0] = 7
+
+    out = wp.zeros(1, dtype=int, device=device)
+    wp.load_module(module=set_value.module, device=device)
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        wp.launch(set_value, dim=1, outputs=[out], device=device)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "other_arch")
+        wp.capture_save(capture.graph, path, target_arch=other_arch)
+
+        test.assertEqual(_read_apic_target_arch(path + ".wrp"), other_arch)
+        module_files = os.listdir(path + "_modules")
+        test.assertTrue(module_files)
+        test.assertTrue(all(f".sm{other_arch}" in name for name in module_files))
+        test.assertTrue(all(name.endswith(".cubin") for name in module_files))
+        test.assertFalse(any(name.endswith((".ptx", ".cu", ".meta", ".o")) for name in module_files))
+
+
+def test_capture_save_repeated_target_arch(test, device):
+    other_arch = next(
+        (arch for arch in wp.get_cuda_supported_archs() if arch != device.arch),
+        None,
+    )
+    if other_arch is None:
+        test.skipTest("CUDA toolkit exposes only the capture device architecture")
+
+    @wp.kernel(
+        module="unique",
+        enable_backward=False,
+        name=f"repeated_target_{device.alias.replace(':', '_')}",
+    )
+    def set_value(out: wp.array[int]):
+        out[0] = 7
+
+    out = wp.zeros(1, dtype=int, device=device)
+    wp.load_module(module=set_value.module, device=device)
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        wp.launch(set_value, dim=1, outputs=[out], device=device)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        other_path = os.path.join(tmpdir, "other_arch")
+        wp.capture_save(capture.graph, other_path, outputs={"out": out}, target_arch=other_arch)
+        test.assertEqual(_read_apic_target_arch(other_path + ".wrp"), other_arch)
+
+        current_path = os.path.join(tmpdir, "current_arch")
+        wp.capture_save(capture.graph, current_path, outputs={"out": out}, target_arch=device.arch)
+        test.assertEqual(_read_apic_target_arch(current_path + ".wrp"), device.arch)
+        test.assertTrue(all(f".sm{device.arch}" in name for name in os.listdir(current_path + "_modules")))
+
+        loaded = wp.capture_load(current_path, device=device)
+        wp.capture_launch(loaded)
+        result = wp.zeros(1, dtype=int, device=device)
+        loaded.get_param("out", result)
+        np.testing.assert_array_equal(result.numpy(), [7])
+
+        default_path = os.path.join(tmpdir, "default")
+        wp.capture_save(capture.graph, default_path, outputs={"out": out})
+        default_loaded = wp.capture_load(default_path, device=device)
+        wp.capture_launch(default_loaded)
+        default_result = wp.zeros(1, dtype=int, device=device)
+        default_loaded.get_param("out", default_result)
+        np.testing.assert_array_equal(default_result.numpy(), [7])
+
+        del loaded, default_loaded
+
+    del capture
+    gc.collect()
+
+
+def test_capture_save_target_arch_rejects_changed_module(test, device):
+    @wp.kernel(
+        module="unique",
+        enable_backward=False,
+        name=f"original_kernel_{device.alias.replace(':', '_')}",
+    )
+    def original_kernel(out: wp.array[int]):
+        out[0] = 1
+
+    out = wp.zeros(1, dtype=int, device=device)
+    wp.load_module(module=original_kernel.module, device=device)
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        wp.launch(original_kernel, dim=1, outputs=[out], device=device)
+
+    @wp.kernel(module=original_kernel.module, enable_backward=False)
+    def added_after_capture(out: wp.array[int]):
+        out[0] = 2
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "changed_module")
+        with test.assertRaisesRegex(
+            RuntimeError,
+            r"captured module hash [0-9a-f]{8} has changed definitions.*current [0-9a-f]{8}.*recapture",
+        ):
+            wp.capture_save(capture.graph, path, target_arch=device.arch)
+        test.assertFalse(os.path.exists(path + ".wrp"))
+
+
+def test_capture_save_target_arch_validation(test, device):
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        pass
+
+    supported_archs = wp.get_cuda_supported_archs()
+    unsupported_arch = 12345
+    while unsupported_arch in supported_archs:
+        unsupported_arch += 1
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for target_arch, error, message in (
+            (True, TypeError, "target_arch.*positive integer"),
+            (0, ValueError, "target_arch.*positive integer"),
+            (-1, ValueError, "target_arch.*positive integer"),
+            (80.0, TypeError, "target_arch.*positive integer"),
+            ("80", TypeError, "target_arch.*positive integer"),
+            (unsupported_arch, ValueError, "target_arch.*supported"),
+        ):
+            with test.subTest(target_arch=target_arch):
+                path = os.path.join(tmpdir, f"invalid_target_{target_arch}")
+                with test.assertRaisesRegex(error, message):
+                    wp.capture_save(capture.graph, path, target_arch=target_arch)
+                test.assertFalse(os.path.exists(path + ".wrp"))
 
 
 def test_save_load_block_dependent_static_kernel(test, device):
@@ -1965,6 +2191,37 @@ def test_save_load_capture_if_cuda(test, device):
         np.testing.assert_allclose(result.numpy(), np.full(n, 11.0, dtype=np.float32))
 
 
+def test_save_load_capture_if_target_arch_cuda(test, device):
+    if not wp.is_conditional_graph_supported():
+        test.skipTest("CUDA conditional graph nodes require Toolkit and driver 12.4+")
+
+    n = 4
+    out = wp.zeros(n, dtype=float, device=device)
+    cond = wp.array([1], dtype=wp.int32, device=device)
+
+    def on_true():
+        wp.launch(write_value_kernel, dim=n, inputs=[out, 11.0], device=device)
+
+    def on_false():
+        wp.launch(write_value_kernel, dim=n, inputs=[out, 22.0], device=device)
+
+    wp.load_module(device=device)
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        wp.capture_if(cond, on_true=on_true, on_false=on_false)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "capture_if_target_arch")
+        wp.capture_save(capture.graph, path, outputs={"out": out}, target_arch=device.arch)
+
+        loaded = wp.capture_load(path, device=device)
+        wp.capture_launch(loaded)
+        wp.synchronize_device(device)
+
+        result = wp.zeros(n, dtype=float, device=device)
+        loaded.get_param("out", result)
+        np.testing.assert_allclose(result.numpy(), np.full(n, 11.0, dtype=np.float32))
+
+
 def test_capture_while_cpu(test, device):
     """Repeat the CPU replay body with ``APIC_OP_WHILE`` while its condition is nonzero."""
     if device.is_cuda and not wp.is_conditional_graph_supported():
@@ -2067,6 +2324,446 @@ def test_save_load_distinct_modules_same_key(test, device):
 
     test.assertEqual(int(loaded_a.numpy()[0]), 111)
     test.assertEqual(int(loaded_b.numpy()[0]), 222)
+
+
+def test_capture_retains_module_compile_state(test, device):
+    @wp.kernel(module="unique")
+    def retained_kernel(out: wp.array[int]):
+        out[0] = 1
+
+    block_dim = 64
+    out = wp.zeros(1, dtype=int, device=device)
+    wp.load_module(module=retained_kernel.module, device=device, block_dim=block_dim)
+
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        wp.launch(retained_kernel, dim=1, outputs=[out], block_dim=block_dim, device=device)
+
+    apic_capture = capture.graph._apic_capture
+    module_info = next(iter(apic_capture.collected_modules.values()))
+    kernel_info = next(iter(apic_capture.collected_kernels.values()))
+    module_exec = module_info["module_exec"]
+
+    test.assertIs(module_info["module"], retained_kernel.module)
+    test.assertIs(kernel_info["kernel"], retained_kernel)
+    test.assertEqual(module_exec.compile_options["block_dim"], block_dim)
+    test.assertIsNot(
+        module_exec.compile_options,
+        retained_kernel.module.resolved_options[block_dim],
+    )
+
+    # Invalidating module hashers must not discard an APIC graph's codegen
+    # roots, but deleting the graph must release them even if its executable
+    # is still cached in the live module.
+    hasher_ref = weakref.ref(retained_kernel.module.hashers[block_dim])
+    retained_kernel.module.mark_modified()
+    gc.collect()
+    test.assertIsNotNone(hasher_ref())
+    wp.capture_launch(capture.graph)
+    np.testing.assert_array_equal(out.numpy(), [1])
+
+    del capture, apic_capture, module_info, kernel_info
+    gc.collect()
+    test.assertIsNone(hasher_ref())
+    test.assertIs(retained_kernel.module.execs[(device.context, block_dim)], module_exec)
+
+
+def _get_only_captured_module_info(graph):
+    module_infos = list(graph._apic_capture.collected_modules.values())
+    if len(module_infos) != 1:
+        raise ValueError(f"Expected one captured module, got {len(module_infos)}")
+    return module_infos[0]
+
+
+def _check_legacy_capture_without_compile_state(test, graph, out, device):
+    out.fill_(-1)
+    wp.capture_launch(graph)
+    np.testing.assert_array_equal(out.numpy(), [7])
+    out.fill_(-1)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        if device.is_cuda:
+            target_path = os.path.join(tmpdir, "unavailable_target")
+            with test.assertRaisesRegex(RuntimeError, "compilation state.*unavailable.*reload.*recapture"):
+                wp.capture_save(graph, target_path, target_arch=device.arch)
+            test.assertFalse(os.path.exists(target_path + ".wrp"))
+
+        path = os.path.join(tmpdir, "legacy")
+        wp.capture_save(graph, path, outputs={"out": out})
+        loaded = wp.capture_load(path, device=device)
+        wp.capture_launch(loaded)
+        result = wp.zeros(1, dtype=int, device=device)
+        loaded.get_param("out", result)
+        np.testing.assert_array_equal(result.numpy(), [7])
+        del loaded
+
+
+def test_capture_strip_hash_without_compile_state(test, device):
+    @wp.kernel(
+        module="unique",
+        module_options={"strip_hash": True},
+        enable_backward=False,
+        name=f"strip_hash_capture_{device.alias.replace(':', '_')}",
+    )
+    def captured_kernel(out: wp.array[int]):
+        out[0] = 7
+
+    out = wp.zeros(1, dtype=int, device=device)
+    wp.launch(captured_kernel, dim=1, outputs=[out], device=device)
+    wp.set_module_options({"max_unroll": 17}, module=captured_kernel.module)
+    wp.launch(captured_kernel, dim=1, outputs=[out], device=device)
+    np.testing.assert_array_equal(out.numpy(), [7])
+
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        wp.launch(captured_kernel, dim=1, outputs=[out], device=device)
+
+    _check_legacy_capture_without_compile_state(test, capture.graph, out, device)
+    del capture
+    gc.collect()
+
+
+def test_capture_record_cmd_without_compile_state(test, device):
+    @wp.kernel(
+        module="unique",
+        enable_backward=False,
+        name=f"record_cmd_capture_{device.alias.replace(':', '_')}",
+    )
+    def captured_kernel(out: wp.array[int]):
+        out[0] = 7
+
+    out = wp.zeros(1, dtype=int, device=device)
+    cmd = wp.launch(captured_kernel, dim=1, outputs=[out], device=device, record_cmd=True)
+    captured_kernel.module.mark_modified()
+
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        cmd.launch()
+
+    _check_legacy_capture_without_compile_state(test, capture.graph, out, device)
+    del capture
+    gc.collect()
+
+    if device.is_cuda:
+        # A later ordinary launch can recover equivalent compilation state for
+        # a module first observed through an older reusable command.
+        captured_kernel.module.mark_modified()
+        with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as recovered_capture:
+            cmd.launch()
+            wp.launch(captured_kernel, dim=1, outputs=[out], device=device)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "recovered_target")
+            out.fill_(-1)
+            wp.capture_save(recovered_capture.graph, path, outputs={"out": out}, target_arch=device.arch)
+            loaded = wp.capture_load(path, device=device)
+            wp.capture_launch(loaded)
+            result = wp.zeros(1, dtype=int, device=device)
+            loaded.get_param("out", result)
+            np.testing.assert_array_equal(result.numpy(), [7])
+            del loaded, recovered_capture
+        gc.collect()
+
+
+def test_compile_captured_module_variant(test, device):
+    @wp.kernel(module="unique", enable_backward=False)
+    def captured_kernel(out: wp.array[int]):
+        out[0] = 7
+
+    out = wp.zeros(1, dtype=int, device=device)
+    wp.load_module(module=captured_kernel.module, device=device, block_dim=64)
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        wp.launch(captured_kernel, dim=1, outputs=[out], block_dim=64, device=device)
+
+    info = _get_only_captured_module_info(capture.graph)
+    module_exec = info["module_exec"]
+    wp.set_module_options({"max_unroll": 17}, module=captured_kernel.module)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        module_id = f"wp_{captured_kernel.module.name}_{module_exec.module_hash.hex()}"
+        output_name = f"{module_id}.sm{device.arch}.cubin"
+        compile_args = {
+            "output_dir": tmpdir,
+            "output_name": output_name,
+            "output_arch": device.arch,
+            "use_ptx": False,
+            "options": module_exec.compile_options,
+            "captured_state": module_exec._get_capture_state(),
+            "module_identifier": module_id,
+        }
+        test.assertTrue(captured_kernel.module._compile(**compile_args))
+        output_path = Path(tmpdir) / output_name
+        test.assertTrue(output_path.is_file())
+        test.assertEqual(output_path.read_bytes()[:4], b"\x7fELF")
+        test.assertTrue((Path(tmpdir) / f"{module_id}.meta").is_file())
+        test.assertFalse(captured_kernel.module._compile(**compile_args))
+        test.assertNotIn("output_arch", module_exec.compile_options)
+
+
+def test_compile_captured_module_rejects_changed_dependency(test, device):
+    @wp.kernel(module="unique", enable_backward=False)
+    def dependency_kernel(out: wp.array[int]):
+        out[0] = 1
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        dependency = Path(tmpdir) / "captured_dependency.h"
+        dependency.write_text("#define CAPTURED_VALUE 1\n", encoding="utf-8")
+        wp.set_module_options(
+            {"extra_build_options": wp.ModuleBuildOptions(extra_build_dependencies=[dependency.resolve()])},
+            module=dependency_kernel.module,
+        )
+        out = wp.zeros(1, dtype=int, device=device)
+        wp.load_module(module=dependency_kernel.module, device=device)
+        with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+            wp.launch(dependency_kernel, dim=1, outputs=[out], device=device)
+
+        info = _get_only_captured_module_info(capture.graph)
+        module_exec = info["module_exec"]
+        dependency.write_text("#define CAPTURED_VALUE 2\n", encoding="utf-8")
+        output_name = f"{module_exec.module_hash.hex()}.cubin"
+
+        for state in ("changed", "unavailable"):
+            with test.subTest(dependency=state):
+                if state == "unavailable":
+                    dependency.unlink()
+                with test.assertRaisesRegex(RuntimeError, rf"build dependency.*{state}.*recapture"):
+                    dependency_kernel.module._compile(
+                        output_dir=tmpdir,
+                        output_name=output_name,
+                        output_arch=device.arch,
+                        use_ptx=False,
+                        options=module_exec.compile_options,
+                        captured_state=module_exec._get_capture_state(),
+                        module_identifier=module_exec.module_hash.hex(),
+                    )
+                test.assertFalse((Path(tmpdir) / output_name).exists())
+
+
+def test_compile_captured_module_revalidates_cache(test, device):
+    @wp.kernel(module="unique", enable_backward=False)
+    def captured_kernel(out: wp.array[int]):
+        out[0] = 7
+
+    out = wp.zeros(1, dtype=int, device=device)
+    wp.load_module(module=captured_kernel.module, device=device)
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        wp.launch(captured_kernel, dim=1, outputs=[out], device=device)
+
+    module_exec = _get_only_captured_module_info(capture.graph)["module_exec"]
+    with tempfile.TemporaryDirectory() as tmpdir:
+        compile_args = {
+            "output_dir": tmpdir,
+            "output_name": f"{module_exec.module_hash.hex()}.cubin",
+            "output_arch": device.arch,
+            "use_ptx": False,
+            "options": module_exec.compile_options,
+            "captured_state": module_exec._get_capture_state(),
+            "module_identifier": module_exec.module_hash.hex(),
+        }
+        captured_kernel.module._compile(**compile_args)
+        wp.set_module_options({"strip_hash": True}, module=captured_kernel.module)
+        with test.assertRaisesRegex(RuntimeError, r"strip_hash changed.*recapture"):
+            captured_kernel.module._compile(**compile_args)
+        wp.set_module_options({"strip_hash": False}, module=captured_kernel.module)
+
+        enable_backward = captured_kernel.options["enable_backward"]
+        captured_kernel.options["enable_backward"] = not enable_backward
+        try:
+            with test.assertRaisesRegex(RuntimeError, r"captured module hash.*changed definitions.*recapture"):
+                captured_kernel.module._compile(**compile_args)
+        finally:
+            captured_kernel.options["enable_backward"] = enable_backward
+
+
+def test_compile_captured_module_preserves_live_launch(test, device):
+    @wp.kernel(module="unique", enable_backward=False)
+    def captured_kernel(out: wp.array[int]):
+        out[wp.tid()] = 7
+
+    wp.set_module_options({"default_grid_stride": True}, module=captured_kernel.module)
+    out = wp.zeros(512, dtype=int, device=device)
+    wp.load_module(module=captured_kernel.module, device=device)
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        wp.launch(captured_kernel, dim=512, outputs=[out], device=device)
+    module_exec = _get_only_captured_module_info(capture.graph)["module_exec"]
+
+    wp.set_module_options({"default_grid_stride": False}, module=captured_kernel.module)
+    wp.load_module(module=captured_kernel.module, device=device)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for state in ("fresh", "cached", "invalid"):
+            with test.subTest(state=state):
+                compile_args = {
+                    "output_dir": tmpdir,
+                    "output_name": "captured.cubin",
+                    "output_arch": device.arch,
+                    "use_ptx": False,
+                    "options": module_exec.compile_options,
+                    "captured_state": module_exec._get_capture_state(),
+                    "module_identifier": module_exec.module_hash.hex(),
+                }
+                if state == "invalid":
+                    enable_backward = captured_kernel.options["enable_backward"]
+                    captured_kernel.options["enable_backward"] = not enable_backward
+                    try:
+                        with test.assertRaisesRegex(RuntimeError, "changed definitions"):
+                            captured_kernel.module._compile(**compile_args)
+                    finally:
+                        captured_kernel.options["enable_backward"] = enable_backward
+                else:
+                    captured_kernel.module._compile(**compile_args)
+                with test.assertRaisesRegex(RuntimeError, "without a grid-stride loop"):
+                    wp.launch(captured_kernel, dim=512, outputs=[out], max_blocks=1, device=device)
+                wp.launch(captured_kernel, dim=512, outputs=[out], device=device)
+                np.testing.assert_array_equal(out.numpy(), np.full(512, 7))
+
+
+def test_compile_captured_module_cluster_options(test, device):
+    @wp.kernel(module="unique", enable_backward=False)
+    def captured_kernel(out: wp.array[int]):
+        out[wp.tid()] = 7
+
+    out = wp.zeros(512, dtype=int, device=device)
+    for captured_cluster_dim, live_cluster_dim in ((1, 2), (2, 1)):
+        with test.subTest(captured_cluster_dim=captured_cluster_dim):
+            wp.set_module_options({"cluster_dim": captured_cluster_dim}, module=captured_kernel.module)
+            wp.load_module(module=captured_kernel.module, device=device)
+            with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+                wp.launch(captured_kernel, dim=512, outputs=[out], device=device)
+            module_exec = _get_only_captured_module_info(capture.graph)["module_exec"]
+            wp.set_module_options({"cluster_dim": live_cluster_dim}, module=captured_kernel.module)
+            with tempfile.TemporaryDirectory() as tmpdir:
+                compile_args = {
+                    "output_dir": tmpdir,
+                    "output_name": "captured.cubin",
+                    "output_arch": device.arch,
+                    "use_ptx": False,
+                    "options": module_exec.compile_options,
+                    "captured_state": module_exec._get_capture_state(),
+                    "module_identifier": module_exec.module_hash.hex(),
+                }
+                if captured_cluster_dim == 1:
+                    test.assertTrue(captured_kernel.module._compile(**compile_args))
+                else:
+                    with test.assertRaisesRegex(RuntimeError, "cluster_dim=2.*cluster attribute is dropped"):
+                        captured_kernel.module._compile(**compile_args)
+                    test.assertFalse((Path(tmpdir) / "captured.cubin").exists())
+
+
+def test_compile_captured_module_default_filename(test, device):
+    @wp.kernel(module="unique", enable_backward=False)
+    def captured_kernel(out: wp.array[int]):
+        out[0] = 7
+
+    out = wp.zeros(1, dtype=int, device=device)
+    for strip_hash in (False, True):
+        with test.subTest(strip_hash=strip_hash):
+            wp.set_module_options({"strip_hash": strip_hash, "max_unroll": 8}, module=captured_kernel.module)
+            wp.load_module(module=captured_kernel.module, device=device)
+            with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+                wp.launch(captured_kernel, dim=1, outputs=[out], device=device)
+            module_exec = _get_only_captured_module_info(capture.graph)["module_exec"]
+            wp.set_module_options({"max_unroll": 17}, module=captured_kernel.module)
+            with tempfile.TemporaryDirectory() as tmpdir:
+                module_id = f"wp_{captured_kernel.module.name}_{module_exec.module_hash.hex()}"
+                captured_kernel.module._compile(
+                    output_dir=tmpdir,
+                    output_arch=device.arch,
+                    use_ptx=False,
+                    options=module_exec.compile_options,
+                    captured_state=module_exec._get_capture_state(),
+                    module_identifier=module_id,
+                )
+                test.assertEqual(
+                    [path.name for path in Path(tmpdir).glob("*.cubin")],
+                    [f"{module_id}.sm{device.arch}.cubin"],
+                )
+                test.assertTrue((Path(tmpdir) / f"{module_id}.cu").is_file())
+                test.assertTrue((Path(tmpdir) / f"{module_id}.meta").is_file())
+    wp.set_module_options({"strip_hash": False}, module=captured_kernel.module)
+
+
+def test_compile_captured_module_concurrent_grid_stride(test, device):
+    @wp.kernel(module="unique", enable_backward=False)
+    def captured_kernel(out: wp.array[int]):
+        out[wp.tid()] = 7
+
+    out = wp.zeros(512, dtype=int, device=device)
+    wp.set_module_options({"default_grid_stride": True}, module=captured_kernel.module)
+    wp.load_module(module=captured_kernel.module, device=device)
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        wp.launch(captured_kernel, dim=512, outputs=[out], device=device)
+    module_exec = _get_only_captured_module_info(capture.graph)["module_exec"]
+    wp.set_module_options({"default_grid_stride": False}, module=captured_kernel.module)
+    live_exec = captured_kernel.module.load(device)
+
+    owner_thread = threading.get_ident()
+    contender_at_lock = threading.Event()
+    original_lock = wp_context._codegen_lock
+    original_hash = wp_context.Kernel.hash
+    original_codegen = wp_context.ModuleBuilder.codegen
+    contender = None
+
+    # Schedule the contender at either lock boundary: the preflight's outer
+    # lock, or the hash setter reached after an unprotected grid-stride write.
+    # Both wrappers delegate to the real lock/setter; no timing assertion is used.
+    class ObservedLock:
+        def __enter__(self):
+            if threading.get_ident() != owner_thread:
+                contender_at_lock.set()
+            return original_lock.__enter__()
+
+        def __exit__(self, *args):
+            return original_lock.__exit__(*args)
+
+    def observed_hash_setter(kernel, value):
+        if threading.get_ident() != owner_thread:
+            contender_at_lock.set()
+        original_hash.fset(kernel, value)
+
+    with tempfile.TemporaryDirectory() as tmpdir, ThreadPoolExecutor(max_workers=1) as pool:
+        module_id = module_exec.module_hash.hex()
+        compile_args = {
+            "output_dir": tmpdir,
+            "output_name": "captured.cubin",
+            "output_arch": device.arch,
+            "use_ptx": False,
+            "options": module_exec.compile_options,
+            "captured_state": module_exec._get_capture_state(),
+            "module_identifier": module_id,
+        }
+
+        def interleaved_codegen(builder, target):
+            nonlocal contender
+            if threading.get_ident() == owner_thread:
+                contender = pool.submit(
+                    captured_kernel.module._compile,
+                    **(
+                        compile_args
+                        | {
+                            "output_dir": os.path.join(tmpdir, "contender"),
+                            "options": live_exec.compile_options,
+                            "captured_state": live_exec._get_capture_state(),
+                            "module_identifier": live_exec.module_hash.hex(),
+                        }
+                    ),
+                )
+                test.assertTrue(contender_at_lock.wait(timeout=10), "Contending compile did not reach its lock")
+            return original_codegen(builder, target)
+
+        with (
+            mock.patch.object(wp_context, "_codegen_lock", ObservedLock()),
+            mock.patch.object(wp_context.Kernel, "hash", property(original_hash.fget, observed_hash_setter)),
+            mock.patch.object(wp_context.ModuleBuilder, "codegen", interleaved_codegen),
+        ):
+            captured_kernel.module._compile(**compile_args)
+            contender.result(timeout=10)
+
+        wp.set_module_options({"default_grid_stride": True}, module=captured_kernel.module)
+        captured_kernel.module.load(
+            device,
+            binary_path=os.path.join(tmpdir, "captured.cubin"),
+            output_arch=device.arch,
+            meta_path=os.path.join(tmpdir, f"{module_id}.meta"),
+        )
+        wp.launch(captured_kernel, dim=512, outputs=[out], max_blocks=1, device=device)
+        np.testing.assert_array_equal(out.numpy(), np.full(512, 7))
 
 
 def test_capture_with_array_reductions(test, device):
@@ -3710,6 +4407,42 @@ add_function_test(
 )
 add_function_test(
     TestApic,
+    "test_capture_save_target_arch_round_trip",
+    test_capture_save_target_arch_round_trip,
+    devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda],
+)
+add_function_test(
+    TestApic,
+    "test_capture_save_target_arch_multiple_module_variants",
+    test_capture_save_target_arch_multiple_module_variants,
+    devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda],
+)
+add_function_test(
+    TestApic,
+    "test_capture_save_target_arch_other_arch",
+    test_capture_save_target_arch_other_arch,
+    devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda],
+)
+add_function_test(
+    TestApic,
+    "test_capture_save_repeated_target_arch",
+    test_capture_save_repeated_target_arch,
+    devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda],
+)
+add_function_test(
+    TestApic,
+    "test_capture_save_target_arch_rejects_changed_module",
+    test_capture_save_target_arch_rejects_changed_module,
+    devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda],
+)
+add_function_test(
+    TestApic,
+    "test_capture_save_target_arch_validation",
+    test_capture_save_target_arch_validation,
+    devices=get_cuda_test_devices(),
+)
+add_function_test(
+    TestApic,
     "test_save_load_multiple_kernels",
     test_save_load_multiple_kernels,
     devices=devices_with_cuda_graph_module_load,
@@ -4098,6 +4831,12 @@ add_function_test(
 )
 add_function_test(
     TestApic,
+    "test_save_load_capture_if_target_arch_cuda",
+    test_save_load_capture_if_target_arch_cuda,
+    devices=[d for d in devices if d.is_cuda],
+)
+add_function_test(
+    TestApic,
     "test_capture_distinct_modules_same_key",
     test_capture_distinct_modules_same_key,
     devices=devices,
@@ -4107,6 +4846,67 @@ add_function_test(
     "test_save_load_distinct_modules_same_key",
     test_save_load_distinct_modules_same_key,
     devices=devices_with_cuda_graph_module_load,
+)
+add_function_test(
+    TestApic,
+    "test_capture_retains_module_compile_state",
+    test_capture_retains_module_compile_state,
+    devices=devices_with_cuda_graph_module_load,
+    enable_cpu_blocks=True,
+)
+add_function_test(
+    TestApic,
+    "test_capture_strip_hash_without_compile_state",
+    test_capture_strip_hash_without_compile_state,
+    devices=devices_with_cuda_graph_module_load,
+)
+add_function_test(
+    TestApic,
+    "test_capture_record_cmd_without_compile_state",
+    test_capture_record_cmd_without_compile_state,
+    devices=devices_with_cuda_graph_module_load,
+)
+add_function_test(
+    TestApic,
+    "test_compile_captured_module_variant",
+    test_compile_captured_module_variant,
+    devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda],
+)
+add_function_test(
+    TestApic,
+    "test_compile_captured_module_rejects_changed_dependency",
+    test_compile_captured_module_rejects_changed_dependency,
+    devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda],
+)
+add_function_test(
+    TestApic,
+    "test_compile_captured_module_revalidates_cache",
+    test_compile_captured_module_revalidates_cache,
+    devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda],
+)
+add_function_test(
+    TestApic,
+    "test_compile_captured_module_preserves_live_launch",
+    test_compile_captured_module_preserves_live_launch,
+    devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda],
+)
+add_function_test(
+    TestApic,
+    "test_compile_captured_module_cluster_options",
+    test_compile_captured_module_cluster_options,
+    devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda and d.arch < 90],
+)
+add_function_test(
+    TestApic,
+    "test_compile_captured_module_default_filename",
+    test_compile_captured_module_default_filename,
+    devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda],
+)
+add_function_test(
+    TestApic,
+    "test_compile_captured_module_concurrent_grid_stride",
+    test_compile_captured_module_concurrent_grid_stride,
+    devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda and d.arch < 90],
 )
 add_function_test(
     TestApic,

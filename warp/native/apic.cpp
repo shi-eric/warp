@@ -269,14 +269,14 @@ void wp_apic_register_module(
     if (!state || !module_hash)
         return;
     std::string hash_str(module_hash);
-    if (state->modules.find(hash_str) == state->modules.end()) {
-        APICModule mod;
-        mod.module_hash = hash_str;
-        mod.module_name = module_name ? module_name : "";
-        mod.cubin_filename = bf ? bf : "";
-        mod.target_arch = arch;
-        state->modules[hash_str] = mod;
-    }
+    APICModule mod;
+    mod.module_hash = hash_str;
+    mod.module_name = module_name ? module_name : "";
+    mod.cubin_filename = bf ? bf : "";
+    mod.target_arch = arch;
+    // A captured state may be saved repeatedly for different targets. The
+    // latest registration defines the metadata for the next serialization.
+    state->modules[hash_str] = mod;
 }
 
 void wp_apic_register_kernel(

@@ -29,6 +29,7 @@ import types
 import weakref
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager, nullcontext
 from copy import copy as shallowcopy
 from pathlib import Path
 from typing import (
@@ -1106,7 +1107,7 @@ def _normalize_cluster_dim(value) -> int:
     return value
 
 
-def _get_kernel_cluster_dim(kernel) -> int:
+def _get_kernel_cluster_dim(kernel, module_options: dict | None = None) -> int:
     """Return the normalized cluster_dim from merged module/kernel options.
 
     Hot path: most kernels never set cluster_dim, so probe both dicts directly
@@ -1114,11 +1115,14 @@ def _get_kernel_cluster_dim(kernel) -> int:
     decoration time (see ``_normalize_cluster_dim`` in the decorator) and can be
     trusted as-is. Module-level overrides bypass the decorator (e.g.
     ``set_module_options``), so they are validated here on first launch.
+    Compilation can supply resolved ``module_options`` for a captured variant.
     """
     cd = kernel.options.get("cluster_dim")
     if cd is not None:
         return cd
-    cd = kernel.module.options.get("cluster_dim", 1)
+    if module_options is None:
+        module_options = kernel.module.options
+    cd = module_options.get("cluster_dim", 1)
     return cd if cd == 1 else _normalize_cluster_dim(cd)
 
 
@@ -2797,6 +2801,24 @@ def _resolve_build_dependencies(dependencies: Sequence[str | os.PathLike[str]]) 
     return tuple(resolved)
 
 
+def _validate_captured_build_dependencies(module_name: str, dependencies) -> None:
+    """Check captured dependency contents without replacing their frozen hashes."""
+    for path, captured_digest in dependencies:
+        try:
+            with open(path, "rb") as dependency_file:
+                current_digest = hashlib.sha256(dependency_file.read()).hexdigest()
+        except OSError as e:
+            raise RuntimeError(
+                f"Cannot export captured module {module_name!r}: build dependency "
+                f"{path!r} is unavailable; recapture the graph after restoring it."
+            ) from e
+        if current_digest != captured_digest:
+            raise RuntimeError(
+                f"Cannot export captured module {module_name!r}: build dependency "
+                f"{path!r} changed after capture; recapture the graph."
+            )
+
+
 def _uses_march_native(flags: str) -> bool:
     """Check whether ``-march=native`` appears as a distinct flag."""
     return "-march=native" in flags.split()
@@ -2933,7 +2955,11 @@ def _verify_library_version(lib, library_name: str, version_symbol: str, expecte
 # using get_hash().  In addition, the ModuleHasher takes care of filtering out
 # duplicate kernels for codegen (see get_unique_kernels()).
 class ModuleHasher:
-    def __init__(self, kernels, options):
+    def __init__(self, kernels, options, *, include_deferred_statics: bool = True):
+        # Deferred values belong to a particular codegen invocation. Excluding
+        # them gives APIC a definition digest independent of which block-size
+        # variant most recently built a shared helper.
+        self.include_deferred_statics = include_deferred_statics
         # Hashing another block-size variant can change the shared Kernel.hash
         # (e.g. when deferred statics depend on tile lengths). Preserve this
         # variant's hashes so executables can resolve their own compiled symbols.
@@ -3161,8 +3187,11 @@ class ModuleHasher:
             ch.update(bytes(name, "utf-8"))
             ch.update(self.get_constant_bytes(value))
 
-        # hash wp.static() expressions (declaration-time + deferred codegen-time)
-        for k, v in itertools.chain(adj.resolved_static_expressions.items(), adj.deferred_static_expressions):
+        # Declaration-time statics are always part of definition identity.
+        static_expressions = adj.resolved_static_expressions.items()
+        if self.include_deferred_statics:
+            static_expressions = itertools.chain(static_expressions, adj.deferred_static_expressions)
+        for k, v in static_expressions:
             ch.update(bytes(k, "utf-8"))
             if isinstance(v, Function):
                 if v not in self.functions_in_progress:
@@ -3653,6 +3682,15 @@ class ModuleBuilder:
         return source
 
 
+class _CapturedModuleState(NamedTuple):
+    """Codegen roots and frozen identity owned by an APIC graph."""
+
+    module_hash: bytes
+    compile_options: dict
+    definition_hash: bytes
+    hasher: ModuleHasher
+
+
 # ModuleExec holds the compiled executable code for a specific device.
 # It can be used to obtain kernel hooks on that device and serves
 # as a reference-counted wrapper of the loaded module.
@@ -3675,8 +3713,11 @@ class ModuleExec:
         meta,
         block_dim: int,
         compile_arch: int | None = None,
+        compile_options: Mapping[str, Any] | None = None,
         det_launch_meta_map: dict[str, DeterministicMeta] | None = None,
         kernel_hashes: Mapping[Kernel, bytes] | None = None,
+        hasher: ModuleHasher | None = None,
+        definition_hash: bytes | None = None,
     ):
         self.handle = handle
         self.module_hash = module_hash
@@ -3693,6 +3734,19 @@ class ModuleExec:
         # CPU). Cluster classification must use this frozen target, not the current
         # global config, which can change after the module is loaded.
         self.compile_arch = compile_arch
+        self.compile_options = dict(compile_options) if compile_options is not None else None
+        # Ordinary executables must not keep superseded kernels alive through
+        # ModuleHasher.unique_kernels. APIC takes strong ownership only when a
+        # launch is recorded, via _get_capture_state().
+        self._hasher_ref = weakref.ref(hasher) if hasher is not None else None
+        self.definition_hash = definition_hash
+
+    def _get_capture_state(self) -> _CapturedModuleState | None:
+        """Retain this executable's codegen roots when they are still available."""
+        hasher = self._hasher_ref() if self._hasher_ref is not None else None
+        if hasher is None:
+            return None
+        return _CapturedModuleState(self.module_hash, dict(self.compile_options), self.definition_hash, hasher)
 
     # release the loaded module
     def __del__(self):
@@ -4409,6 +4463,7 @@ class Module:
         arch_suffix: str = "",
         use_ptx: bool | None = None,
         block_dim: int | None = None,
+        module_identifier: str | None = None,
     ) -> str:
         """Get the filename to use for the compiled module binary.
 
@@ -4421,8 +4476,10 @@ class Module:
         the host CPU's ISA features (e.g. ``wp___main___0340cd1.cpu1a2b3c4d.o``).
         This distinguishes incompatible CPU objects without affecting the shared
         module directory and its CUDA caches.
+
+        ``module_identifier`` overrides live naming for captured variants.
         """
-        module_name_short = self.get_module_identifier(block_dim=block_dim)
+        module_name_short = module_identifier or self.get_module_identifier(block_dim=block_dim)
 
         if device and device.is_cpu:
             resolved_flags = _resolve_cpu_compiler_flags(
@@ -4486,8 +4543,37 @@ class Module:
         elif device:
             self.failed_builds[(device.context, active_block_dim)] = error
 
+    @contextmanager
+    def _preserve_kernel_state(self):
+        """Restore symbol and launch state; caller must hold ``_codegen_lock``."""
+        kernel_states = {
+            kernel: (kernel.hash, getattr(kernel, "grid_stride", None))
+            for root in self._get_live_kernels()
+            for kernel in (root.overloads.values() if root.is_generic else (root,))
+        }
+        try:
+            yield
+        finally:
+            for kernel, (kernel_hash, grid_stride) in kernel_states.items():
+                kernel.hash = kernel_hash
+                if grid_stride is None:
+                    kernel.__dict__.pop("grid_stride", None)
+                else:
+                    kernel.grid_stride = grid_stride
+
     @synchronized(_codegen_lock)
-    def _run_codegen(self, options: dict, is_cpu: bool) -> tuple[str, str, dict, list, list]:
+    def _get_definition_hash(self, options: dict) -> bytes:
+        """Hash live definitions without evaluating or retaining deferred statics."""
+        with self._preserve_kernel_state():
+            return ModuleHasher(self._get_live_kernels(), options, include_deferred_statics=False).get_hash()
+
+    @synchronized(_codegen_lock)
+    def _run_codegen(
+        self,
+        options: dict,
+        is_cpu: bool,
+        captured_state: _CapturedModuleState | None = None,
+    ) -> tuple[str, str, dict, list, list]:
         """Run the Python-side codegen window.
 
         Returns ``(source, ext, meta, ltoirs, fatbins)``: the emitted C++/CUDA
@@ -4500,20 +4586,47 @@ class Module:
         Clang invocation runs after this returns, so N modules still compile
         in parallel -- only the cheap codegen window serialises.
         """
-        builder = ModuleBuilder(
-            self,
-            options,
-            hasher=self.hashers.get(options["block_dim"], None),
-        )
-        if is_cpu:
-            ext = "cpp"
-            source = builder.codegen("cpu")
-        else:
-            ext = "cu"
-            source = builder.codegen("cuda")
-        meta = builder.build_meta()
-        ltoirs, fatbins = builder.get_link_inputs()
-        return source, ext, meta, ltoirs, fatbins
+        with self._preserve_kernel_state() if captured_state is not None else nullcontext():
+            if captured_state is None:
+                hasher = self.hashers.get(options["block_dim"])
+            else:
+                hash_options = {key: value for key, value in options.items() if key != "output_arch"}
+                if self.options["strip_hash"] != hash_options["strip_hash"]:
+                    raise RuntimeError(
+                        f"Cannot export captured module {self.name!r}: strip_hash changed "
+                        "after capture; restore it or recapture the graph."
+                    )
+                _validate_captured_build_dependencies(
+                    self.name,
+                    hash_options.get("extra_build_dependencies", ()),
+                )
+                current_hash = self._get_definition_hash(hash_options)
+                if current_hash != captured_state.definition_hash:
+                    raise RuntimeError(
+                        f"Cannot export captured module {self.name!r}: captured module "
+                        f"hash {captured_state.module_hash.hex()[:8]} has changed definitions "
+                        f"(captured {captured_state.definition_hash.hex()[:8]}, "
+                        f"current {current_hash.hex()[:8]}); "
+                        "recapture the graph."
+                    )
+                hasher = captured_state.hasher
+                # ModuleBuilder restores the captured hashes, while grid-stride
+                # defaults must also follow the captured compilation options.
+                for kernel in hasher.get_unique_kernels():
+                    kernel.grid_stride = warp._src.codegen.resolve_grid_stride(
+                        kernel.options, hash_options.get("default_grid_stride", False)
+                    )
+
+            builder = ModuleBuilder(self, options, hasher=hasher)
+            if is_cpu:
+                ext = "cpp"
+                source = builder.codegen("cpu")
+            else:
+                ext = "cu"
+                source = builder.codegen("cuda")
+            meta = builder.build_meta()
+            ltoirs, fatbins = builder.get_link_inputs()
+            return source, ext, meta, ltoirs, fatbins
 
     def _compile(
         self,
@@ -4523,6 +4636,8 @@ class Module:
         output_arch: int | None = None,
         use_ptx: bool | None = None,
         options: dict | None = None,
+        captured_state: _CapturedModuleState | None = None,
+        module_identifier: str | None = None,
     ) -> bool:
         """Compile this module for a specific device.
 
@@ -4538,6 +4653,11 @@ class Module:
                 auto-determined from the device and architecture.
             options: Resolved module options dict. If ``None``, resolved from
                 current config.
+            captured_state: Captured compilation state whose symbol identities
+                and definition digest must be preserved. Live definitions are
+                checked before compilation or accepting a cached binary.
+            module_identifier: Stable identifier for source, metadata, and
+                default binary names.
 
         Returns:
             ``True`` if compilation was performed, ``False`` if a cached
@@ -4564,18 +4684,22 @@ class Module:
                 # redefined with the same key can leave an older *live* clustered
                 # kernel that still generates WP_CLUSTER_DIMS yet would be missed
                 # by self.kernels.values().
-                cluster_hasher = ModuleHasher(self._get_live_kernels(), options)
-                for kernel in cluster_hasher.get_unique_kernels():
-                    cluster_dim = _get_kernel_cluster_dim(kernel)
-                    if cluster_dim > 1:
-                        target = "this ahead-of-time compile" if device is None else device.alias
-                        raise RuntimeError(
-                            f"Kernel {kernel.key!r} requests cluster_dim={cluster_dim}, but {target} is "
-                            f"compiling for sm_{output_arch}, where thread block clusters are unavailable and "
-                            f"the cluster attribute is dropped. Compile for sm_90 or higher (raise "
-                            f"warp.config.ptx_target_arch to >= 90, target a cluster-capable arch, or build "
-                            f"CUBIN for a cluster-capable device) to use clustering, or remove cluster_dim."
-                        )
+                with (
+                    _codegen_lock,
+                    self._preserve_kernel_state() if captured_state is not None else nullcontext(),
+                ):
+                    cluster_hasher = ModuleHasher(self._get_live_kernels(), options)
+                    for kernel in cluster_hasher.get_unique_kernels():
+                        cluster_dim = _get_kernel_cluster_dim(kernel, options)
+                        if cluster_dim > 1:
+                            target = "this ahead-of-time compile" if device is None else device.alias
+                            raise RuntimeError(
+                                f"Kernel {kernel.key!r} requests cluster_dim={cluster_dim}, but {target} is "
+                                f"compiling for sm_{output_arch}, where thread block clusters are unavailable and "
+                                f"the cluster attribute is dropped. Compile for sm_90 or higher (raise "
+                                f"warp.config.ptx_target_arch to >= 90, target a cluster-capable arch, or build "
+                                f"CUBIN for a cluster-capable device) to use clustering, or remove cluster_dim."
+                            )
 
         # ``options`` is the resolved dict for the active block_dim variant
         # (set by ``Module.load`` via ``resolve_options(block_dim=...)``). Use
@@ -4598,11 +4722,17 @@ class Module:
 
         if output_name is None:
             output_name = self._get_compile_output_name(
-                device, output_arch, arch_suffix, use_ptx, block_dim=active_block_dim
+                device,
+                output_arch,
+                arch_suffix,
+                use_ptx,
+                block_dim=active_block_dim,
+                module_identifier=module_identifier,
             )
 
         # Resolve output directory early so we can check for cached binaries
-        module_name_short = self.get_module_identifier(block_dim=active_block_dim)
+        module_name_short = module_identifier or self.get_module_identifier(block_dim=active_block_dim)
+        meta_name = f"{module_name_short}.meta"
 
         if output_dir is None:
             output_dir = os.path.join(warp.config.kernel_cache_dir, f"{module_name_short}")
@@ -4611,12 +4741,13 @@ class Module:
 
         # Skip compilation if the binary and metadata are already cached
         # (forced rebuild when verifying autograd array access)
-        if (
+        binary_cached = (
             warp.config.cache_kernels
             and not options.get("verify_autograd_array_access", False)
             and os.path.exists(os.path.join(output_dir, output_name))
-            and os.path.exists(os.path.join(output_dir, self._get_meta_name(block_dim=active_block_dim)))
-        ):
+            and os.path.exists(os.path.join(output_dir, meta_name))
+        )
+        if binary_cached and captured_state is None:
             return False
 
         # Python codegen window -- runs serialised under ``_codegen_lock``
@@ -4630,12 +4761,20 @@ class Module:
         # failing kernel and continuing would leave the module claiming
         # kernels its binary does not contain.
         try:
-            source_str, source_code_ext, meta, ltoir_values, fatbin_values = self._run_codegen(options, is_cpu)
+            source_str, source_code_ext, meta, ltoir_values, fatbin_values = self._run_codegen(
+                options,
+                is_cpu,
+                captured_state=captured_state,
+            )
         except Exception as e:
             self._record_build_failure(device, is_cpu, active_block_dim, e)
             raise
 
-        meta_path = os.path.join(output_dir, self._get_meta_name(block_dim=active_block_dim))
+        # Captured variants must reproduce their identity even on a cache hit.
+        if binary_cached:
+            return False
+
+        meta_path = os.path.join(output_dir, meta_name)
 
         build_dir = os.path.normpath(output_dir) + f"_p{os.getpid()}_t{threading.get_ident()}"
 
@@ -4744,7 +4883,7 @@ class Module:
         # ------------------------------------------------------------
         # write meta data (already produced by ``_run_codegen`` above)
 
-        output_meta_path = os.path.join(build_dir, self._get_meta_name(block_dim=active_block_dim))
+        output_meta_path = os.path.join(build_dir, meta_name)
 
         self._write_meta(output_meta_path, meta)
 
@@ -4758,7 +4897,7 @@ class Module:
             # final object binary path
             binary_path = os.path.join(output_dir, output_name)
 
-            if not os.path.exists(binary_path) or self.options["strip_hash"]:
+            if not os.path.exists(binary_path) or options["strip_hash"]:
                 # copy our output file to the destination module
                 # this is necessary in case different processes
                 # have different GPU architectures / devices
@@ -4768,7 +4907,7 @@ class Module:
                     # another process likely updated the module dir first
                     pass
 
-            if not os.path.exists(meta_path) or self.options["strip_hash"]:
+            if not os.path.exists(meta_path) or options["strip_hash"]:
                 # copy our output file to the destination module
                 # this is necessary in case different processes
                 # have different GPU architectures / devices
@@ -4780,7 +4919,7 @@ class Module:
 
             try:
                 final_source_path = os.path.join(output_dir, os.path.basename(source_code_path))
-                if not os.path.exists(final_source_path) or self.options["strip_hash"]:
+                if not os.path.exists(final_source_path) or options["strip_hash"]:
                     os.replace(source_code_path, final_source_path)
             except OSError:
                 # another process likely updated the module dir first
@@ -4816,6 +4955,10 @@ class Module:
         if exec is not None:
             current_hash = self.get_module_hash(active_block_dim)
             if self.options["strip_hash"] or (exec.module_hash == current_hash):
+                if exec.module_hash == current_hash:
+                    # Equivalent registration may have invalidated the previous
+                    # hasher while this executable remained usable.
+                    exec._hasher_ref = weakref.ref(self.hashers[active_block_dim])
                 return exec
             # else: Hash mismatch means module changed, need to recompile
             if warp.config.log_level <= warp.LOG_DEBUG:
@@ -4887,6 +5030,8 @@ class Module:
                 module_load_timer.extra_msg = " (compiled)" if compiled else " (cached)"
 
             det_launch_meta_map = self._snapshot_deterministic_metadata(active_block_dim, options, rebuild=not compiled)
+            # This does not run codegen, so cached loads preserve late binding.
+            definition_hash = self._get_definition_hash(options)
 
             # -----------------------------------------------------------
             # Load CPU or CUDA binary
@@ -4916,9 +5061,12 @@ class Module:
                     device,
                     meta,
                     active_block_dim,
-                    output_arch,
-                    det_launch_meta_map,
-                    self.hashers[active_block_dim].kernel_hashes,
+                    compile_arch=output_arch,
+                    compile_options=options,
+                    det_launch_meta_map=det_launch_meta_map,
+                    kernel_hashes=self.hashers[active_block_dim].kernel_hashes,
+                    hasher=self.hashers[active_block_dim],
+                    definition_hash=definition_hash,
                 )
                 self.execs[(None, active_block_dim)] = module_exec
 
@@ -4931,9 +5079,12 @@ class Module:
                         device,
                         meta,
                         active_block_dim,
-                        output_arch,
-                        det_launch_meta_map,
-                        self.hashers[active_block_dim].kernel_hashes,
+                        compile_arch=output_arch,
+                        compile_options=options,
+                        det_launch_meta_map=det_launch_meta_map,
+                        kernel_hashes=self.hashers[active_block_dim].kernel_hashes,
+                        hasher=self.hashers[active_block_dim],
+                        definition_hash=definition_hash,
                     )
                     self.execs[(device.context, active_block_dim)] = module_exec
                 else:
@@ -13851,7 +14002,14 @@ def capture_launch(graph: Graph, stream: Stream | None = None):
         raise RuntimeError(f"Graph launch error: {runtime.get_error_string()}")
 
 
-def capture_save(graph: Graph, path: str, inputs: dict | None = None, outputs: dict | None = None):
+def capture_save(
+    graph: Graph,
+    path: str,
+    inputs: dict | None = None,
+    outputs: dict | None = None,
+    *,
+    target_arch: int | None = None,
+):
     """Serialize a captured graph to a ``.wrp`` file for later replay.
 
     The graph must have been captured with ``apic=True``. For graphs containing
@@ -13864,6 +14022,15 @@ def capture_save(graph: Graph, path: str, inputs: dict | None = None, outputs: d
           ``<stem>.wrp`` and ``<stem>_modules/``.
         inputs: Named input arrays (e.g., ``{"positions": pos_array}``).
         outputs: Named output arrays (e.g., ``{"results": result_array}``).
+        target_arch: Producer-side CUDA architecture for CUBIN compilation
+          (e.g., ``80`` for sm_80). Must be a positive integer supported by the
+          bundled CUDA compiler and requires a CUDA APIC graph. When omitted,
+          exports the binaries compiled for the capture device.
+
+    Targeted export recompiles the captured variants from live definitions and
+    checks their source, options, and referenced Warp values. Changes to
+    non-Warp Python objects used only by deferred ``wp.static()`` expressions
+    are not detected; recapture after changing those objects.
 
     If the same array appears in both ``inputs`` and ``outputs`` (e.g., for
     in-place operations), both names will refer to the same memory region.
@@ -13884,6 +14051,73 @@ def capture_save(graph: Graph, path: str, inputs: dict | None = None, outputs: d
     if apic_capture is None or graph.apic_state is None:
         raise RuntimeError("Graph has no APIC recording state.")
 
+    if target_arch is not None:
+        if isinstance(target_arch, bool) or not isinstance(target_arch, int):
+            raise TypeError("target_arch must be a positive integer.")
+        if target_arch <= 0:
+            raise ValueError("target_arch must be a positive integer.")
+        if not graph.device.is_cuda:
+            raise ValueError("target_arch requires a CUDA APIC graph.")
+        init()
+        if target_arch not in runtime.nvrtc_supported_archs:
+            raise ValueError(
+                f"target_arch {target_arch} is not supported by the bundled CUDA compiler. "
+                f"Supported architectures: {sorted(runtime.nvrtc_supported_archs)}."
+            )
+
+    save_target_arch = (
+        target_arch
+        if target_arch is not None
+        else (graph.device.get_cuda_compile_arch() if graph.device.is_cuda else 0)
+    )
+
+    # Prepare every binary before mutating the native save state.
+    module_manifest = {}
+    for module_hash, info in apic_capture.collected_modules.items():
+        if target_arch is None:
+            binary_path = info.get("binary_path")
+            binary_filename = info["binary_filename"]
+        else:
+            module = info["module"]
+            captured_state = info["compile_state"]
+            if captured_state is None:
+                raise RuntimeError(
+                    f"Cannot export captured module {module.name!r} for target_arch={target_arch}: "
+                    f"historical compilation state for hash {module_hash[:8]} is unavailable; "
+                    "reload the module and recapture the graph."
+                )
+            captured_hash = captured_state.module_hash
+            module_identifier = f"wp_{module.name}_{captured_hash.hex()}"
+            arch_suffix = _validate_cuda_arch_suffix(
+                target_arch,
+                device_arch=target_arch,
+                toolkit_version=runtime.toolkit_version,
+            )
+            binary_filename = f"{module_identifier}.sm{target_arch}{arch_suffix}.cubin"
+            cache_dir = os.path.join(warp.config.kernel_cache_dir, "apic", module_identifier)
+            module._compile(
+                output_dir=cache_dir,
+                output_name=binary_filename,
+                output_arch=target_arch,
+                use_ptx=False,
+                options=captured_state.compile_options,
+                captured_state=captured_state,
+                module_identifier=module_identifier,
+            )
+            binary_path = os.path.join(cache_dir, binary_filename)
+
+        if not binary_path or not os.path.exists(binary_path):
+            raise RuntimeError(
+                f"APIC: Could not find compiled binary for module {info['module_name']} "
+                f"at {binary_path}. Ensure modules are compiled before calling capture_save()."
+            )
+        module_manifest[module_hash] = {
+            "module_name": info["module_name"],
+            "binary_path": binary_path,
+            "binary_filename": binary_filename,
+            "arch": save_target_arch,
+        }
+
     state = graph.apic_state
 
     def _enc(s):
@@ -13893,7 +14127,7 @@ def capture_save(graph: Graph, path: str, inputs: dict | None = None, outputs: d
         return s.encode("utf-8")
 
     # Register module metadata with C++
-    for module_hash, info in apic_capture.collected_modules.items():
+    for module_hash, info in module_manifest.items():
         module_name = info["module_name"]
         binary_filename = info["binary_filename"]
 
@@ -13902,7 +14136,7 @@ def capture_save(graph: Graph, path: str, inputs: dict | None = None, outputs: d
             _enc(module_hash),
             _enc(module_name),
             _enc(binary_filename),
-            graph.device.get_cuda_compile_arch() if graph.device.is_cuda else 0,
+            info["arch"],
         )
 
     # Register kernel metadata
@@ -13976,32 +14210,14 @@ def capture_save(graph: Graph, path: str, inputs: dict | None = None, outputs: d
                 ctypes.c_void_p(base_ptr),
             )
 
-    # Export CUBIN files to {path}_modules/
+    # Export compiled module binaries to {path}_modules/.
     wrp_path = path if path.endswith(".wrp") else path + ".wrp"
     base_name = wrp_path[:-4]
     modules_dir = base_name + "_modules"
     os.makedirs(modules_dir, exist_ok=True)
 
-    for info in apic_capture.collected_modules.values():
-        binary_path = info.get("binary_path")
-        binary_filename = info["binary_filename"]
-
-        if binary_path and os.path.exists(binary_path):
-            shutil.copy2(binary_path, os.path.join(modules_dir, binary_filename))
-            # Also copy the .meta file. CUDA modules require .meta at load time
-            # to resolve kernel shared-memory metadata. For CPU (APIC) modules,
-            # _apic_load_cpu_modules resolves kernel names directly from the
-            # C++ graph via wp_apic_get_kernel_forward_name / _backward_name,
-            # so copying .meta for CPU is harmless but unnecessary.
-            meta_filename = os.path.splitext(binary_filename)[0] + ".meta"
-            meta_path = os.path.join(os.path.dirname(binary_path), meta_filename)
-            if os.path.exists(meta_path):
-                shutil.copy2(meta_path, os.path.join(modules_dir, meta_filename))
-        else:
-            raise RuntimeError(
-                f"APIC: Could not find compiled binary for module {info['module_name']} "
-                f"at {binary_path}. Ensure modules are compiled before calling capture_save()."
-            )
+    for info in module_manifest.values():
+        shutil.copy2(info["binary_path"], os.path.join(modules_dir, info["binary_filename"]))
 
     # Register meshes used during capture
     for mesh_id in apic_capture.collected_mesh_ids:
@@ -14009,9 +14225,8 @@ def capture_save(graph: Graph, path: str, inputs: dict | None = None, outputs: d
             raise RuntimeError(f"APIC: failed to register mesh for capture_save. {runtime.get_error_string()}")
 
     # Write .wrp file
-    target_arch = graph.device.get_cuda_compile_arch() if graph.device.is_cuda else 0
     context = graph.device.context if graph.device.is_cuda else None
-    result = runtime.core.wp_apic_state_save(state, wrp_path.encode("utf-8"), target_arch, context)
+    result = runtime.core.wp_apic_state_save(state, wrp_path.encode("utf-8"), save_target_arch, context)
     if not result:
         raise RuntimeError(f"Failed to save APIC graph to {wrp_path}. {runtime.get_error_string()}")
 

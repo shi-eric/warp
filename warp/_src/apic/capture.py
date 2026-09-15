@@ -505,6 +505,10 @@ class APICapture:
 
         module_hash = self._hash_to_str(module_exec.module_hash)
         if module_hash not in self.collected_modules:
+            # Targeted export needs codegen roots, but legacy recording and
+            # binary-copy export remain valid if the weak hasher has expired.
+            # Own available roots for this graph's lifetime.
+            compile_state = module_exec._get_capture_state()
             # Compute the binary path in the kernel cache (same logic as Module.load)
             module = kernel.module
             output_name = module._get_compile_output_name(self.device, block_dim=module_exec.block_dim)
@@ -514,11 +518,16 @@ class APICapture:
 
             self.collected_modules[module_hash] = {
                 "module_hash": module_hash,
-                "module_name": kernel.module.name,
+                "module_name": module.name,
+                "module": module,
                 "module_exec": module_exec,
+                "compile_state": compile_state,
                 "binary_path": binary_path,
                 "binary_filename": output_name,
             }
+        elif self.collected_modules[module_hash]["compile_state"] is None:
+            # A later launch may carry a current hasher for the same binary.
+            self.collected_modules[module_hash]["compile_state"] = module_exec._get_capture_state()
 
         kernel_key = kernel.key
         kernel_id = (module_hash, kernel_key)
@@ -537,6 +546,7 @@ class APICapture:
 
             hooks = module_exec.get_kernel_hooks(kernel)
             self.collected_kernels[kernel_id] = {
+                "kernel": kernel,
                 "kernel_key": kernel_key,
                 "module_hash": module_hash,
                 "forward_name": forward_name,
