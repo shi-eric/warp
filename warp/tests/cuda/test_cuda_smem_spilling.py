@@ -1,13 +1,25 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import tempfile
 import unittest
+from pathlib import Path
+from unittest import mock
 
 import numpy as np
 
 import warp as wp
 import warp._src.codegen as codegen
-from warp._src.context import ModuleBuilder
+import warp._src.cuda_build as cuda_build
+from warp._src.build import materialize_cuda_record
+from warp._src.context import ModuleBuilder, _cuda_native_options
+from warp._src.cuda_compile import (
+    CudaCompileRecord,
+    CudaKernel,
+    CudaNativeOptions,
+    IntExpression,
+    kernel_smem_macro,
+)
 from warp.tests.unittest_utils import add_function_test, assert_np_equal, get_test_devices
 
 
@@ -16,6 +28,22 @@ def kernel_source(kernel, device: str, *, llvm_cuda: bool = False) -> str:
     options["llvm_cuda"] = llvm_cuda
     ModuleBuilder(kernel.module, options)
     return codegen.codegen_kernel(kernel, device=device, options=options)
+
+
+def kernel_materialization(kernel):
+    options = kernel.module.resolve_options(wp.config) | kernel.options
+    builder = ModuleBuilder(kernel.module, options)
+    record = CudaCompileRecord.create(
+        module_hash=kernel.module.hash_module(),
+        block_dim=options["block_dim"],
+        source=builder.codegen("cuda").encode(),
+        source_basename="module.cu",
+        native_options=_cuda_native_options(options, ""),
+        recipes=builder.get_link_recipes(),
+        kernels=builder.build_kernel_descriptors(),
+        dependencies=(),
+    )
+    return materialize_cuda_record(record, 80, [result for _, result in builder.mathdx_entries.values()])
 
 
 @wp.kernel(enable_cuda_smem_spilling=True, launch_bounds=128, enable_backward=False, module="unique")
@@ -31,6 +59,63 @@ def test_cuda_smem_spilling_kernel_runs(test, device):
 
 
 class TestCudaSmemSpilling(unittest.TestCase):
+    def test_aot_export_preserves_materialization_defines(self):
+        """Export source with the same target definitions used for compilation."""
+        forward_name = "test_cuda_kernel_forward"
+        smem_macro = kernel_smem_macro(forward_name)
+        source = f"#if {smem_macro} == 0\n#error shared memory definition is missing\n#endif\n".encode()
+        record = CudaCompileRecord.create(
+            module_hash=bytes(32),
+            block_dim=256,
+            source=source,
+            source_basename="module.cu",
+            native_options=CudaNativeOptions(
+                mode="release",
+                optimization_level=3,
+                verify_fp=False,
+                fast_math=False,
+                fuse_fp=True,
+                lineinfo=False,
+                compile_time_trace=False,
+                llvm_cuda=False,
+                use_precompiled_headers=False,
+                extra_cuda_include_dirs=(),
+                cuda_arch_suffix="",
+            ),
+            recipes=(),
+            kernels=(
+                CudaKernel(
+                    forward_name,
+                    "",
+                    IntExpression.constant(64),
+                    IntExpression.constant(0),
+                ),
+            ),
+            dependencies=(),
+        )
+
+        def write_fake_binary(_source_path, _arch, output_path, **_kwargs):
+            Path(output_path).write_bytes(b"compiled PTX")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with mock.patch.object(cuda_build.build, "build_cuda", side_effect=write_fake_binary):
+                artifact, _ = cuda_build.compile_cuda(
+                    record,
+                    "test_export",
+                    tmpdir,
+                    80,
+                    "",
+                    "ptx",
+                    pch_dir=None,
+                    use_cache=False,
+                )
+
+            binary_path = Path(tmpdir) / "export" / "module.ptx"
+            cuda_build.export_cuda_artifact(artifact, binary_path)
+
+            expected_source = f'#define {smem_macro} 64\n#line 1 "module.cu"\n'.encode() + record.source
+            self.assertEqual((binary_path.parent / record.source_basename).read_bytes(), expected_source)
+
     def test_invalid_enable_cuda_smem_spilling_rejected(self):
         """Reject invalid CUDA shared-memory spilling values."""
         for value in (0, 1, 1.0, "true"):
@@ -95,7 +180,12 @@ class TestCudaSmemSpilling(unittest.TestCase):
         source = kernel_source(shared_kernel, "cuda")
         self.assertGreater(shared_kernel.adj.get_total_required_shared(), 0)
         self.assertGreater(shared_kernel.adj.get_total_required_shared_backward(), 0)
-        self.assertNotIn("WP_ENABLE_SMEM_SPILLING();", source)
+        materialized = kernel_materialization(shared_kernel)
+        for name in (codegen.cuda_kernel_forward_name(shared_kernel), codegen.cuda_kernel_backward_name(shared_kernel)):
+            macro = kernel_smem_macro(name)
+            self.assertIn(f"#if {macro} == 0\n    WP_ENABLE_SMEM_SPILLING();\n#endif", source)
+            self.assertEqual(materialized.defines[macro], materialized.meta[name + "_smem_bytes"])
+            self.assertGreater(materialized.defines[macro], 0)
 
     def test_backward_dynamic_shared_memory_disables_only_backward(self):
         """Disable spilling only for entry points that use dynamic shared memory."""
@@ -129,8 +219,13 @@ class TestCudaSmemSpilling(unittest.TestCase):
 
         self.assertEqual(kernel.adj.get_total_required_shared(), 0)
         self.assertGreater(kernel.adj.get_total_required_shared_backward(), 0)
-        self.assertIn("WP_ENABLE_SMEM_SPILLING();", forward_source)
-        self.assertNotIn("WP_ENABLE_SMEM_SPILLING();", backward_source)
+        materialized = kernel_materialization(kernel)
+        forward_macro = kernel_smem_macro(forward_name)
+        backward_macro = kernel_smem_macro(backward_name)
+        self.assertIn(f"#if {forward_macro} == 0\n    WP_ENABLE_SMEM_SPILLING();\n#endif", forward_source)
+        self.assertIn(f"#if {backward_macro} == 0\n    WP_ENABLE_SMEM_SPILLING();\n#endif", backward_source)
+        self.assertEqual(materialized.defines[forward_macro], 0)
+        self.assertGreater(materialized.defines[backward_macro], 0)
 
     def test_cuda_version_and_debug_guards(self):
         """Guard shared-memory spilling by toolkit version and debug mode."""

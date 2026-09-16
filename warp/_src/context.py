@@ -50,7 +50,10 @@ from warp._src.build_architecture import machine_architecture
 from warp._src.cuda_compile import (
     CompiledKernel,
     CudaCompileRecord,
+    CudaKernel,
     CudaNativeOptions,
+    IntExpression,
+    MathDxRecipe,
 )
 
 if TYPE_CHECKING:
@@ -3227,9 +3230,9 @@ class ModuleHasher:
 class _ModuleCodegenResult(NamedTuple):
     source: str
     metadata: dict[str, int]
-    kernels: tuple[CompiledKernel, ...]
-    ltoirs: tuple[bytes, ...]
-    fatbins: tuple[bytes, ...]
+    recipes: tuple[MathDxRecipe, ...]
+    kernels: tuple[CudaKernel, ...]
+    initial_results: tuple[warp._src.build.MathDxMaterialization, ...]
 
 
 class _ModuleCompileResult(NamedTuple):
@@ -3247,10 +3250,8 @@ class ModuleBuilder:
         self.options = options
         self.module = module
         self.deferred_functions = []
-        self.fatbins = {}  # map from <some identifier> to fatbins, to add at link time
-        self.ltoirs = {}  # map from lto symbol to lto binary
-        self.ltoirs_decl = {}  # map from lto symbol to lto forward declaration
-        self.shared_memory_bytes = {}  # map from lto symbol to shared memory requirements
+        # Successful MathDx recipes and their initial native outputs, keyed by symbol.
+        self.mathdx_entries = {}
 
         if hasher is None:
             hasher = ModuleHasher(module._get_live_kernels(), options)
@@ -3450,14 +3451,14 @@ class ModuleBuilder:
         # insertion order is topological, and kernels are roots
         folded = set()
         for adj in adjs:
-            required = adj.max_required_extra_shared_memory_backward
+            required_expression = adj.max_required_extra_shared_memory_backward_expression
             for callee in adj.called_user_functions:
                 if callee.custom_replay_func is not None:
-                    replay = callee.custom_replay_func.adj.get_total_required_shared()
+                    replay_expression = callee.custom_replay_func.adj.get_total_required_shared_expression()
                 else:
-                    replay = callee.adj.get_total_required_shared()
+                    replay_expression = callee.adj.get_total_required_shared_expression()
                 if callee.custom_grad_func is not None:
-                    reverse = callee.custom_grad_func.adj.get_total_required_shared()
+                    reverse_expression = callee.custom_grad_func.adj.get_total_required_shared_expression()
                 elif callee.adj not in folded:
                     # fail loudly instead of silently under-reserving
                     raise RuntimeError(
@@ -3465,10 +3466,10 @@ class ModuleBuilder:
                         "sized first; the call graph should be acyclic and functions registered callees-first"
                     )
                 else:
-                    reverse = callee.adj.get_total_required_shared_backward()
+                    reverse_expression = callee.adj.get_total_required_shared_backward_expression()
                 # max: the replay frame pops before the reverse frame pushes, so the two never coexist
-                required = max(required, replay, reverse)
-            adj.max_required_extra_shared_memory_backward = required
+                required_expression = IntExpression.maximum(required_expression, replay_expression, reverse_expression)
+            adj.max_required_extra_shared_memory_backward_expression = required_expression
             folded.add(adj)
 
     def build_kernel_descriptors(self):
@@ -3478,21 +3479,25 @@ class ModuleBuilder:
             options = self.options | kernel.options
             backward = options["enable_backward"] and options.get("entry_point_abi", "warp") == "warp"
             kernels.append(
-                CompiledKernel(
+                CudaKernel(
                     warp._src.codegen.cuda_kernel_forward_name(kernel),
                     warp._src.codegen.cuda_kernel_backward_name(kernel) if backward else "",
-                    kernel.adj.get_total_required_shared(),
-                    kernel.adj.get_total_required_shared_backward() if backward else 0,
+                    kernel.adj.get_total_required_shared_expression(),
+                    kernel.adj.get_total_required_shared_backward_expression()
+                    if backward
+                    else IntExpression.constant(0),
                     _get_kernel_cluster_dim(kernel, self.options),
                 )
             )
         return tuple(sorted(kernels, key=lambda kernel: kernel.forward_name))
 
     def build_meta(self):
-        """Return numeric shared-memory metadata for the current compile target."""
+        """Return shared-memory metadata resolved for the initial compile target."""
+        outputs = self.get_initial_recipe_outputs()
         return {
             name + "_smem_bytes": size
-            for kernel in self.build_kernel_descriptors()
+            for descriptor in self.build_kernel_descriptors()
+            for kernel in (descriptor.resolve(outputs),)
             for name, size in (
                 (kernel.forward_name, kernel.forward_smem_bytes),
                 (kernel.backward_name, kernel.backward_smem_bytes),
@@ -3500,12 +3505,11 @@ class ModuleBuilder:
             if name
         }
 
-    def get_link_inputs(self):
-        """Return deterministic snapshots of native link inputs."""
-        return (
-            tuple(self.ltoirs[key] for key in sorted(self.ltoirs)),
-            tuple(self.fatbins[key] for key in sorted(self.fatbins)),
-        )
+    def get_link_recipes(self):
+        return tuple(sorted((recipe for recipe, _ in self.mathdx_entries.values()), key=lambda recipe: recipe.key))
+
+    def get_initial_recipe_outputs(self):
+        return {recipe.key: dict(result.outputs) for recipe, result in self.mathdx_entries.values()}
 
     def _codegen_functions(self, functions, device, forward_only=False, reverse_only=False):
         """Helper to generate code for a list of functions.
@@ -3609,11 +3613,12 @@ class ModuleBuilder:
                     )
 
         # code-gen LTO forward declarations
-        if self.ltoirs_decl:
+        if self.mathdx_entries:
             source += 'extern "C" {\n'
             # IMPORTANT: Sort by symbol so LTO discovery order cannot change the generated source.
-            for symbol in sorted(self.ltoirs_decl):
-                source += self.ltoirs_decl[symbol] + "\n"
+            for symbol in sorted(self.mathdx_entries):
+                recipe, _ = self.mathdx_entries[symbol]
+                source += recipe.declaration + "\n"
             source += "}\n"
 
         # code-gen structs
@@ -3667,8 +3672,11 @@ class ModuleBuilder:
         # These must come after pass 2 because they call adjoint functions
         source += self._codegen_functions(grad_functions, device, forward_only=True)
 
+        recipe_outputs = self.get_initial_recipe_outputs()
         for kernel in self.kernels:
-            source += warp._src.codegen.codegen_kernel(kernel, device=device, options=self.options)
+            source += warp._src.codegen.codegen_kernel(
+                kernel, device=device, options=self.options, recipe_outputs=recipe_outputs
+            )
             source += warp._src.codegen.codegen_module(kernel, device=device, options=self.options)
 
         # Detect whether this module uses bfloat16; if not, define WP_NO_BFLOAT16
@@ -4600,8 +4608,8 @@ class Module:
     ) -> _ModuleCodegenResult:
         """Run the Python-side codegen window.
 
-        Returns emitted source, concrete kernel metadata, and immutable
-        snapshots of any native link inputs.
+        Returns emitted source, concrete and symbolic metadata, and immutable
+        snapshots of the selected MathDx recipes and initial link inputs.
 
         Held under ``_codegen_lock`` so concurrent ``Module._compile`` callers
         cannot interleave ``adj.build`` writes and ``codegen()`` reads on a
@@ -4613,8 +4621,14 @@ class Module:
         builder = ModuleBuilder(self, options, hasher=hasher)
         source = builder.codegen("cpu" if is_cpu else "cuda")
         kernels = builder.build_kernel_descriptors()
-        ltoirs, fatbins = builder.get_link_inputs()
-        return _ModuleCodegenResult(source, builder.build_meta(), kernels, ltoirs, fatbins)
+        meta = builder.build_meta() if is_cpu else {}
+        return _ModuleCodegenResult(
+            source,
+            meta,
+            builder.get_link_recipes(),
+            kernels,
+            tuple(result for _, result in builder.mathdx_entries.values()),
+        )
 
     def _compile(
         self,
@@ -4709,12 +4723,7 @@ class Module:
                     )
                     return _ModuleCompileResult(str(result_path), artifact.meta, False, artifact)
                 except (OSError, ValueError, TypeError, KeyError, RuntimeError):
-                    try:
-                        unsupported = warp._src.cuda_build.read_unsupported_index(index_path)
-                    except (OSError, ValueError, TypeError, KeyError):
-                        unsupported = None
-                    if unsupported and binary_path.is_file() and meta_path.is_file():
-                        return _ModuleCompileResult(str(binary_path), json.loads(meta_path.read_bytes()), False)
+                    pass
         elif use_cache and binary_path.is_file() and meta_path.is_file():
             return _ModuleCompileResult(str(binary_path), json.loads(meta_path.read_bytes()), False)
 
@@ -4740,94 +4749,66 @@ class Module:
                         "unsafe; using optimization level 1 instead.",
                         once=True,
                     )
-                if not generated.ltoirs and not generated.fatbins:
-                    record = CudaCompileRecord.create(
-                        module_hash=self.get_module_hash(active_block_dim),
-                        block_dim=active_block_dim,
-                        source=generated.source.encode(),
-                        source_basename=f"{module_name_short}.cu",
-                        native_options=native_options,
-                        kernels=generated.kernels,
-                        dependencies=tuple(options.get("extra_build_dependencies", ())),
+                record = CudaCompileRecord.create(
+                    module_hash=self.get_module_hash(active_block_dim),
+                    block_dim=active_block_dim,
+                    source=generated.source.encode(),
+                    source_basename=f"{module_name_short}.cu",
+                    native_options=native_options,
+                    recipes=generated.recipes,
+                    kernels=generated.kernels,
+                    dependencies=tuple(options.get("extra_build_dependencies", ())),
+                )
+                with warp.ScopedTimer(
+                    f"Compile CUDA (arch={output_arch}{arch_suffix}, mode={mode}, block_dim={active_block_dim})",
+                    active=warp.config.log_level <= warp.LOG_DEBUG,
+                ):
+                    artifact, compiled = warp._src.cuda_build.compile_cuda(
+                        record,
+                        self.name,
+                        warp.config.kernel_cache_dir,
+                        output_arch,
+                        arch_suffix,
+                        binary_kind,
+                        pch_dir=runtime.get_nvrtc_pch_dir(),
+                        initial_results=generated.initial_results,
+                        use_cache=use_cache,
                     )
-                    with warp.ScopedTimer(
-                        f"Compile CUDA (arch={output_arch}{arch_suffix}, mode={mode}, block_dim={active_block_dim})",
-                        active=warp.config.log_level <= warp.LOG_DEBUG,
-                    ):
-                        artifact, compiled = warp._src.cuda_build.compile_cuda(
-                            record,
-                            self.name,
-                            warp.config.kernel_cache_dir,
-                            output_arch,
-                            arch_suffix,
-                            binary_kind,
-                            pch_dir=runtime.get_nvrtc_pch_dir(),
-                            use_cache=use_cache,
-                        )
-                    warp._src.cuda_build.publish_cuda_index(index_path, artifact)
-                    result_path = (
-                        warp._src.cuda_build.export_cuda_artifact(artifact, binary_path, overwrite=not use_cache)
-                        if explicit_output
-                        else artifact.binary_path
-                    )
-                    return _ModuleCompileResult(str(result_path), artifact.meta, compiled, artifact)
+                warp._src.cuda_build.publish_cuda_index(index_path, artifact)
+                result_path = (
+                    warp._src.cuda_build.export_cuda_artifact(artifact, binary_path, overwrite=not use_cache)
+                    if explicit_output
+                    else artifact.binary_path
+                )
+                return _ModuleCompileResult(str(result_path), artifact.meta, compiled, artifact)
 
             output_dir.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.TemporaryDirectory(prefix=f".{module_name_short}-", dir=output_dir.parent) as staging_dir:
                 staging = Path(staging_dir)
-                source = staging / f"{module_name_short}.{'cpp' if is_cpu else 'cu'}"
+                source = staging / f"{module_name_short}.cpp"
                 source.write_text(generated.source)
                 output = staging / output_name
-                if is_cpu:
-                    with warp.ScopedTimer("Compile x86", active=warp.config.log_level <= warp.LOG_DEBUG):
-                        warp._src.build.build_cpu(
-                            str(output),
-                            str(source),
-                            mode=mode,
-                            fast_math=options["fast_math"],
-                            verify_fp=options["verify_fp"],
-                            fuse_fp=options["fuse_fp"],
-                            extra_flags=options["cpu_compiler_flags"],
-                            optimization_level=opt,
-                            verbose=warp.config.log_level <= warp.LOG_DEBUG,
-                            use_precompiled_headers=options["use_precompiled_headers"],
-                            pch_dir=runtime.get_clang_pch_dir() if options["use_precompiled_headers"] else None,
-                            block_dim=active_block_dim,
-                            enable_tiles_in_stack_memory=options["enable_tiles_in_stack_memory"],
-                            extra_include_dirs=options["extra_cpu_include_dirs"],
-                        )
-                else:
-                    with warp.ScopedTimer(
-                        f"Compile CUDA (arch={output_arch}{arch_suffix}, mode={mode}, block_dim={active_block_dim})",
-                        active=warp.config.log_level <= warp.LOG_DEBUG,
-                    ):
-                        warp._src.build.build_cuda(
-                            str(source),
-                            output_arch,
-                            str(output),
-                            config=mode,
-                            optimization_level=opt,
-                            verify_fp=options["verify_fp"],
-                            fast_math=options["fast_math"],
-                            fuse_fp=options["fuse_fp"],
-                            lineinfo=options["lineinfo"],
-                            compile_time_trace=options["compile_time_trace"],
-                            ltoirs=generated.ltoirs,
-                            fatbins=generated.fatbins,
-                            arch_suffix=arch_suffix,
-                            pch_dir=runtime.get_nvrtc_pch_dir(),
-                            llvm_cuda=options["llvm_cuda"],
-                            use_precompiled_headers=options["use_precompiled_headers"],
-                            extra_include_dirs=options["extra_cuda_include_dirs"],
-                        )
+                with warp.ScopedTimer("Compile x86", active=warp.config.log_level <= warp.LOG_DEBUG):
+                    warp._src.build.build_cpu(
+                        str(output),
+                        str(source),
+                        mode=mode,
+                        fast_math=options["fast_math"],
+                        verify_fp=options["verify_fp"],
+                        fuse_fp=options["fuse_fp"],
+                        extra_flags=options["cpu_compiler_flags"],
+                        optimization_level=opt,
+                        verbose=warp.config.log_level <= warp.LOG_DEBUG,
+                        use_precompiled_headers=options["use_precompiled_headers"],
+                        pch_dir=runtime.get_clang_pch_dir() if options["use_precompiled_headers"] else None,
+                        block_dim=active_block_dim,
+                        enable_tiles_in_stack_memory=options["enable_tiles_in_stack_memory"],
+                        extra_include_dirs=options["extra_cpu_include_dirs"],
+                    )
                 self._write_meta(staging / meta_path.name, generated.metadata)
                 output_dir.mkdir(exist_ok=True)
                 for file in (output, source, staging / meta_path.name):
                     os.replace(file, output_dir / file.name)
-                if not is_cpu:
-                    warp._src.cuda_build.publish_unsupported_index(
-                        index_path, "modules with MathDx link inputs are unsupported"
-                    )
             return _ModuleCompileResult(str(binary_path), generated.metadata, True)
         except Exception as error:
             if isinstance(error, FileNotFoundError):
@@ -4922,7 +4903,7 @@ class Module:
                     module_load_timer.extra_msg = " (error)"
                     raise
                 binary_path, meta, compiled, artifact = result
-                output_arch = artifact.target_arch if artifact else self._get_compile_arch(device)
+                output_arch = artifact.target_arch if artifact else None
                 compile_record = artifact.record if artifact else None
                 module_load_timer.extra_msg = " (compiled)" if compiled else " (cached)"
 
@@ -13937,10 +13918,10 @@ def capture_save(
     record retained by each captured executable. It does not rerun Warp Python
     code generation or reevaluate ``wp.static()`` expressions. The source is
     frozen in memory when the executable is loaded. Missing or changed declared
-    build dependencies cause export to fail; untargeted export continues to copy
-    captured binaries. Targeted export is unsupported for LLVM CUDA
-    (``wp.config.llvm_cuda=True``), modules with linked MathDx inputs, and
-    explicit CUDA binaries; untargeted copying remains available.
+    build dependencies or target-specific MathDx inputs cause export to fail;
+    untargeted export continues to copy captured binaries. Targeted export is
+    unsupported for LLVM CUDA (``wp.config.llvm_cuda=True``); untargeted copying
+    remains available.
 
     If the same array appears in both ``inputs`` and ``outputs`` (e.g., for
     in-place operations), both names will refer to the same memory region.

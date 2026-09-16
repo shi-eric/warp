@@ -2139,7 +2139,7 @@ CUDA architecture. Warp writes CUBIN for ``sm_N`` by default. Add
 Baseline PTX can run on a compatible GPU with compute capability ``N`` or newer,
 subject to CUDA driver support. A targeted bundle contains one self-contained
 binary per module. The playback system does not need the original Python
-program or generated CUDA source.
+program, generated CUDA source, or MathDx link inputs.
 
 Targeted export uses the program recorded at capture time, including resolved
 ``wp.static()`` values. If the requested target cannot represent a captured
@@ -2407,8 +2407,6 @@ Current limitations of API Capture:
   inside CPU capture are rejected.
 - CUDA determines whether a CUBIN or suffixed PTX artifact is compatible with
   the load device. One loaded APIC graph executes on one CUDA device.
-- Targeted export does not support modules containing linked MathDx operations.
-  Save those graphs without ``target_arch`` to copy the captured binary.
 - Loading CPU ``.wrp`` graphs requires the warp-clang backend and the companion
   ``_modules`` directory with compatible CPU kernel object files. Those
   ``.o`` files are tied to their platform, architecture, compiler ABI, and Warp

@@ -14,6 +14,7 @@ import numpy as np
 import warp._src.build
 import warp._src.context
 from warp._src.codegen import Var, get_arg_value
+from warp._src.cuda_compile import IntExpression
 from warp._src.logger import log_warning
 from warp._src.types import *
 from warp._src.types import _BvhQueryAabb, _BvhQueryCapsule, _BvhQueryRay, _BvhQuerySphere, _MeshQuerySphere
@@ -17683,7 +17684,7 @@ def tile_matmul_lto_dispatch_func(
             and any(dim % 16 != 0 for dim in (M, N, K))
         )
 
-        prior_lto_symbols = set(builder.ltoirs)
+        prior_lto_symbols = set(builder.mathdx_entries)
         try:
             # generate the LTOs
             #    C += A * B
@@ -17749,9 +17750,8 @@ def tile_matmul_lto_dispatch_func(
             if not allow_lto_compile_failure_fallback:
                 raise
             # unregister LTOs added by the calls above that did succeed
-            for symbol in set(builder.ltoirs) - prior_lto_symbols:
-                builder.ltoirs.pop(symbol, None)
-                builder.ltoirs_decl.pop(symbol, None)
+            for symbol in set(builder.mathdx_entries) - prior_lto_symbols:
+                del builder.mathdx_entries[symbol]
             log_warning(f"tile_matmul() falling back to the scalar GEMM path: {err}")
             return ((0, 0, 0, a, b, out, alpha, beta), (), [], 0)
 
@@ -18040,13 +18040,14 @@ def tile_fft_generic_lto_dispatch_func(
             dtype_size = 2 * (4 if precision == 5 else 8)
             shared_memory_bytes = size * dtype_size
 
+        shared_memory_bytes = IntExpression.constant(shared_memory_bytes)
         lto_placeholder = "/* scalar */ 0"
         return (
             (
                 Var(lto_placeholder, str, False, True, False),
                 Var(lto_placeholder, str, False, True, False),
                 Var(dtype, str, False, True, False),
-                Var(str(shared_memory_bytes), str, False, True, False),
+                Var(shared_memory_bytes.source_expression, str, False, True, False),
                 Var(str(batch), str, False, True, False),
                 Var(str(ept), str, False, True, False),
                 inout,
@@ -18085,7 +18086,7 @@ def tile_fft_generic_lto_dispatch_func(
             Var(lto_symbol_fwd, str, False, True, False),
             Var(lto_symbol_bwd, str, False, True, False),
             Var(dtype, str, False, True, False),
-            Var(str(shared_memory_bytes), str, False, True, False),
+            Var(shared_memory_bytes.source_expression, str, False, True, False),
             Var(str(batch), str, False, True, False),
             Var(str(ept), str, False, True, False),
             inout,

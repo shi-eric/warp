@@ -55,6 +55,42 @@ def apic_tile_matmul_kernel(
     wp.tile_store(out, out_tile)
 
 
+_APIC_FFT_SIZE = 64
+_APIC_FFT_BLOCK_DIM = 32
+
+
+@wp.func
+def apic_tile_fft(
+    values: wp.array2d[wp.vec2f],
+    result: wp.array2d[wp.vec2f],
+):
+    tile = wp.tile_load(values, shape=(_APIC_FFT_SIZE, _APIC_FFT_SIZE))
+    wp.tile_fft(tile)
+    wp.tile_store(result, tile)
+
+
+@wp.kernel(module="unique")
+def apic_tile_fft_kernel(values: wp.array2d[wp.vec2f], result: wp.array2d[wp.vec2f]):
+    apic_tile_fft(values, result)
+
+
+_APIC_RETARGETED_FFT_SIZE = 256
+
+
+@wp.kernel(enable_backward=False, module="unique")
+def apic_retargeted_fft_kernel(values: wp.array2d[wp.vec2f], result: wp.array2d[wp.vec2f]):
+    tile = wp.tile_load(values, shape=(1, _APIC_RETARGETED_FFT_SIZE))
+    wp.tile_fft(tile)
+    wp.tile_store(result, tile)
+
+
+@wp.kernel(enable_backward=False, module="unique")
+def apic_tile_solve_kernel(matrix: wp.array2d[float], rhs: wp.array[float], result: wp.array[float]):
+    a = wp.tile_load(matrix, shape=(8, 8), storage="shared")
+    b = wp.tile_load(rhs, shape=8, storage="shared")
+    wp.tile_store(result, wp.tile_lower_solve(a, b))
+
+
 def _make_const_writer(value):
     """Build a kernel that writes a compile-time constant.
 
@@ -100,6 +136,44 @@ class TestApicExport(unittest.TestCase):
             result = wp.zeros_like(output)
             loaded.get_param("new_output", result)
             np.testing.assert_allclose(result.numpy(), np.full(4, 6.0, dtype=np.float32))
+
+    def test_capture_save_restores_bundle_after_publication_failure(self):
+        source = wp.ones(4, dtype=float, device="cpu")
+        output = wp.zeros_like(source)
+        with wp.ScopedCapture(device="cpu", apic=True, force_module_load=False) as capture:
+            wp.launch(scale_kernel, dim=4, inputs=[source, output, 3.0], device="cpu")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "capture")
+            wrp_path = Path(path + ".wrp")
+            modules_dir = Path(path + "_modules")
+            wp.capture_save(capture.graph, path, outputs={"old_output": output})
+            sentinel = modules_dir / "old-companion"
+            sentinel.write_bytes(b"old companion contents")
+            previous_wrp = wrp_path.read_bytes()
+            previous_modules = {item.name: item.read_bytes() for item in modules_dir.iterdir()}
+
+            real_replace = os.replace
+
+            def fail_graph_publication(source_path, destination_path):
+                if Path(source_path).name == "graph.wrp" and Path(destination_path) == wrp_path:
+                    raise OSError("injected graph publication failure")
+                return real_replace(source_path, destination_path)
+
+            with (
+                mock.patch("warp._src.apic.export.os.replace", side_effect=fail_graph_publication),
+                self.assertRaisesRegex(RuntimeError, "Failed to save APIC graph"),
+            ):
+                wp.capture_save(capture.graph, path, outputs={"new_output": output})
+
+            self.assertEqual(wrp_path.read_bytes(), previous_wrp)
+            self.assertTrue(modules_dir.is_dir())
+            self.assertEqual(
+                {item.name: item.read_bytes() for item in modules_dir.iterdir()},
+                previous_modules,
+            )
+            loaded = wp.capture_load(path, device="cpu")
+            self.assertEqual(set(loaded.params), {"old_output"})
 
     def test_capture_save_target_options_reject_cpu_graph(self):
         with wp.ScopedCapture(device="cpu", apic=True, force_module_load=False) as capture:
@@ -284,15 +358,21 @@ def test_capture_save_target_options(test, device):
         test.assertEqual(list(Path(tmpdir).iterdir()), [])
 
 
-def test_capture_save_rejects_mathdx(test, device):
-    """Reject targeted export when a module contains MathDx link inputs."""
+def test_capture_save_targeted_mathdx_round_trip(test, device):
+    """Export self-contained PTX and CUBIN for a MathDx matrix product."""
     if not wp_context.runtime.core.wp_is_mathdx_enabled():
         test.skipTest("Warp was built without MathDx")
 
-    a = wp.ones((8, 8), dtype=wp.float16, device=device)
-    b = wp.ones((8, 8), dtype=wp.float16, device=device)
+    targets = [(device.arch, False, ".cubin")]
+    if 75 in wp.get_cuda_supported_archs() and device.arch >= 75:
+        targets.append((75, True, ".ptx"))
+    a_np = np.arange(64, dtype=np.float16).reshape(8, 8) / 16.0
+    b_np = np.arange(64, 0, -1, dtype=np.float16).reshape(8, 8) / 32.0
+    a = wp.array(a_np, dtype=wp.float16, device=device)
+    b = wp.array(b_np, dtype=wp.float16, device=device)
     out = wp.zeros((8, 8), dtype=wp.float32, device=device)
-    apic_tile_matmul_kernel.module.load(device, block_dim=_APIC_TILE_BLOCK_DIM)
+    module_exec = apic_tile_matmul_kernel.module.load(device, block_dim=_APIC_TILE_BLOCK_DIM)
+    test.assertTrue(any(recipe.kind == "dot" for recipe in module_exec.compile_record.recipes))
     with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
         wp.launch_tiled(
             apic_tile_matmul_kernel,
@@ -302,14 +382,127 @@ def test_capture_save_rejects_mathdx(test, device):
             device=device,
         )
 
+    expected = a_np.astype(np.float32) @ b_np.astype(np.float32)
     with tempfile.TemporaryDirectory() as tmpdir:
-        wp.capture_save(capture.graph, os.path.join(tmpdir, "untargeted"), outputs={"out": out})
-        with test.assertRaisesRegex(RuntimeError, "MathDx link inputs"):
-            wp.capture_save(
-                capture.graph,
-                os.path.join(tmpdir, "targeted"),
-                outputs={"out": out},
-                target_arch=device.arch,
+        for target_arch, use_ptx, extension in targets:
+            with test.subTest(target_arch=target_arch, use_ptx=use_ptx):
+                path = os.path.join(tmpdir, extension[1:])
+                wp.capture_save(
+                    capture.graph,
+                    path,
+                    outputs={"out": out},
+                    target_arch=target_arch,
+                    use_ptx=use_ptx,
+                )
+                test.assertTrue(all(p.suffix == extension for p in Path(path + "_modules").iterdir()))
+                np.testing.assert_allclose(
+                    _load_capture_output(path, "out", out, device),
+                    expected,
+                    rtol=2e-3,
+                    atol=2e-3,
+                )
+
+
+def test_capture_save_targeted_fft_round_trip(test, device):
+    """Execute a targeted cuFFTDx export with target-dependent workspace."""
+    target_arch = 75
+    if not wp_context.runtime.core.wp_is_mathdx_enabled() or not wp.config.enable_mathdx_fft:
+        test.skipTest("cuFFTDx is unavailable")
+    if target_arch not in wp.get_cuda_supported_archs() or device.arch < target_arch:
+        test.skipTest("compute_75 PTX is unavailable on this toolkit/device")
+
+    values_np = np.random.default_rng(42).random((_APIC_FFT_SIZE, _APIC_FFT_SIZE, 2), dtype=np.float32)
+    values = wp.array(values_np, dtype=wp.vec2f, device=device)
+    out = wp.zeros((_APIC_FFT_SIZE, _APIC_FFT_SIZE), dtype=wp.vec2f, device=device)
+    module_exec = apic_tile_fft_kernel.module.load(device, block_dim=_APIC_FFT_BLOCK_DIM)
+    test.assertTrue(any(recipe.kind == "fft" for recipe in module_exec.compile_record.recipes))
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        wp.launch_tiled(apic_tile_fft_kernel, dim=1, inputs=[values, out], block_dim=32, device=device)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "fft")
+        wp.capture_save(capture.graph, path, outputs={"out": out}, target_arch=target_arch, use_ptx=True)
+        result = _load_capture_output(path, "out", out, device)
+        actual = result.view(np.complex64).reshape(_APIC_FFT_SIZE, _APIC_FFT_SIZE)
+        expected = np.fft.fft(values_np.view(np.complex64).reshape(_APIC_FFT_SIZE, _APIC_FFT_SIZE), axis=-1)
+        np.testing.assert_allclose(actual, expected, rtol=1e-4, atol=1e-4)
+
+
+def test_capture_save_retargets_fft_shared_memory(test, device):
+    """Replay a retargeted FFT with the destination workspace requirement."""
+    capture_arch = 75
+    target_arch = 120
+    if not wp_context.runtime.core.wp_is_mathdx_enabled() or not wp.config.enable_mathdx_fft:
+        test.skipTest("cuFFTDx is unavailable")
+    if capture_arch not in wp.get_cuda_supported_archs() or target_arch not in wp.get_cuda_supported_archs():
+        test.skipTest("compute_75 and sm_120 are required")
+    if device.arch < target_arch:
+        test.skipTest("An sm_120 device is required to execute the retargeted FFT")
+
+    original_ptx_target_arch = wp.config.ptx_target_arch
+    test.addCleanup(setattr, wp.config, "ptx_target_arch", original_ptx_target_arch)
+    wp.config.ptx_target_arch = capture_arch
+
+    module = apic_retargeted_fft_kernel.module
+    wp.set_module_options({"block_dim": _APIC_FFT_BLOCK_DIM, "cuda_output": "ptx"}, module=module)
+    test.addCleanup(wp.set_module_options, {"cuda_output": None}, module)
+    module.unload()
+
+    values_np = np.random.default_rng(43).random((1, _APIC_RETARGETED_FFT_SIZE, 2), dtype=np.float32)
+    values = wp.array(values_np, dtype=wp.vec2f, device=device)
+    out = wp.zeros((1, _APIC_RETARGETED_FFT_SIZE), dtype=wp.vec2f, device=device)
+    module_exec = module.load(device, block_dim=_APIC_FFT_BLOCK_DIM)
+    test.assertEqual(module_exec.compile_arch, capture_arch)
+    captured_smem = module_exec.get_kernel_hooks(apic_retargeted_fft_kernel).forward_smem_bytes
+    target_meta = wp._src.build.materialize_cuda_record(module_exec.compile_record, target_arch).meta
+    target_smem = next(value for name, value in target_meta.items() if name.endswith("_cuda_kernel_forward_smem_bytes"))
+    test.assertGreater(target_smem, captured_smem)
+
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        wp.launch_tiled(
+            apic_retargeted_fft_kernel,
+            dim=1,
+            inputs=[values, out],
+            block_dim=_APIC_FFT_BLOCK_DIM,
+            device=device,
+        )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "retargeted_fft")
+        wp.capture_save(capture.graph, path, outputs={"out": out}, target_arch=target_arch)
+        result = _load_capture_output(path, "out", out, device)
+
+    actual = result.view(np.complex64).reshape(1, _APIC_RETARGETED_FFT_SIZE)
+    expected = np.fft.fft(values_np.view(np.complex64).reshape(1, _APIC_RETARGETED_FFT_SIZE), axis=-1)
+    np.testing.assert_allclose(actual, expected, rtol=1e-4, atol=1e-4)
+
+
+def test_cuda_aot_cache_keeps_target_metadata_separate(test, device):
+    """Keep each target cached when MathDx metadata varies by architecture."""
+    archs = (75, 120)
+    if not wp_context.runtime.core.wp_is_mathdx_enabled() or not wp.config.enable_mathdx_fft:
+        test.skipTest("cuFFTDx is unavailable")
+    if any(arch not in wp.get_cuda_supported_archs() for arch in archs):
+        test.skipTest("compute_75 and sm_120 are required")
+
+    module = apic_retargeted_fft_kernel.module
+    wp.set_module_options({"block_dim": _APIC_FFT_BLOCK_DIM}, module=module)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        artifacts = wp.compile_aot_module(module, arch=archs, module_dir=tmpdir, use_ptx=True)
+        metadata_paths = [artifact.with_suffix(".meta") for artifact in artifacts]
+        test.assertTrue(all(path.is_file() for path in metadata_paths))
+        test.assertNotEqual(metadata_paths[0].read_bytes(), metadata_paths[1].read_bytes())
+        past_time = 1_000_000_000
+        for artifact in artifacts:
+            os.utime(artifact, ns=(past_time, past_time))
+
+        wp.compile_aot_module(module, arch=archs, module_dir=tmpdir, use_ptx=True)
+
+        for artifact in artifacts:
+            test.assertEqual(
+                artifact.stat().st_mtime_ns,
+                past_time,
+                f"Binary {artifact.name} was recompiled when another target's metadata was published",
             )
 
 
@@ -340,6 +533,66 @@ def test_capture_save_preserves_captured_static_value(test, device):
                     use_ptx=use_ptx,
                 )
                 np.testing.assert_array_equal(_load_capture_output(path, "out", out, device), [65])
+
+
+def test_capture_save_targeted_fft_backward(test, device):
+    """Resolve callee and adjoint workspace for each exported FFT target."""
+    if not wp_context.runtime.core.wp_is_mathdx_enabled() or not wp.config.enable_mathdx_fft:
+        test.skipTest("cuFFTDx is unavailable")
+    values_np = np.random.default_rng(17).random((_APIC_FFT_SIZE, _APIC_FFT_SIZE, 2), dtype=np.float32)
+    values = wp.array(values_np, dtype=wp.vec2f, device=device, requires_grad=True)
+    out = wp.zeros_like(values, requires_grad=True)
+    seed_np = np.random.default_rng(18).random(values_np.shape, dtype=np.float32)
+    seed = wp.array(seed_np, dtype=wp.vec2f, device=device)
+    apic_tile_fft_kernel.module.load(device, block_dim=_APIC_FFT_BLOCK_DIM)
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        with wp.Tape() as tape:
+            wp.launch_tiled(
+                apic_tile_fft_kernel, dim=1, inputs=[values, out], block_dim=_APIC_FFT_BLOCK_DIM, device=device
+            )
+        tape.backward(grads={out: seed})
+
+    expected = np.fft.ifft(seed_np.view(np.complex64).reshape(_APIC_FFT_SIZE, _APIC_FFT_SIZE), axis=-1)
+    expected *= _APIC_FFT_SIZE
+    targets = [(device.arch, False)]
+    if 75 in wp.get_cuda_supported_archs() and device.arch >= 75:
+        targets.append((75, True))
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for target_arch, use_ptx in targets:
+            with test.subTest(target_arch=target_arch, use_ptx=use_ptx):
+                path = os.path.join(tmpdir, "fft_backward")
+                wp.capture_save(
+                    capture.graph, path, outputs={"grad": values.grad}, target_arch=target_arch, use_ptx=use_ptx
+                )
+                actual = _load_capture_output(path, "grad", values.grad, device)
+                actual = actual.view(np.complex64).reshape(_APIC_FFT_SIZE, _APIC_FFT_SIZE)
+                np.testing.assert_allclose(actual, expected, rtol=1e-4, atol=1e-4)
+
+
+def test_capture_save_targeted_solver(test, device):
+    """Export and replay a solver that links a shared MathDx fatbin."""
+    if not wp_context.runtime.core.wp_is_mathdx_enabled() or not wp.config.enable_mathdx_solver:
+        test.skipTest("cuSolverDx is unavailable")
+    matrix_np = np.tril(np.ones((8, 8), dtype=np.float32)) + np.eye(8, dtype=np.float32)
+    rhs_np = np.arange(8, dtype=np.float32)
+    matrix = wp.array(matrix_np, device=device)
+    rhs = wp.array(rhs_np, device=device)
+    out = wp.zeros(8, device=device)
+    module_exec = apic_tile_solve_kernel.module.load(device, block_dim=32)
+    test.assertTrue(any(recipe.kind == "solver" for recipe in module_exec.compile_record.recipes))
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        wp.launch_tiled(apic_tile_solve_kernel, dim=1, inputs=[matrix, rhs, out], block_dim=32, device=device)
+    targets = [(device.arch, False)]
+    if 75 in wp.get_cuda_supported_archs() and device.arch >= 75:
+        targets.append((75, True))
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for target_arch, use_ptx in targets:
+            with test.subTest(target_arch=target_arch, use_ptx=use_ptx):
+                path = os.path.join(tmpdir, "solver")
+                wp.capture_save(capture.graph, path, outputs={"out": out}, target_arch=target_arch, use_ptx=use_ptx)
+                np.testing.assert_allclose(
+                    _load_capture_output(path, "out", out, device), np.linalg.solve(matrix_np, rhs_np), atol=1e-6
+                )
 
 
 def test_capture_save_forward_only_shared_memory(test, device):
@@ -628,8 +881,26 @@ add_function_test(
 )
 add_function_test(
     TestApicExport,
-    "test_capture_save_rejects_mathdx",
-    test_capture_save_rejects_mathdx,
+    "test_capture_save_targeted_mathdx_round_trip",
+    test_capture_save_targeted_mathdx_round_trip,
+    devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda],
+)
+add_function_test(
+    TestApicExport,
+    "test_capture_save_targeted_fft_round_trip",
+    test_capture_save_targeted_fft_round_trip,
+    devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda],
+)
+add_function_test(
+    TestApicExport,
+    "test_capture_save_retargets_fft_shared_memory",
+    test_capture_save_retargets_fft_shared_memory,
+    devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda],
+)
+add_function_test(
+    TestApicExport,
+    "test_cuda_aot_cache_keeps_target_metadata_separate",
+    test_cuda_aot_cache_keeps_target_metadata_separate,
     devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda],
 )
 add_function_test(
@@ -645,6 +916,8 @@ add_function_test(
     devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda],
 )
 for test_function in (
+    test_capture_save_targeted_fft_backward,
+    test_capture_save_targeted_solver,
     test_capture_save_forward_only_shared_memory,
     test_capture_save_uses_frozen_cuda_source,
     test_capture_save_rejects_changed_dependencies,

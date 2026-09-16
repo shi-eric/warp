@@ -8,12 +8,26 @@ import hashlib
 import json
 import ntpath
 import os
+import re
 import shutil
 import threading
 import time
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import warp.config
+from warp._src.cuda_compile import (
+    CompiledKernel,
+    CudaCompileRecord,
+    DotRecipe,
+    FftRecipe,
+    IntExpression,
+    MathDxRecipe,
+    SolverRecipe,
+    kernel_smem_macro,
+    recipe_output_macro,
+)
 from warp._src.logger import LOG_DEBUG
 from warp._src.thirdparty import appdirs
 from warp._src.types import *
@@ -60,6 +74,24 @@ def _get_extra_include_dir_bytes(extra_include_dirs) -> list[bytes]:
     return [path.encode("utf-8") for path in _get_extra_include_dirs(extra_include_dirs)]
 
 
+def materialize_cuda_source(source: bytes, source_name: str, defines: Mapping[str, int] | None = None) -> bytes:
+    """Return CUDA source with target-specific definitions prepended."""
+    if defines is None:
+        return source
+    if not isinstance(defines, Mapping):
+        raise TypeError("CUDA definitions must be a mapping")
+    for name, value in defines.items():
+        if type(name) is not str or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None:
+            raise ValueError(f"Invalid CUDA definition name {name!r}")
+        if type(value) is not builtins.int or value < 0:
+            raise ValueError(f"CUDA definition {name!r} must be a non-negative integer")
+    if not defines:
+        return source
+    prefix = "".join(f"#define {name} {defines[name]}\n" for name in sorted(defines))
+    prefix += f"#line 1 {json.dumps(os.path.basename(source_name))}\n"
+    return prefix.encode("utf-8") + source
+
+
 # builds cuda source to PTX or CUBIN using NVRTC (output type determined by output_path extension)
 def build_cuda(
     cu_path,
@@ -80,9 +112,11 @@ def build_cuda(
     llvm_cuda=False,
     use_precompiled_headers=True,
     extra_include_dirs=(),
+    defines: Mapping[str, int] | None = None,
 ) -> None:
     with open(cu_path, "rb") as src_file:
         src = src_file.read()
+    src = materialize_cuda_source(src, cu_path, defines)
     cu_path_bytes = cu_path.encode("utf-8")
     program_name_bytes = os.path.basename(cu_path).encode("utf-8")
     inc_path = os.path.join(warp_home, "native").encode("utf-8")
@@ -380,11 +414,11 @@ def get_cached_lto_meta(path, symbol):
     return value
 
 
-def _build_lto_base(lto_symbol, compile_func, builder, extra_files=None):
+def _build_lto_base(cache_key, compile_func, builder=None, extra_files=None):
     """Generic LTO build function that handles caching, file operations and process management.
 
     Args:
-        lto_symbol: Unique identifier for the LTO operation
+        cache_key: Architecture-qualified identifier for the LTO operation
         compile_func: Function to compile the specific LTO
             (receives a dictionary of build paths)
         builder: Builder object to store results
@@ -403,8 +437,8 @@ def _build_lto_base(lto_symbol, compile_func, builder, extra_files=None):
     if extra_files is None:
         extra_files = {}
 
-    # Hash symbol and set up paths
-    h = hash_symbol(lto_symbol)[:LTO_CACHE_KEY_LENGTH]
+    # Hash the target-qualified identity and set up paths.
+    h = hash_symbol(cache_key)[:LTO_CACHE_KEY_LENGTH]
     lto_dir = get_lto_cache_dir()
     lto_name = f"{h}.lto"
     lto_path = os.path.join(lto_dir, lto_name)
@@ -498,27 +532,161 @@ def _build_lto_base(lto_symbol, compile_func, builder, extra_files=None):
         return (result, outputs[".lto"], *[outputs[ext] for ext in extra_files.keys()])
 
 
+@dataclass(frozen=True)
+class MathDxMaterialization:
+    """Native link inputs and numeric outputs for one recipe and target."""
+
+    recipe_key: str
+    symbol: str
+    ltoir: bytes
+    fatbin_key: str | None
+    fatbin: bytes | None
+    outputs: tuple[tuple[str, int], ...]
+
+    def __post_init__(self):
+        if self.outputs != tuple(sorted(self.outputs)) or len(dict(self.outputs)) != len(self.outputs):
+            raise ValueError("MathDx outputs must be sorted and have unique names")
+        for name, value in self.outputs:
+            if type(name) is not str or type(value) is not builtins.int or value < 0:
+                raise ValueError("MathDx outputs must contain names and non-negative integers")
+
+
+@dataclass(frozen=True)
+class CudaMaterialization:
+    """Resolved linker inputs, source defines, and kernel launch descriptors."""
+
+    ltoirs: tuple[bytes, ...]
+    fatbins: tuple[bytes, ...]
+    defines: dict[str, int]
+    kernels: tuple[CompiledKernel, ...]
+
+    @property
+    def meta(self) -> dict[str, int]:
+        """Return the legacy shared-memory mapping derived from kernel descriptors."""
+        return {
+            name + "_smem_bytes": size
+            for kernel in self.kernels
+            for name, size in (
+                (kernel.forward_name, kernel.forward_smem_bytes),
+                (kernel.backward_name, kernel.backward_smem_bytes),
+            )
+            if name
+        }
+
+
+def materialize_cuda_record(
+    record: CudaCompileRecord,
+    target_arch: int,
+    initial_results: Sequence[MathDxMaterialization] | None = None,
+) -> CudaMaterialization:
+    """Resolve a record for one target, reusing successful initial probes if supplied.
+
+    ``initial_results`` must come from the initial build for ``target_arch``.
+    Missing recipes are materialized; supplied results never trigger another probe.
+    """
+    if type(target_arch) is not builtins.int or target_arch < 0:
+        raise ValueError("CUDA target architecture must be a non-negative integer")
+    if record.native_options.llvm_cuda and record.recipes:
+        raise RuntimeError("LLVM CUDA compilation cannot consume MathDx recipe link inputs")
+    recipes = {recipe.key: recipe for recipe in record.recipes}
+    results = {}
+    for result in initial_results or ():
+        recipe = recipes.get(result.recipe_key)
+        if recipe is None or result.symbol != recipe.symbol or result.recipe_key in results:
+            raise ValueError(f"Unexpected MathDx materialization {result.recipe_key!r}")
+        results[result.recipe_key] = result
+    outputs = {}
+    ltoirs = []
+    fatbins = {}
+    for key in sorted(recipes):
+        recipe = recipes[key]
+        result = results.get(key)
+        if result is None:
+            try:
+                result = materialize_mathdx_recipe(recipe, target_arch)
+            except Exception as error:
+                raise RuntimeError(f"Cannot materialize MathDx {recipe.kind} recipe {key}: {error}") from error
+        if result.recipe_key != key or result.symbol != recipe.symbol:
+            raise ValueError(f"Unexpected MathDx materialization {result.recipe_key!r}")
+        recipe_outputs = dict(result.outputs)
+        if recipe_outputs.keys() != recipe.output_names:
+            raise ValueError(f"MathDx recipe {key!r} has missing or unexpected outputs")
+        outputs[key] = recipe_outputs
+        if not isinstance(result.ltoir, bytes) or not result.ltoir:
+            raise ValueError(f"Missing MathDx LTO-IR for {key!r}")
+        ltoirs.append(result.ltoir)
+        if isinstance(recipe, SolverRecipe) and result.fatbin is None:
+            raise ValueError(f"Missing MathDx solver fatbin for {key!r}")
+        if (result.fatbin_key is None) != (result.fatbin is None):
+            raise ValueError(f"Partial MathDx fatbin result for {key!r}")
+        if result.fatbin_key is not None:
+            if not isinstance(result.fatbin, bytes) or not result.fatbin:
+                raise ValueError(f"Missing MathDx fatbin for {key!r}")
+            previous = fatbins.setdefault(result.fatbin_key, result.fatbin)
+            if previous != result.fatbin:
+                raise RuntimeError(f"Conflicting fatbin {result.fatbin_key!r}")
+    defines = {
+        recipe_output_macro(key, output_name): value
+        for key in sorted(outputs)
+        for output_name, value in sorted(outputs[key].items())
+    }
+    kernels = tuple(kernel.resolve(outputs) for kernel in record.kernels)
+    for kernel in kernels:
+        for name, size in (
+            (kernel.forward_name, kernel.forward_smem_bytes),
+            (kernel.backward_name, kernel.backward_smem_bytes),
+        ):
+            if name:
+                defines[kernel_smem_macro(name)] = size
+    return CudaMaterialization(tuple(ltoirs), tuple(fatbins[key] for key in sorted(fatbins)), defines, kernels)
+
+
+def materialize_mathdx_recipe(recipe: MathDxRecipe, target_arch: int) -> MathDxMaterialization:
+    """Compile a stable recipe using the effective MathDx target architecture."""
+    if type(target_arch) is not builtins.int or target_arch < 0:
+        raise ValueError("MathDx target architecture must be a non-negative integer")
+    effective_arch = 120 if target_arch > 121 else target_arch
+    cache_key = recipe.cache_key(effective_arch)
+    if recipe.kind == "dot":
+        return _materialize_mathdx_dot(recipe, effective_arch, cache_key)
+    if recipe.kind == "solver":
+        return _materialize_mathdx_solver(recipe, effective_arch, cache_key)
+    if recipe.kind == "fft":
+        return _materialize_mathdx_fft(recipe, effective_arch, cache_key)
+    raise ValueError(f"Unsupported MathDx recipe kind {recipe.kind!r}")
+
+
+def _register_mathdx_recipe(recipe, builder):
+    registered = builder.mathdx_entries.get(recipe.symbol)
+    if registered is None:
+        result = materialize_mathdx_recipe(recipe, builder.options["output_arch"])
+        builder.mathdx_entries[recipe.symbol] = (recipe, result)
+    else:
+        previous, result = registered
+        if previous != recipe:
+            raise ValueError(f"Conflicting MathDx recipes for symbol {recipe.symbol!r}")
+    return result.ltoir
+
+
 def build_lto_dot(
     M, N, K, adtype, bdtype, cdtype, alayout, blayout, clayout, arch, num_threads, builder, lda=None, ldb=None, ldc=None
 ):
-    arch = 120 if arch > 121 else arch
-
     # Maps Python/Warp types to C++ types and enums
     def cublasdx_type_map(dtype):
         if dtype == float16:
-            return ("wp::float16", 3, 0)
+            return (3, 0)
         if dtype == bfloat16:
-            return ("wp::bfloat16", 2, 0)  # COMMONDX_PRECISION_BF16
+            return (2, 0)  # COMMONDX_PRECISION_BF16
         if dtype == float32:
-            return ("wp::float32", 5, 0)
+            return (5, 0)
         if dtype == float64:
-            return ("wp::float64", 6, 0)
+            return (6, 0)
         if dtype == vec2h:
-            return ("wp::vec2h", 3, 1)
+            return (3, 1)
         if dtype == vec2f:
-            return ("wp::vec2f", 5, 1)
+            return (5, 1)
         if dtype == vec2d:
-            return ("wp::vec2d", 6, 1)
+            return (6, 1)
         raise TypeError("Unsupported input type in tile_matmul")
 
     def cublasdx_arrangement_map(layout):
@@ -528,9 +696,9 @@ def build_lto_dot(
             return 1  # CUBLASDX_ARRANGEMENT_ROW_MAJOR
         raise ValueError("Unsupported layout in tile_matmul")
 
-    (a_dtype, a_prec, a_type) = cublasdx_type_map(adtype)
-    (b_dtype, b_prec, b_type) = cublasdx_type_map(bdtype)
-    (c_dtype, c_prec, c_type) = cublasdx_type_map(cdtype)
+    (a_prec, a_type) = cublasdx_type_map(adtype)
+    (b_prec, b_type) = cublasdx_type_map(bdtype)
+    (c_prec, c_type) = cublasdx_type_map(cdtype)
     a_arrangement = cublasdx_arrangement_map(alayout)
     b_arrangement = cublasdx_arrangement_map(blayout)
     c_arrangement = cublasdx_arrangement_map(clayout)
@@ -558,10 +726,27 @@ def build_lto_dot(
     # see the fallback in the tile_matmul dispatch.
     native_lds = (0, 0, 0) if (lda, ldb, ldc) == dense_lds else (lda, ldb, ldc)
 
-    lto_symbol = f"dot_{M}_{N}_{K}_{arch}_{num_threads}_{a_arrangement}_{b_arrangement}_{c_arrangement}_{a_prec}_{b_prec}_{c_prec}_{element_type}"
-    # dense GEMMs keep the pre-existing symbol, so their cached LTOs stay valid
-    if (lda, ldb, ldc) != dense_lds:
-        lto_symbol += f"_{lda}_{ldb}_{ldc}"
+    recipe = DotRecipe(
+        M=M,
+        N=N,
+        K=K,
+        a_prec=a_prec,
+        b_prec=b_prec,
+        c_prec=c_prec,
+        element_type=element_type,
+        a_arrangement=a_arrangement,
+        b_arrangement=b_arrangement,
+        c_arrangement=c_arrangement,
+        num_threads=num_threads,
+        lda=native_lds[0],
+        ldb=native_lds[1],
+        ldc=native_lds[2],
+    )
+    return recipe.symbol, _register_mathdx_recipe(recipe, builder)
+
+
+def _materialize_mathdx_dot(recipe, arch, cache_key):
+    lto_symbol = recipe.symbol
 
     def compile_lto_dot(temp_paths):
         result = warp._src.context.runtime.core.wp_cuda_compile_dot(
@@ -571,20 +756,20 @@ def build_lto_dot(
             None,
             None,
             arch,
-            M,
-            N,
-            K,
-            a_prec,
-            b_prec,
-            c_prec,
-            element_type,
-            a_arrangement,
-            b_arrangement,
-            c_arrangement,
-            num_threads,
-            native_lds[0],
-            native_lds[1],
-            native_lds[2],
+            recipe.M,
+            recipe.N,
+            recipe.K,
+            recipe.a_prec,
+            recipe.b_prec,
+            recipe.c_prec,
+            recipe.element_type,
+            recipe.a_arrangement,
+            recipe.b_arrangement,
+            recipe.c_arrangement,
+            recipe.num_threads,
+            recipe.lda,
+            recipe.ldb,
+            recipe.ldc,
         )
 
         if result:
@@ -593,25 +778,13 @@ def build_lto_dot(
             return True, {".lto": lto_code_data}
         return False, {}
 
-    # Early out if already cached in module
-    if lto_symbol in builder.ltoirs:
-        lto_code_data = builder.ltoirs[lto_symbol]
-    else:
-        (result, lto_code_data) = _build_lto_base(lto_symbol, compile_lto_dot, builder, {})
-
-        if not result:
-            raise RuntimeError(
-                f"Failed to compile LTO '{lto_symbol}'. "
-                "Set the environment variable LIBMATHDX_LOG_LEVEL=5 and rerun for more details."
-            )
-
-        # Update builder
-        builder.ltoirs[lto_symbol] = lto_code_data
-        builder.ltoirs_decl[lto_symbol] = (
-            f"void {lto_symbol}({c_dtype}*, {a_dtype}*, {b_dtype}*, {c_dtype}*, {c_dtype}*);"
+    result, lto_code_data = _build_lto_base(cache_key, compile_lto_dot)
+    if not result:
+        raise RuntimeError(
+            f"Failed to compile LTO '{lto_symbol}'. "
+            "Set the environment variable LIBMATHDX_LOG_LEVEL=5 and rerun for more details."
         )
-
-    return lto_symbol, lto_code_data
+    return MathDxMaterialization(recipe.key, lto_symbol, lto_code_data, None, None, ())
 
 
 def build_lto_solver(
@@ -632,8 +805,6 @@ def build_lto_solver(
     builder,
     smem_estimate_bytes=None,
 ):
-    arch = 120 if arch > 121 else arch
-
     def cusolverdx_arrangement_map(layout):
         if layout == "colmajor":
             return 0  # CUSOLVERDX_ARRANGEMENT_COL_MAJOR
@@ -644,7 +815,31 @@ def build_lto_solver(
     a_arrangement = cusolverdx_arrangement_map(alayout)
     b_arrangement = cusolverdx_arrangement_map(blayout)
 
-    lto_symbol = f"{solver}_{M}_{N}_{K}_{arch}_{num_threads}_{a_arrangement}_{b_arrangement}_{precision_enum}_{side_enum if side_enum >= 0 else 'x'}_{diag_enum if diag_enum >= 0 else 'x'}_{fill_mode}"
+    recipe = SolverRecipe(
+        M=M,
+        N=N,
+        K=K,
+        solver_enum=solver_enum,
+        side_enum=side_enum,
+        diag_enum=diag_enum,
+        a_arrangement=a_arrangement,
+        b_arrangement=b_arrangement,
+        fill_mode=fill_mode,
+        precision_enum=precision_enum,
+        num_threads=num_threads,
+    )
+    try:
+        return recipe.symbol, _register_mathdx_recipe(recipe, builder)
+    except RuntimeError:
+        # This estimate describes the caller's buffers, not the native solver.
+        # Keep it available for the initial build diagnostic without changing
+        # the recipe shared by in-place and out-of-place call sites.
+        arch = builder.options["output_arch"]
+        raise _mathdx_solver_error(recipe.symbol, 120 if arch > 121 else arch, smem_estimate_bytes) from None
+
+
+def _materialize_mathdx_solver(recipe, arch, cache_key):
+    lto_symbol = recipe.symbol
 
     def compile_lto_solver(temp_paths):
         # compile LTO
@@ -656,17 +851,17 @@ def build_lto_solver(
             None,
             None,
             arch,
-            M,
-            N,
-            K,
-            solver_enum,
-            side_enum,
-            diag_enum,
-            precision_enum,
-            a_arrangement,
-            b_arrangement,
-            fill_mode,
-            num_threads,
+            recipe.M,
+            recipe.N,
+            recipe.K,
+            recipe.solver_enum,
+            recipe.side_enum,
+            recipe.diag_enum,
+            recipe.precision_enum,
+            recipe.a_arrangement,
+            recipe.b_arrangement,
+            recipe.fill_mode,
+            recipe.num_threads,
         )
 
         if result:
@@ -677,61 +872,64 @@ def build_lto_solver(
             return True, {".lto": lto_code_data, "_fatbin.lto": universal_fatbin_code_data}
         return False, {}
 
-    # Early out if already cached in module
-    if lto_symbol in builder.ltoirs:
-        lto_code_data = builder.ltoirs[lto_symbol]
-    else:
-        (result, lto_code_data, universal_fatbin_code_data) = _build_lto_base(
-            lto_symbol, compile_lto_solver, builder, {"_fatbin.lto": get_cached_lto}
+    (result, lto_code_data, universal_fatbin_code_data) = _build_lto_base(
+        cache_key, compile_lto_solver, extra_files={"_fatbin.lto": get_cached_lto}
+    )
+
+    if not result:
+        raise _mathdx_solver_error(lto_symbol, arch)
+
+    return MathDxMaterialization(recipe.key, lto_symbol, lto_code_data, "cusolverdx", universal_fatbin_code_data, ())
+
+
+def _mathdx_solver_error(lto_symbol, arch, smem_estimate_bytes=None):
+    hint = ""
+    if smem_estimate_bytes:
+        max_smem_bytes = 232448
+        max_smem_is_estimate = True
+        for d in warp.get_cuda_devices():
+            if d.arch == arch:
+                max_smem_bytes = d.max_shared_memory_per_block
+                max_smem_is_estimate = False
+                break
+        if smem_estimate_bytes > max_smem_bytes:
+            source = "estimated limit" if max_smem_is_estimate else "device-reported limit"
+            hint = (
+                f"Estimated shared memory requirement is {smem_estimate_bytes}B, "
+                f"but the {source} is {max_smem_bytes}B, and a kernel's usable budget is lower "
+                "still because Warp reserves static shared memory per block. "
+                "The tile size(s) may be too large for this device."
+            )
+
+    if warp._src.context.runtime.toolkit_version < (12, 6):
+        return RuntimeError(
+            "cuSolverDx requires CUDA Toolkit 12.6.3 or later. This version of Warp was built against CUDA Toolkit "
+            f"{warp._src.context.runtime.toolkit_version[0]}.{warp._src.context.runtime.toolkit_version[1]}. "
+            "Upgrade your CUDA Toolkit and rebuild Warp, or install a Warp wheel built with CUDA >= 12.6.3."
         )
-
-        if not result:
-            hint = ""
-            if smem_estimate_bytes:
-                max_smem_bytes = 232448
-                max_smem_is_estimate = True
-                for d in warp.get_cuda_devices():
-                    if d.arch == arch:
-                        max_smem_bytes = d.max_shared_memory_per_block
-                        max_smem_is_estimate = False
-                        break
-                if smem_estimate_bytes > max_smem_bytes:
-                    source = "estimated limit" if max_smem_is_estimate else "device-reported limit"
-                    hint = (
-                        f"Estimated shared memory requirement is {smem_estimate_bytes}B, "
-                        f"but the {source} is {max_smem_bytes}B, and a kernel's usable budget is lower "
-                        "still because Warp reserves static shared memory per block. "
-                        "The tile size(s) may be too large for this device."
-                    )
-
-            if warp._src.context.runtime.toolkit_version < (12, 6):
-                raise RuntimeError(
-                    "cuSolverDx requires CUDA Toolkit 12.6.3 or later. This version of Warp was built against CUDA Toolkit "
-                    f"{warp._src.context.runtime.toolkit_version[0]}.{warp._src.context.runtime.toolkit_version[1]}. "
-                    "Upgrade your CUDA Toolkit and rebuild Warp, or install a Warp wheel built with CUDA >= 12.6.3."
-                )
-            else:
-                raise RuntimeError(
-                    f"Failed to compile LTO '{lto_symbol}'. {hint}"
-                    " Set the environment variable LIBMATHDX_LOG_LEVEL=5 and rerun for more details."
-                )
-
-        # Update builder
-        builder.ltoirs[lto_symbol] = lto_code_data
-        builder.ltoirs_decl[lto_symbol] = f"void {lto_symbol}{parameter_list};"
-
-        # only store the universal fatbin once (all solvers produce the same one)
-        if "cusolverdx" not in builder.fatbins:
-            builder.fatbins["cusolverdx"] = universal_fatbin_code_data
-
-    return lto_symbol, lto_code_data
+    return RuntimeError(
+        f"Failed to compile LTO '{lto_symbol}'. {hint}"
+        " Set the environment variable LIBMATHDX_LOG_LEVEL=5 and rerun for more details."
+    )
 
 
 def build_lto_fft(arch, size, ept, direction, dir, precision, builder):
-    arch = 120 if arch > 121 else arch
+    recipe = FftRecipe(
+        size=size,
+        ept=ept,
+        direction_enum=dir,
+        precision=precision,
+    )
+    ltoir = _register_mathdx_recipe(recipe, builder)
+    shared_memory = IntExpression.recipe_output(
+        recipe.key,
+        "shared_memory_bytes",
+    )
+    return recipe.symbol, ltoir, shared_memory
 
-    lto_symbol = f"fft_{size}_{ept}_{arch}_{direction}_{precision}"
-    dtype_ctype = "wp::vec2f" if precision == 5 else "wp::vec2d"
+
+def _materialize_mathdx_fft(recipe, arch, cache_key):
+    lto_symbol = recipe.symbol
 
     def compile_lto_fft(temp_paths):
         shared_memory_size = ctypes.c_int(0)
@@ -743,10 +941,10 @@ def build_lto_fft(arch, size, ept, direction, dir, precision, builder):
             None,
             None,
             arch,
-            size,
-            ept,
-            dir,
-            precision,
+            recipe.size,
+            recipe.ept,
+            recipe.direction_enum,
+            recipe.precision,
             ctypes.byref(shared_memory_size),
         )
 
@@ -767,24 +965,20 @@ def build_lto_fft(arch, size, ept, direction, dir, precision, builder):
 
         return False, {}
 
-    # Early out if already cached in module
-    if lto_symbol in builder.ltoirs and lto_symbol in builder.shared_memory_bytes:
-        lto_code_data = builder.ltoirs[lto_symbol]
-        shared_memory_bytes = builder.shared_memory_bytes[lto_symbol]
-    else:
-        (result, lto_code_data, shared_memory_bytes) = _build_lto_base(
-            lto_symbol, compile_lto_fft, builder, {".meta": lambda path: get_cached_lto_meta(path, lto_symbol)}
+    (result, lto_code_data, shared_memory_bytes) = _build_lto_base(
+        cache_key, compile_lto_fft, extra_files={".meta": lambda path: get_cached_lto_meta(path, lto_symbol)}
+    )
+
+    if not result:
+        raise RuntimeError(
+            f"Failed to compile LTO '{lto_symbol}'."
+            "Set the environment variable LIBMATHDX_LOG_LEVEL=5 and rerun for more details."
         )
-
-        if not result:
-            raise RuntimeError(
-                f"Failed to compile LTO '{lto_symbol}'."
-                "Set the environment variable LIBMATHDX_LOG_LEVEL=5 and rerun for more details."
-            )
-
-        # Update builder
-        builder.ltoirs[lto_symbol] = lto_code_data
-        builder.ltoirs_decl[lto_symbol] = f"void {lto_symbol}({dtype_ctype}*, char*);"
-        builder.shared_memory_bytes[lto_symbol] = shared_memory_bytes
-
-    return lto_symbol, lto_code_data, shared_memory_bytes
+    return MathDxMaterialization(
+        recipe.key,
+        lto_symbol,
+        lto_code_data,
+        None,
+        None,
+        (("shared_memory_bytes", shared_memory_bytes),),
+    )

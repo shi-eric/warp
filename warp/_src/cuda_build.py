@@ -29,6 +29,7 @@ class CudaArtifact:
     arch_suffix: str
     kernels: tuple[CompiledKernel, ...]
     record: CudaCompileRecord
+    defines: dict[str, int]
 
     @property
     def meta(self) -> dict[str, int]:
@@ -122,7 +123,9 @@ def _read_artifact(
     binary = directory / f"module.{kind}"
     if _digest(binary.read_bytes()) != manifest["binary_sha256"]:
         raise ValueError("CUDA artifact binary does not match its manifest")
-    return CudaArtifact(str(binary), kind, identity["target_arch"], identity["arch_suffix"], kernels, record)
+    return CudaArtifact(
+        str(binary), kind, identity["target_arch"], identity["arch_suffix"], kernels, record, identity["defines"]
+    )
 
 
 def read_cuda_index(cache_dir, index_path, module_name: str, *, inputs_fingerprint: str | None = None) -> CudaArtifact:
@@ -136,18 +139,6 @@ def publish_cuda_index(index_path, artifact: CudaArtifact) -> None:
     _write_atomic(Path(index_path), _json_bytes({"artifact": Path(artifact.binary_path).parent.name}))
 
 
-def publish_unsupported_index(index_path, reason: str) -> None:
-    """Mark a conventional CUDA cache entry as unavailable for targeted export."""
-    _write_atomic(Path(index_path), _json_bytes({"targeted_export_unsupported": reason}))
-
-
-def read_unsupported_index(index_path) -> str | None:
-    """Return the targeted-export exclusion attached to a conventional cache entry."""
-    payload = json.loads(Path(index_path).read_bytes())
-    reason = payload.get("targeted_export_unsupported")
-    return reason if type(reason) is str and reason else None
-
-
 def compile_cuda(
     record: CudaCompileRecord,
     module_name: str,
@@ -157,9 +148,15 @@ def compile_cuda(
     binary_kind: Literal["ptx", "cubin"],
     *,
     pch_dir: str | None,
+    initial_results=None,
     use_cache: bool = True,
 ) -> tuple[CudaArtifact, bool]:
-    """Compile one frozen program for JIT, AOT, or graph export."""
+    """Materialize and compile one program for JIT, AOT, or graph export.
+
+    Returns the complete artifact and whether native compilation was performed.
+    Initial code generation can pass successful MathDx probes to avoid repeating
+    them. Export uses the same assembly and native compiler path.
+    """
     record.validate(module_name)
     if type(target_arch) is not int or target_arch <= 0 or binary_kind not in ("ptx", "cubin"):
         raise ValueError("CUDA compilation requires a positive architecture and PTX or CUBIN output")
@@ -169,13 +166,17 @@ def compile_cuda(
                 f"Kernel {kernel.forward_name!r} requests cluster_dim={kernel.cluster_dim}, "
                 f"but sm_{target_arch} is below sm_90 and the cluster attribute is dropped"
             )
+    inputs = build.materialize_cuda_record(record, target_arch, initial_results)
     record_fingerprint = _publish_record(cache_dir, record)
     identity = {
         "record": record_fingerprint,
         "target_arch": target_arch,
         "arch_suffix": arch_suffix,
         "binary_kind": binary_kind,
-        "kernels": [asdict(kernel) for kernel in record.kernels],
+        "defines": inputs.defines,
+        "kernels": [asdict(kernel) for kernel in inputs.kernels],
+        "ltoirs": [_digest(data) for data in inputs.ltoirs],
+        "fatbins": [_digest(data) for data in inputs.fatbins],
     }
     inputs_fingerprint = _digest(_json_bytes(identity))
     index_path = Path(cache_dir) / "cuda" / "targets" / f"{inputs_fingerprint}.json"
@@ -204,6 +205,9 @@ def compile_cuda(
             fuse_fp=options.fuse_fp,
             lineinfo=options.lineinfo,
             compile_time_trace=options.compile_time_trace,
+            ltoirs=inputs.ltoirs,
+            fatbins=inputs.fatbins,
+            defines=inputs.defines,
             arch_suffix=arch_suffix,
             pch_dir=pch_dir,
             llvm_cuda=options.llvm_cuda,
@@ -232,7 +236,13 @@ def compile_cuda(
                 _write_atomic(directory / binary.name, binary.read_bytes())
                 _write_atomic(directory / "artifact.json", _json_bytes(manifest))
     artifact = CudaArtifact(
-        str(directory / f"module.{binary_kind}"), binary_kind, target_arch, arch_suffix, record.kernels, record
+        str(directory / f"module.{binary_kind}"),
+        binary_kind,
+        target_arch,
+        arch_suffix,
+        inputs.kernels,
+        record,
+        inputs.defines,
     )
     publish_cuda_index(index_path, artifact)
     return artifact, True
@@ -241,10 +251,15 @@ def compile_cuda(
 def export_cuda_artifact(artifact: CudaArtifact, binary_path, *, overwrite: bool = False) -> Path:
     """Write the conventional binary, metadata, and source files for an AOT caller."""
     binary_path = Path(binary_path)
+    source = build.materialize_cuda_source(
+        artifact.record.source,
+        artifact.record.source_basename,
+        artifact.defines,
+    )
     for path, data in (
         (binary_path, Path(artifact.binary_path).read_bytes()),
         (binary_path.with_suffix(".meta"), _json_bytes(artifact.meta)),
-        (binary_path.parent / artifact.record.source_basename, artifact.record.source),
+        (binary_path.parent / artifact.record.source_basename, source),
     ):
         if overwrite or not path.is_file() or path.read_bytes() != data:
             _write_atomic(path, data)

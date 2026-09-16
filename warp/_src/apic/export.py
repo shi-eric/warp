@@ -97,8 +97,7 @@ def save(graph, path, inputs, outputs, target_arch, use_ptx):
             try:
                 if record is None:
                     raise RuntimeError(
-                        "CUDA compile record is unavailable; targeted export does not support modules with "
-                        "MathDx link inputs or explicit CUDA binaries."
+                        "CUDA compile record is unavailable; load the module normally and recapture the graph."
                     )
                 if record.native_options.llvm_cuda:
                     raise RuntimeError("Targeted export is unsupported for LLVM CUDA.")

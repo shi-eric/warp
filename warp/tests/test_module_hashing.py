@@ -15,8 +15,9 @@ from importlib import util
 from pathlib import Path
 
 import warp as wp
+from warp._src.build import MathDxMaterialization, materialize_cuda_record
 from warp._src.context import ModuleBuilder, ModuleHasher, _cuda_native_options
-from warp._src.cuda_compile import CudaCompileRecord
+from warp._src.cuda_compile import CudaCompileRecord, DotRecipe
 from warp.tests.unittest_utils import *
 
 FUNC_OVERLOAD_1 = """# -*- coding: utf-8 -*-
@@ -434,6 +435,7 @@ class TestModuleHashing(unittest.TestCase):
                     source=source_path.read_bytes(),
                     source_basename=source_path.name,
                     native_options=options,
+                    recipes=(),
                     kernels=(),
                     dependencies=(),
                 )
@@ -533,7 +535,7 @@ class TestModuleHashing(unittest.TestCase):
                 builder = ModuleBuilder(module, options, hasher=hasher)
                 module_hashes.add(hasher.get_hash())
                 device_sources.add(builder.codegen(device))
-                metadata.append(builder.build_meta())
+                metadata.append(builder.build_kernel_descriptors())
 
         self.assertEqual(len(module_hashes), 1)
         self.assertEqual(len(sources["cpu"]), 1)
@@ -583,18 +585,42 @@ class TestModuleHashing(unittest.TestCase):
         hasher = ModuleHasher((artifact_order_kernel,), options)
         builder = ModuleBuilder(module, options, hasher=hasher)
 
-        builder.ltoirs_decl["zulu"] = "void issue_1738_zulu();"
-        builder.ltoirs_decl["alpha"] = "void issue_1738_alpha();"
-        source = builder.codegen("cuda")
-        self.assertLess(source.index("issue_1738_alpha"), source.index("issue_1738_zulu"))
+        recipes = (
+            DotRecipe(16, 16, 16, 5, 5, 5, 0, 1, 1, 1, 32),
+            DotRecipe(32, 32, 32, 5, 5, 5, 0, 1, 1, 1, 32),
+        )
+        sources = set()
+        materializations = []
+        for recipe_order in itertools.permutations(recipes):
+            builder.mathdx_entries.clear()
+            for recipe in recipe_order:
+                result = MathDxMaterialization(recipe.key, recipe.symbol, recipe.symbol.encode(), None, None, ())
+                builder.mathdx_entries[recipe.symbol] = (recipe, result)
+            source = builder.codegen("cuda")
+            sources.add(source)
+            ordered_declarations = sorted(recipe.declaration for recipe in recipes)
+            self.assertLess(source.index(ordered_declarations[0]), source.index(ordered_declarations[1]))
+            record = CudaCompileRecord.create(
+                module_hash=hasher.get_hash(),
+                block_dim=options["block_dim"],
+                source=source.encode(),
+                source_basename="module.cu",
+                native_options=_cuda_native_options(options, ""),
+                recipes=builder.get_link_recipes(),
+                kernels=builder.build_kernel_descriptors(),
+                dependencies=(),
+            )
+            materializations.append(
+                materialize_cuda_record(
+                    record, 80, initial_results=[result for _, result in builder.mathdx_entries.values()]
+                )
+            )
 
-        builder.ltoirs["zulu"] = b"zulu-lto"
-        builder.ltoirs["alpha"] = b"alpha-lto"
-        builder.fatbins["zulu"] = b"zulu-fatbin"
-        builder.fatbins["alpha"] = b"alpha-fatbin"
+        self.assertEqual(len(sources), 1)
+        self.assertEqual(materializations[0], materializations[1])
         self.assertEqual(
-            builder.get_link_inputs(),
-            ([b"alpha-lto", b"zulu-lto"], [b"alpha-fatbin", b"zulu-fatbin"]),
+            materializations[0].ltoirs,
+            tuple(recipe.symbol.encode() for recipe in sorted(recipes, key=lambda recipe: recipe.key)),
         )
 
         with tempfile.TemporaryDirectory() as temp_dir:

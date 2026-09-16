@@ -28,6 +28,7 @@ from typing import Any, ClassVar, Literal, NamedTuple, get_args, get_origin
 import numpy as np
 
 import warp.config
+from warp._src.cuda_compile import IntExpression, kernel_smem_macro
 from warp._src.deterministic import DeterministicCodegen
 from warp._src.logger import log_debug, log_warning
 from warp._src.types import *
@@ -2036,12 +2037,16 @@ class Adjoint:
     # own shared memory space, we treat shared memory as a stack
     # where each function pushes and pops space off, the extra
     # quantity is the 'roofline' amount required for the entire kernel
-    def alloc_shared_extra(adj, num_bytes):
-        adj.max_required_extra_shared_memory = max(adj.max_required_extra_shared_memory, num_bytes)
+    def alloc_shared_extra(adj, expression):
+        adj.max_required_extra_shared_memory_expression = IntExpression.maximum(
+            adj.max_required_extra_shared_memory_expression, expression
+        )
 
     # backward-pass counterpart of alloc_shared_extra()
-    def alloc_shared_extra_backward(adj, num_bytes):
-        adj.max_required_extra_shared_memory_backward = max(adj.max_required_extra_shared_memory_backward, num_bytes)
+    def alloc_shared_extra_backward(adj, expression):
+        adj.max_required_extra_shared_memory_backward_expression = IntExpression.maximum(
+            adj.max_required_extra_shared_memory_backward_expression, expression
+        )
 
     # returns the number of bytes of shared memory required by this function's own tile
     # variables, excluding anything required by callees
@@ -2057,14 +2062,25 @@ class Adjoint:
     # returns the total number of bytes for a function
     # based on it's own requirements + worst case
     # requirements of any dependent functions
-    def get_total_required_shared(adj):
-        return adj.get_own_required_shared() + adj.max_required_extra_shared_memory
+    def get_total_required_shared(adj, recipe_outputs=None):
+        return adj.get_total_required_shared_expression().resolve(recipe_outputs or {})
+
+    def get_total_required_shared_expression(adj):
+        return IntExpression.add(
+            IntExpression.constant(adj.get_own_required_shared()), adj.max_required_extra_shared_memory_expression
+        )
 
     # backward counterpart of get_total_required_shared();
     # callee frames come from ModuleBuilder._propagate_backward_shared_memory
-    def get_total_required_shared_backward(adj):
-        # x2: the reverse pass declares own tiles requires_grad, pairing each with an equal-sized gradient buffer
-        return adj.get_own_required_shared() * 2 + adj.max_required_extra_shared_memory_backward
+    def get_total_required_shared_backward(adj, recipe_outputs=None):
+        return adj.get_total_required_shared_backward_expression().resolve(recipe_outputs or {})
+
+    def get_total_required_shared_backward_expression(adj):
+        # x2: the reverse pass pairs own tiles with equal-sized gradient buffers.
+        return IntExpression.add(
+            IntExpression.constant(adj.get_own_required_shared() * 2),
+            adj.max_required_extra_shared_memory_backward_expression,
+        )
 
     @staticmethod
     def extract_function_source(func: Callable) -> tuple[str, int, ast.Module]:
@@ -2242,10 +2258,10 @@ class Adjoint:
         adj.label_count = 0
 
         # tracks how much additional shared memory is required by any dependent function calls
-        adj.max_required_extra_shared_memory = 0
+        adj.max_required_extra_shared_memory_expression = IntExpression.constant(0)
 
         # backward-pass counterpart, resolved by ModuleBuilder._propagate_backward_shared_memory
-        adj.max_required_extra_shared_memory_backward = 0
+        adj.max_required_extra_shared_memory_backward_expression = IntExpression.constant(0)
 
         # recorded at call sites for ModuleBuilder's post-build propagation passes
         adj.called_user_functions = {}
@@ -3129,13 +3145,20 @@ class Adjoint:
 
         # update our smem roofline requirements based on any
         # shared memory required by the dependent function call
+        expression = (
+            extra_shared_memory
+            if isinstance(extra_shared_memory, IntExpression)
+            else IntExpression.constant(extra_shared_memory)
+        )
         if not func.is_builtin():
-            adj.alloc_shared_extra(func.adj.get_total_required_shared() + extra_shared_memory)
+            adj.alloc_shared_extra(
+                IntExpression.add(func.adj.get_total_required_shared_expression(), expression),
+            )
         else:
-            adj.alloc_shared_extra(extra_shared_memory)
+            adj.alloc_shared_extra(expression)
         # user-function callee frames are folded in post-build by ModuleBuilder._propagate_backward_shared_memory
         # x2: the builtin's adjoint needs LTO workspace too; matches the previous blanket backward sizing
-        adj.alloc_shared_extra_backward(extra_shared_memory * 2)
+        adj.alloc_shared_extra_backward(IntExpression.add(expression, expression))
 
         return return_value(output)
 
@@ -8322,7 +8345,7 @@ def resolve_grid_stride(kernel_options: dict, default_grid_stride: builtins.bool
     return builtins.bool(default_grid_stride if explicit is None else explicit)
 
 
-def codegen_kernel(kernel, device, options):
+def codegen_kernel(kernel, device, options, recipe_outputs=None):
     # Update the module's options with the ones defined on the kernel, if any.
     options = options | kernel.options
 
@@ -8371,7 +8394,7 @@ def codegen_kernel(kernel, device, options):
             f"Kernel '{kernel.key}' with entry_point_abi='external_constant_params' cannot use wp.tid(); "
             "the external entry point does not define dim or _idx."
         )
-    if is_external_constant_params_entry and adj.get_total_required_shared():
+    if is_external_constant_params_entry and adj.get_total_required_shared(recipe_outputs):
         raise WarpCodegenError(
             f"Kernel '{kernel.key}' with entry_point_abi='external_constant_params' cannot use shared-memory tiles; "
             "external entry-point runtimes such as OptiX do not accept Warp's shared-memory allocator."
@@ -8423,13 +8446,10 @@ def codegen_kernel(kernel, device, options):
         max_registers_str = f"WP_MAXNREG({options['cuda_max_registers']}) "
 
     forward_smem_spilling_str = ""
-    if (
-        device == "cuda"
-        and not options.get("llvm_cuda", False)
-        and options.get("enable_cuda_smem_spilling", False)
-        and adj.get_total_required_shared() == 0
-    ):
-        forward_smem_spilling_str = "    WP_ENABLE_SMEM_SPILLING();\n"
+    if device == "cuda" and not options.get("llvm_cuda", False) and options.get("enable_cuda_smem_spilling", False):
+        forward_smem_spilling_str = (
+            f"#if {kernel_smem_macro(cuda_kernel_forward_name(kernel))} == 0\n    WP_ENABLE_SMEM_SPILLING();\n#endif\n"
+        )
 
     # Generate cluster_dims string for CUDA kernels.
     # 1 is the implicit default and is treated as a no-op so that
@@ -8506,13 +8526,11 @@ def codegen_kernel(kernel, device, options):
         reverse_body += adj.deterministic.kernel_locals(device)
         reverse_body += codegen_func_reverse(adj, func_type="kernel", device=device, grid_stride=kernel.grid_stride)
         backward_smem_spilling_str = ""
-        if (
-            device == "cuda"
-            and not options.get("llvm_cuda", False)
-            and options.get("enable_cuda_smem_spilling", False)
-            and adj.get_total_required_shared_backward() == 0
-        ):
-            backward_smem_spilling_str = "    WP_ENABLE_SMEM_SPILLING();\n"
+        if device == "cuda" and not options.get("llvm_cuda", False) and options.get("enable_cuda_smem_spilling", False):
+            backward_smem_spilling_str = (
+                f"#if {kernel_smem_macro(cuda_kernel_backward_name(kernel))} == 0\n"
+                "    WP_ENABLE_SMEM_SPILLING();\n#endif\n"
+            )
         template_fmt_args.update(
             {
                 "reverse_args": indent(reverse_args),
