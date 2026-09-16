@@ -1,17 +1,22 @@
 # SPDX-FileCopyrightText: Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import gc
 import itertools
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+import weakref
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from importlib import util
+from pathlib import Path
 
 import warp as wp
-from warp._src.context import ModuleBuilder, ModuleHasher
+from warp._src.context import ModuleBuilder, ModuleHasher, _cuda_native_options
+from warp._src.cuda_compile import CudaCompileRecord
 from warp.tests.unittest_utils import *
 
 FUNC_OVERLOAD_1 = """# -*- coding: utf-8 -*-
@@ -415,6 +420,52 @@ class TestModuleHasherKernelOptions(unittest.TestCase):
 
 
 class TestModuleHashing(unittest.TestCase):
+    def test_cuda_source_sharing_and_release(self):
+        """Share live source snapshots across records without retaining unused contents."""
+        options = _cuda_native_options(wp.get_module(__name__).resolve_options(wp.config), "")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_path = Path(tmpdir) / "shared.cu"
+            source_path.write_bytes(b"// Source snapshot sharing and lifetime test\n")
+
+            def create():
+                return CudaCompileRecord.create(
+                    module_hash=bytes(32),
+                    block_dim=256,
+                    source=source_path.read_bytes(),
+                    source_basename=source_path.name,
+                    native_options=options,
+                    kernels=(),
+                    dependencies=(),
+                )
+
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                records = list(pool.map(lambda _: create(), range(16)))
+            first = records[0]
+            self.assertTrue(all(record.source is first.source for record in records))
+
+            payload = first.to_json()
+            payload["native_options"]["cuda_arch_suffix"] = "f"
+            restored = CudaCompileRecord.from_json(payload, source_path.read_bytes())
+            self.assertIs(restored.source, first.source)
+            self.assertNotEqual(restored.fingerprint(), first.fingerprint())
+
+            source_path.write_bytes(b"// A different source snapshot\n")
+            changed = create()
+            self.assertNotEqual(changed.source, first.source)
+            with self.assertRaisesRegex(RuntimeError, "source contents"):
+                CudaCompileRecord.from_json(payload, source_path.read_bytes())
+
+            snapshot_ref = weakref.ref(first._source)
+            changed_ref = weakref.ref(changed._source)
+            del records, first, changed
+            gc.collect()
+            self.assertIsNotNone(snapshot_ref())
+            self.assertIsNone(changed_ref())
+            self.assertEqual(restored.source, b"// Source snapshot sharing and lifetime test\n")
+            del restored
+            gc.collect()
+            self.assertIsNone(snapshot_ref())
+
     def test_inline_hint_hashed(self):
         """Verify each ``@wp.func`` inline hint produces a distinct module hash.
 

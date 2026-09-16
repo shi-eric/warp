@@ -278,7 +278,8 @@ def init_kernel_cache(path=None):
 def clear_kernel_cache() -> None:
     """Clear the kernel cache directory of previously generated source code and compiler artifacts.
 
-    Only directories beginning with ``wp_`` will be deleted.
+    Deletes module directories beginning with ``wp_`` and the ``cuda`` directory
+    containing immutable CUDA artifacts, compile records, and source snapshots.
     This function only clears the cache for the current Warp version.
     LTO artifacts are not affected.
     """
@@ -290,7 +291,7 @@ def clear_kernel_cache() -> None:
 
     for item in os.listdir(warp.config.kernel_cache_dir):
         item_path = os.path.join(warp.config.kernel_cache_dir, item)
-        if os.path.isdir(item_path) and item.startswith("wp_"):
+        if os.path.isdir(item_path) and (item.startswith("wp_") or item == "cuda"):
             # Remove the directory and its contents
             shutil.rmtree(item_path, ignore_errors=True)
 

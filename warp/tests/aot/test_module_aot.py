@@ -7,6 +7,7 @@ import importlib.util
 import io
 import os
 import shutil
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -670,8 +671,88 @@ def test_aot_cache_skip(test, device):
         wp.set_module_options({"cuda_output": None, "strip_hash": False}, warp.tests.aot.aux_test_hash_reload)
 
 
+def test_explicit_cuda_aot_directory_requires_binary(test, device):
+    """Reject an explicit AOT directory whose conventional binary is missing."""
+    module = wp.get_module(warp.tests.aot.aux_test_hash_reload.__name__)
+    try:
+        with tempfile.TemporaryDirectory() as module_dir:
+            binary_path = wp.compile_aot_module(
+                module,
+                device=device,
+                module_dir=module_dir,
+                use_ptx=True,
+            )[0]
+            binary_path.unlink()
+            module.unload()
+
+            with test.assertRaises(FileNotFoundError):
+                wp.load_aot_module(module, device=device, module_dir=module_dir, use_ptx=True)
+    finally:
+        module.unload()
+
+
+def test_explicit_cuda_aot_directory_requires_metadata(test, device):
+    """Reject an explicit AOT directory whose conventional metadata is missing."""
+    module = wp.get_module(warp.tests.aot.aux_test_hash_reload.__name__)
+    try:
+        with tempfile.TemporaryDirectory() as module_dir:
+            binary_path = wp.compile_aot_module(
+                module,
+                device=device,
+                module_dir=module_dir,
+                use_ptx=True,
+            )[0]
+            binary_path.with_suffix(".meta").unlink()
+            module.unload()
+
+            with test.assertRaises(FileNotFoundError):
+                wp.load_aot_module(module, device=device, module_dir=module_dir, use_ptx=True)
+    finally:
+        module.unload()
+
+
+def test_explicit_cuda_aot_directory_loads_conventional_artifact(test, device):
+    """Load the conventional binary while retaining matching producer metadata."""
+    module = wp.get_module(warp.tests.aot.aux_test_hash_reload.__name__)
+    try:
+        with tempfile.TemporaryDirectory() as module_dir:
+            binary_path = wp.compile_aot_module(
+                module,
+                device=device,
+                module_dir=module_dir,
+                use_ptx=True,
+            )[0]
+            module.unload()
+
+            wp.load_aot_module(module, device=device, module_dir=module_dir, use_ptx=True)
+            module_exec = module.load(device)
+            test.assertEqual(Path(module_exec.binary_path), binary_path.resolve())
+            test.assertIsNotNone(module_exec.compile_record)
+    finally:
+        module.unload()
+
+
 devices = get_test_devices()
+cuda_devices = get_cuda_test_devices()
 add_function_test(TestModuleAOT, "test_aot_cache_skip", test_aot_cache_skip, devices=devices)
+add_function_test(
+    TestModuleAOT,
+    "test_explicit_cuda_aot_directory_requires_binary",
+    test_explicit_cuda_aot_directory_requires_binary,
+    devices=cuda_devices,
+)
+add_function_test(
+    TestModuleAOT,
+    "test_explicit_cuda_aot_directory_requires_metadata",
+    test_explicit_cuda_aot_directory_requires_metadata,
+    devices=cuda_devices,
+)
+add_function_test(
+    TestModuleAOT,
+    "test_explicit_cuda_aot_directory_loads_conventional_artifact",
+    test_explicit_cuda_aot_directory_loads_conventional_artifact,
+    devices=cuda_devices,
+)
 add_function_test(TestModuleAOT, "test_disable_hashing", test_disable_hashing, devices=devices)
 add_function_test(TestModuleAOT, "test_enable_hashing", test_enable_hashing, devices=devices)
 add_function_test(

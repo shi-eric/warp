@@ -11,6 +11,7 @@ import tempfile
 import unittest
 import weakref
 from functools import partial
+from pathlib import Path
 from unittest import mock
 
 import numpy as np
@@ -85,9 +86,11 @@ class TestApic(unittest.TestCase):
 
 
 # Must match APICSectionType in warp/native/apic_types.h.
+_APIC_SECTION_METADATA = 1
 _APIC_SECTION_MEMORY = 2
 _APIC_SECTION_OPERATIONS = 3
-_APIC_FORMAT_VERSION = 16
+_APIC_FORMAT_VERSION = 17
+_APIC_METADATA_PREFIX = struct.Struct("<7I")
 
 # These layouts mirror the packed structs in warp/native/apic_types.h. "<"
 # selects little-endian standard sizes without implicit alignment; "4s", "i",
@@ -142,6 +145,38 @@ def _read_apic_section(path, requested_section_type):
         wrp_data = wrp_file.read()
     section_offset, section_size = _find_apic_section(wrp_data, requested_section_type)
     return bytearray(wrp_data[section_offset : section_offset + section_size])
+
+
+def _read_lp_bytes(data, offset):
+    size = _APIC_UINT32.unpack_from(data, offset)[0]
+    offset += _APIC_UINT32.size
+    return bytes(data[offset : offset + size]), offset + size
+
+
+def _downgrade_apic_metadata_to_v16(path):
+    """Convert current module records to their version 16 layout."""
+    metadata = _read_apic_section(path, _APIC_SECTION_METADATA)
+    version, _, num_modules, _, _, _, _ = _APIC_METADATA_PREFIX.unpack_from(metadata)
+    if version != 17:
+        raise ValueError(f"Expected version 17 metadata, got {version}")
+
+    offset = _APIC_METADATA_PREFIX.size
+    legacy_modules = bytearray()
+    for _ in range(num_modules):
+        module_start = offset
+        for _ in range(3):
+            _, offset = _read_lp_bytes(metadata, offset)
+        offset += _APIC_UINT32.size
+        legacy_modules.extend(metadata[module_start:offset])
+        offset += _APIC_UINT32.size
+        _, offset = _read_lp_bytes(metadata, offset)
+
+    legacy = bytearray(metadata[: _APIC_METADATA_PREFIX.size])
+    _APIC_UINT32.pack_into(legacy, 0, 16)
+    legacy.extend(legacy_modules)
+    legacy.extend(metadata[offset:])
+    _replace_apic_section(path, _APIC_SECTION_METADATA, legacy)
+    _set_apic_file_version(path, 16)
 
 
 def _replace_apic_section(path, requested_section_type, replacement):
@@ -340,6 +375,7 @@ def test_apic_native_save_reports_hashgrid_serialization_unsupported(test, devic
                         path.encode("utf-8"),
                         0,
                         None,
+                        None,
                     )
                     test.assertFalse(result)
                     test.assertIn(
@@ -477,6 +513,7 @@ def test_live_hashgrid_capture_does_not_snapshot_inputs(test, device):
             path.encode("utf-8"),
             0,
             None,
+            None,
         )
         test.assertTrue(result, wp_context.runtime.get_error_string())
 
@@ -523,6 +560,10 @@ def test_load_rejects_legacy_overflowed_launch_shape(test, device):
             path = os.path.join(tmpdir, f"legacy_overflowed_shape_axis_{axis}")
             wp.capture_save(capture.graph, path, inputs={"a": a}, outputs={"b": b})
             wrp_path = path + ".wrp"
+            _downgrade_apic_metadata_to_v16(wrp_path)
+            metadata = _read_apic_section(wrp_path, _APIC_SECTION_METADATA)
+            _APIC_UINT32.pack_into(metadata, 0, 15)
+            _replace_apic_section(wrp_path, _APIC_SECTION_METADATA, metadata)
             _replace_first_apic_kernel_shape(wrp_path, 2**31, axis)
 
             with test.subTest(axis=axis):
@@ -536,7 +577,7 @@ def test_load_rejects_legacy_overflowed_launch_shape(test, device):
 
 
 def test_load_accepts_current_oversized_no_tid_launch_shape(test, device):
-    """Accept version 16 oversized extents when the kernel does not use ``wp.tid()``."""
+    """Accept current-version oversized extents when the kernel does not use ``wp.tid()``."""
     wp.load_module(device=device)
     with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
         wp.launch(no_tid_kernel, dim=2**31 + 1, device=device)
@@ -582,6 +623,64 @@ def test_save_load_round_trip(test, device):
         result = wp.zeros(n, dtype=float, device=device)
         loaded.get_param("b", result)
         np.testing.assert_allclose(result.numpy(), expected)
+
+
+def _load_capture_output(path, name, template, device):
+    loaded = wp.capture_load(path, device=device)
+    wp.capture_launch(loaded)
+    result = wp.zeros_like(template)
+    loaded.get_param(name, result)
+    return result.numpy()
+
+
+def test_capture_load_v16_module_metadata(test, device):
+    """Load and execute the most recent legacy module-record format."""
+    out = wp.zeros(4, dtype=float, device=device)
+    wp.load_module(device=device)
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        wp.launch(write_value_kernel, dim=4, inputs=[out, 5.0], device=device)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = os.path.join(tmpdir, "legacy_module_metadata")
+        wp.capture_save(capture.graph, path, outputs={"out": out})
+        _downgrade_apic_metadata_to_v16(path + ".wrp")
+        np.testing.assert_array_equal(
+            _load_capture_output(path, "out", out, device),
+            np.full(4, 5.0, dtype=np.float32),
+        )
+
+
+def test_capture_load_custom_binary_name(test, device, use_ptx=False):
+    """Accept custom companion names in current and legacy module records."""
+
+    @wp.kernel(module="unique", enable_backward=False)
+    def write(out: wp.array[int]):
+        out[0] = 43
+
+    wp.set_module_options({"cuda_output": "ptx" if use_ptx else "cubin"}, module=write.module)
+    out = wp.zeros(1, dtype=int, device=device)
+    write.module.load(device)
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        wp.launch(write, dim=1, outputs=[out], device=device)
+    for version in (16, 17):
+        with test.subTest(version=version), tempfile.TemporaryDirectory() as tmpdir:
+            path = os.path.join(tmpdir, "export")
+            wp.capture_save(capture.graph, path, outputs={"out": out})
+            wrp_path = path + ".wrp"
+            metadata = _read_apic_section(wrp_path, _APIC_SECTION_METADATA)
+            offset = _APIC_METADATA_PREFIX.size
+            for _ in range(2):  # Skip module hash and module name.
+                _, offset = _read_lp_bytes(metadata, offset)
+            filename_start = offset
+            filename, offset = _read_lp_bytes(metadata, offset)
+            custom_name = "custom" + Path(filename.decode()).suffix
+            (Path(path + "_modules") / filename.decode()).rename(Path(path + "_modules") / custom_name)
+            replacement = _APIC_UINT32.pack(len(custom_name)) + custom_name.encode()
+            metadata[filename_start:offset] = replacement
+            _replace_apic_section(wrp_path, _APIC_SECTION_METADATA, metadata)
+            if version == 16:
+                _downgrade_apic_metadata_to_v16(wrp_path)
+            np.testing.assert_array_equal(_load_capture_output(path, "out", out, device), [43])
 
 
 def test_save_load_block_dependent_static_kernel(test, device):
@@ -1458,11 +1557,7 @@ def test_save_load_tiled_nondefault_block_dim(test, device):
         path = os.path.join(tmpdir, "tiled_block_dim")
         wp.capture_save(capture.graph, path, outputs={"out": out})
 
-        module_infos = list(capture.graph._apic_capture.collected_modules.values())
-        test.assertEqual(len(module_infos), 1)
-        module_info = module_infos[0]
-        test.assertIn(module_info["module_hash"][:7], module_info["binary_filename"])
-        test.assertTrue(os.path.exists(os.path.join(path + "_modules", module_info["binary_filename"])))
+        test.assertEqual(len(list(Path(path + "_modules").iterdir())), 1)
 
         loaded = wp.capture_load(path, device=device)
         wp.capture_launch(loaded)
@@ -3597,6 +3692,7 @@ def test_discarded_bvh_op_does_not_block_save(test, device):
             path.encode("utf-8"),
             0,
             None,
+            None,
         )
         test.assertTrue(result, wp_context.runtime.get_error_string())
         test.assertTrue(os.path.exists(path))
@@ -3707,6 +3803,25 @@ add_function_test(
     "test_save_load_round_trip",
     test_save_load_round_trip,
     devices=devices_with_cuda_graph_module_load,
+)
+add_function_test(
+    TestApic,
+    "test_capture_load_v16_module_metadata",
+    test_capture_load_v16_module_metadata,
+    devices=devices_with_cuda_graph_module_load,
+)
+add_function_test(
+    TestApic,
+    "test_capture_load_custom_binary_name",
+    test_capture_load_custom_binary_name,
+    devices=devices_with_cuda_graph_module_load,
+)
+add_function_test(
+    TestApic,
+    "test_capture_load_custom_ptx_name",
+    test_capture_load_custom_binary_name,
+    devices=[d for d in devices_with_cuda_graph_module_load if d.is_cuda],
+    use_ptx=True,
 )
 add_function_test(
     TestApic,

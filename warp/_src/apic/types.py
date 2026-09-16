@@ -9,6 +9,58 @@ import ctypes
 APIC_MAX_DIMS = 4
 APIC_LAUNCH_MAX_DIMS = 4
 
+# Binary kinds (must match APICBinaryKind in apic_types.h).
+APIC_BINARY_CUBIN = 1
+APIC_BINARY_PTX = 2
+APIC_BINARY_CPU_OBJECT = 3
+
+
+class APICExportModule(ctypes.Structure):
+    """Borrowed module metadata for one native save; matches ``apic.h``."""
+
+    _fields_ = [
+        ("module_hash", ctypes.c_char_p),
+        ("module_name", ctypes.c_char_p),
+        ("binary_filename", ctypes.c_char_p),
+        ("binary_kind", ctypes.c_int32),
+        ("target_arch", ctypes.c_int32),
+        ("arch_suffix", ctypes.c_char_p),
+    ]
+
+
+class APICExportKernel(ctypes.Structure):
+    """Borrowed resolved kernel metadata for one native save."""
+
+    _fields_ = [
+        ("kernel_key", ctypes.c_char_p),
+        ("module_hash", ctypes.c_char_p),
+        ("forward_name", ctypes.c_char_p),
+        ("backward_name", ctypes.c_char_p),
+        ("forward_smem_bytes", ctypes.c_int32),
+        ("backward_smem_bytes", ctypes.c_int32),
+        ("block_dim", ctypes.c_int32),
+    ]
+
+
+class APICExportBinding(ctypes.Structure):
+    """Borrowed named region binding for one native save."""
+
+    _fields_ = [("name", ctypes.c_char_p), ("region_id", ctypes.c_uint32)]
+
+
+class APICExportDescriptor(ctypes.Structure):
+    """Export tables owned by the caller for the duration of a native save."""
+
+    _fields_ = [
+        ("modules", ctypes.POINTER(APICExportModule)),
+        ("num_modules", ctypes.c_uint32),
+        ("kernels", ctypes.POINTER(APICExportKernel)),
+        ("num_kernels", ctypes.c_uint32),
+        ("bindings", ctypes.POINTER(APICExportBinding)),
+        ("num_bindings", ctypes.c_uint32),
+    ]
+
+
 # Operation types (must match APICOpType in apic_types.h).
 APIC_OP_KERNEL_LAUNCH = 1
 APIC_OP_MEMCPY_H2D = 2

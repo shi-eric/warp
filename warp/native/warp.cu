@@ -122,7 +122,7 @@ bool check_nvptx_result(nvPTXCompileResult result, const char* file, int line)
         break;
     }
 
-    fprintf(stderr, "Warp PTX compilation error %u: %s (%s:%d)\n", unsigned(result), error_string, file, line);
+    wp::set_error_string("Warp PTX compilation error %u: %s (%s:%d)", unsigned(result), error_string, file, line);
     return false;
 }
 
@@ -3906,6 +3906,40 @@ int wp_cuda_graph_alloc_query(void* alloc_node, void* query_node)
 // Support for conditional graph nodes available with CUDA 12.4+.
 #if CUDA_VERSION >= 12040
 
+// Runtime helpers target the physical load context independently of saved modules.
+static bool select_conditional_module_target(void* context, int* arch, bool* use_ptx)
+{
+    const int ordinal = wp_cuda_context_get_device_ordinal(context);
+    const int physical_arch = wp_cuda_device_get_arch(ordinal);
+    if (physical_arch <= 0) {
+        wp::set_error_string("Warp error: Failed to determine the conditional helper device architecture");
+        return false;
+    }
+
+    const int count = wp_nvrtc_supported_arch_count();
+    std::vector<int> supported(count);
+    if (count > 0)
+        wp_nvrtc_supported_archs(supported.data());
+
+    if (std::find(supported.begin(), supported.end(), physical_arch) != supported.end()) {
+        *arch = physical_arch;
+        *use_ptx = false;
+        return true;
+    }
+
+    const int ptx_arch = std::min(physical_arch, 75);
+    if (std::find(supported.begin(), supported.end(), ptx_arch) == supported.end()) {
+        wp::set_error_string(
+            "Warp error: Embedded NVRTC cannot compile conditional helpers for physical sm_%d or baseline compute_%d",
+            physical_arch, ptx_arch
+        );
+        return false;
+    }
+    *arch = ptx_arch;
+    *use_ptx = true;
+    return true;
+}
+
 // CUBIN or PTX data for compiled conditional modules, loaded on demand, keyed on device architecture
 using ModuleKey = std::pair<int, bool>;  // <arch, use_ptx>
 static std::map<ModuleKey, void*> g_conditional_modules;
@@ -4014,6 +4048,11 @@ static CUmodule load_conditional_module(void* context, int arch, bool use_ptx)
     // check if already loaded
     if (context_info->conditional_module)
         return context_info->conditional_module;
+
+    // APIC passes arch=0 to select for the physical context on the first load.
+    // Live capture callers retain their explicitly selected architecture/format.
+    if (arch == 0 && !select_conditional_module_target(context, &arch, &use_ptx))
+        return NULL;
 
     // compile if needed
     void* compiled_module = compile_conditional_module(arch, use_ptx);
@@ -5334,7 +5373,7 @@ void* wp_cuda_load_module(void* context, const char* path)
                 fprintf(stderr, "Warp error: Loading PTX module failed\n");
                 // print error log if not empty
                 if (*error_log)
-                    fprintf(stderr, "PTX loader error:\n%s\n", error_log);
+                    wp::append_error_string("PTX loader error:\n%s", error_log);
                 return NULL;
             }
         } else {
@@ -5359,8 +5398,17 @@ void* wp_cuda_load_module(void* context, const char* path)
 
             if (!check_nvptx(nvPTXCompilerCompile(
                     compiler, sizeof(compiler_options) / sizeof(*compiler_options), compiler_options
-                )))
+                ))) {
+                size_t error_log_size = 0;
+                if (nvPTXCompilerGetErrorLogSize(compiler, &error_log_size) == NVPTXCOMPILE_SUCCESS && error_log_size) {
+                    std::vector<char> error_log(error_log_size + 1, '\0');
+                    if (nvPTXCompilerGetErrorLog(compiler, error_log.data()) == NVPTXCOMPILE_SUCCESS)
+                        wp::append_error_string("PTX compiler error:\n%s", error_log.data());
+                }
+                // Cleanup must not replace the compilation diagnostic.
+                nvPTXCompilerDestroy(&compiler);
                 return NULL;
+            }
 
             size_t cubin_size = 0;
             if (!check_nvptx(nvPTXCompilerGetCompiledProgramSize(compiler, &cubin_size)))

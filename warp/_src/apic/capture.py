@@ -52,8 +52,8 @@ class APICapture:
         self._transient_regions: set[int] = set()
 
         # Metadata collected during capture. Populated by build_launch_info()
-        # on each launch and consumed by capture_save() to register modules,
-        # kernels, and meshes with the C++ state before writing the .wrp file.
+        # on each launch and consumed by capture_save() to prepare the export
+        # descriptor and memory snapshots before writing the .wrp file.
         self.collected_modules: dict[str, dict] = {}  # module_hash -> info
         self.collected_kernels: dict[tuple[str, str], dict] = {}  # (module_hash, kernel_key) -> info
         self.collected_mesh_ids: set[int] = set()  # mesh IDs seen during capture
@@ -499,49 +499,30 @@ class APICapture:
 
     def _collect_metadata(self, kernel, module_exec: ModuleExec):
         """Collect module and kernel metadata for later serialization."""
-        import os  # noqa: PLC0415
-
-        import warp  # noqa: PLC0415
-
         module_hash = self._hash_to_str(module_exec.module_hash)
         if module_hash not in self.collected_modules:
-            # Compute the binary path in the kernel cache (same logic as Module.load)
+            # Keep frozen compilation inputs for targeted export. Explicit
+            # binary loads remain valid for untargeted binary-copy export.
             module = kernel.module
-            output_name = module._get_compile_output_name(self.device, block_dim=module_exec.block_dim)
-            module_id = module.get_module_identifier(block_dim=module_exec.block_dim)
-            module_dir = os.path.join(warp.config.kernel_cache_dir, module_id)
-            binary_path = os.path.join(module_dir, output_name)
+            binary_path = module_exec.binary_path
+            if binary_path is None or module_exec.binary_kind is None:
+                raise RuntimeError(f"APIC could not identify the loaded binary for module {module.name!r}")
 
             self.collected_modules[module_hash] = {
-                "module_hash": module_hash,
-                "module_name": kernel.module.name,
+                "module_name": module.name,
                 "module_exec": module_exec,
-                "binary_path": binary_path,
-                "binary_filename": output_name,
+                "compile_record": module_exec.compile_record,
             }
+        elif self.collected_modules[module_hash]["compile_record"] is None:
+            # A later ordinary launch can supply a record for an older command.
+            self.collected_modules[module_hash]["compile_record"] = module_exec.compile_record
 
         kernel_key = kernel.key
         kernel_id = (module_hash, kernel_key)
         if kernel_id not in self.collected_kernels:
-            # Another block-size variant may have changed the kernel's current hash.
-            # Save this executable's symbol, not kernel.get_mangled_name().
-            name = module_exec.get_kernel_mangled_name(kernel)
-            options = kernel.module.options | kernel.options
-
-            if self.device.is_cuda:
-                forward_name = name + "_cuda_kernel_forward"
-                backward_name = (name + "_cuda_kernel_backward") if options.get("enable_backward", True) else ""
-            else:
-                forward_name = name + "_cpu_forward"
-                backward_name = (name + "_cpu_backward") if options.get("enable_backward", True) else ""
-
-            hooks = module_exec.get_kernel_hooks(kernel)
             self.collected_kernels[kernel_id] = {
                 "kernel_key": kernel_key,
                 "module_hash": module_hash,
-                "forward_name": forward_name,
-                "backward_name": backward_name,
-                "forward_smem_bytes": hooks.forward_smem_bytes,
-                "backward_smem_bytes": hooks.backward_smem_bytes,
+                "descriptor": module_exec.get_kernel_descriptor(kernel),
                 "block_dim": module_exec.block_dim,
             }

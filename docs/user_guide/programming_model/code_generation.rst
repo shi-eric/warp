@@ -1277,13 +1277,13 @@ module containing Warp kernels.
     if __name__ == "__main__":
         wp.compile_aot_module(__name__, module_dir="output")
 
-This will create the following files:
+The relevant generated files include:
 
 .. code-block:: text
 
    output/
    ├── wp___main___97ca746.cu
-   ├── wp___main___97ca746.meta
+   ├── wp___main___97ca746.sm86.meta
    └── wp___main___97ca746.sm86.ptx
 
 Example: Distributing a pre-compiled module
@@ -1320,20 +1320,20 @@ Only use ``strip_hash=True`` when your module has a single version of each funct
     if __name__ == "__main__":
         wp.compile_aot_module(__name__, module_dir="output", strip_hash=True)
 
-This results in the following files:
+The relevant generated files include:
 
 .. code:: text
 
    output/
    ├── wp___main__.cu
-   ├── wp___main__.meta
+   ├── wp___main__.sm86.meta
    └── wp___main__.sm86.ptx
 
 The second part of this workflow involves writing a script that can load the pre-compiled module and run the kernels,
 all without access to the original script that compiled the module.
 
 We will remove the ``output/wp___main__.cu`` to mock up a potential user that has been provided with only the
-``output/wp___main__.sm86.ptx`` and ``output/wp___main__.meta`` files.
+``output/wp___main__.sm86.ptx`` and ``output/wp___main__.sm86.meta`` files.
 For example, intellectual-property concerns may prevent disclosure of the original source code.
 
 We can write a script that also defines the ``multiply_arrays`` kernel with the same signature as in the previous
@@ -1405,24 +1405,36 @@ by passing in a list of architectures returned by
             use_ptx=False,
         )
 
-On a CUDA 13.0 build of Warp, this results in the following files:
+Each CUDA target has its own metadata file because target-dependent features may require different launch resources.
+On a CUDA 13.0 build of Warp, the relevant generated files include:
 
 .. code:: text
 
    output/
    ├── wp___main__.cu
-   ├── wp___main__.meta
+   ├── wp___main__.sm100.meta
    ├── wp___main__.sm100.cubin
+   ├── wp___main__.sm103.meta
    ├── wp___main__.sm103.cubin
+   ├── wp___main__.sm110.meta
    ├── wp___main__.sm110.cubin
+   ├── wp___main__.sm120.meta
    ├── wp___main__.sm120.cubin
+   ├── wp___main__.sm121.meta
    ├── wp___main__.sm121.cubin
+   ├── wp___main__.sm75.meta
    ├── wp___main__.sm75.cubin
+   ├── wp___main__.sm80.meta
    ├── wp___main__.sm80.cubin
+   ├── wp___main__.sm86.meta
    ├── wp___main__.sm86.cubin
+   ├── wp___main__.sm87.meta
    ├── wp___main__.sm87.cubin
+   ├── wp___main__.sm88.meta
    ├── wp___main__.sm88.cubin
+   ├── wp___main__.sm89.meta
    ├── wp___main__.sm89.cubin
+   ├── wp___main__.sm90.meta
    └── wp___main__.sm90.cubin
 
 Example: Compiling without a CUDA driver (Docker build steps)

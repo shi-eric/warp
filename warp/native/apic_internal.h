@@ -158,8 +158,10 @@ static_assert(launch_bounds_layout_matches_apic_buffer<4>(), "APIC launch_bounds
 struct APICModule {
     std::string module_hash;
     std::string module_name;
-    std::string cubin_filename;
+    std::string binary_filename;
+    APICBinaryKind binary_kind = APIC_BINARY_INVALID;
     int target_arch = 0;
+    std::string arch_suffix;
 #ifdef __CUDACC__
     CUmodule cuda_module = nullptr;  // Set after loading
 #else
@@ -175,6 +177,9 @@ struct APICKernel {
     int forward_smem_bytes = 0;
     int backward_smem_bytes = 0;
     int block_dim = 0;
+    // Resolved lazily for used directions; valid for the graph's loaded modules.
+    void* forward_function = nullptr;  // CUfunction
+    void* backward_function = nullptr;  // CUfunction
 };
 
 // Include the module hash anywhere APIC keys kernel metadata or CPU function
@@ -260,16 +265,6 @@ struct APICState {
     };
     std::vector<RegionEntry> regions_by_id;
     uint32_t next_region_id = 1;
-
-    // Module and kernel metadata (registered from Python for serialization).
-    // Kernels are keyed by (module_hash, kernel_key) so same-key kernels from
-    // distinct unique modules do not overwrite each other.
-    std::unordered_map<std::string, APICModule> modules;
-    // Keyed by (module_hash, kernel_key), matching serialized kernel metadata.
-    std::unordered_map<std::string, APICKernel> kernels;
-
-    // Named bindings (name -> region_id)
-    std::vector<std::pair<std::string, uint32_t>> bindings;
 
     // Handle pointer locations
     std::vector<APICMemoryPtrLocation> ptr_locations;
@@ -525,6 +520,7 @@ APICAddress apic_resolve_host_ptr(APICState* state, uint64_t ptr, uint64_t acces
 
 struct APICGraph {
     void* cuda_context = nullptr;
+    uint32_t format_version = APIC_FORMAT_VERSION;
     int target_arch = 0;
     APICDeviceType device_type = APIC_DEVICE_CUDA;
 

@@ -20,7 +20,6 @@ import operator
 import os
 import platform
 import re
-import shutil
 import sys
 import tempfile
 import textwrap
@@ -48,6 +47,11 @@ from typing import (
 )
 
 from warp._src.build_architecture import machine_architecture
+from warp._src.cuda_compile import (
+    CompiledKernel,
+    CudaCompileRecord,
+    CudaNativeOptions,
+)
 
 if TYPE_CHECKING:
     from typing import ParamSpec
@@ -68,6 +72,7 @@ import numpy as np
 import warp
 import warp._src.build
 import warp._src.codegen
+import warp._src.cuda_build
 import warp._src.module_registry
 import warp.config
 from warp._src.codegen import WarpCodegenError, WarpCodegenTypeError, _codegen_lock, synchronized
@@ -1106,7 +1111,7 @@ def _normalize_cluster_dim(value) -> int:
     return value
 
 
-def _get_kernel_cluster_dim(kernel) -> int:
+def _get_kernel_cluster_dim(kernel, module_options: dict | None = None) -> int:
     """Return the normalized cluster_dim from merged module/kernel options.
 
     Hot path: most kernels never set cluster_dim, so probe both dicts directly
@@ -1114,11 +1119,14 @@ def _get_kernel_cluster_dim(kernel) -> int:
     decoration time (see ``_normalize_cluster_dim`` in the decorator) and can be
     trusted as-is. Module-level overrides bypass the decorator (e.g.
     ``set_module_options``), so they are validated here on first launch.
+    Compilation can supply resolved ``module_options`` for a captured variant.
     """
     cd = kernel.options.get("cluster_dim")
     if cd is not None:
         return cd
-    cd = kernel.module.options.get("cluster_dim", 1)
+    if module_options is None:
+        module_options = kernel.module.options
+    cd = module_options.get("cluster_dim", 1)
     return cd if cd == 1 else _normalize_cluster_dim(cd)
 
 
@@ -2777,8 +2785,8 @@ class ModuleBuildOptions:
 
 
 def _resolve_build_dependencies(dependencies: Sequence[str | os.PathLike[str]]) -> tuple[tuple[str, str], ...]:
-    """Return normalized dependency paths and their content hashes."""
-    resolved = []
+    """Return unique normalized dependency paths and their content hashes."""
+    resolved = {}
     invalid = []
     for entry in dependencies:
         path = os.fspath(entry)
@@ -2786,15 +2794,17 @@ def _resolve_build_dependencies(dependencies: Sequence[str | os.PathLike[str]]) 
             invalid.append(f"{path!r} (not absolute)")
             continue
         path = os.path.realpath(path)
+        if path in resolved:
+            continue
         if not os.path.isfile(path):
             invalid.append(f"{path!r} (not a file)")
             continue
         with open(path, "rb") as dependency_file:
             digest = hashlib.sha256(dependency_file.read()).hexdigest()
-        resolved.append((path, digest))
+        resolved[path] = digest
     if invalid:
         raise ValueError("extra_build_dependencies entries must be absolute existing files: " + ", ".join(invalid))
-    return tuple(resolved)
+    return tuple(resolved.items())
 
 
 def _uses_march_native(flags: str) -> bool:
@@ -3161,8 +3171,8 @@ class ModuleHasher:
             ch.update(bytes(name, "utf-8"))
             ch.update(self.get_constant_bytes(value))
 
-        # hash wp.static() expressions (declaration-time + deferred codegen-time)
-        for k, v in itertools.chain(adj.resolved_static_expressions.items(), adj.deferred_static_expressions):
+        static_expressions = itertools.chain(adj.resolved_static_expressions.items(), adj.deferred_static_expressions)
+        for k, v in static_expressions:
             ch.update(bytes(k, "utf-8"))
             if isinstance(v, Function):
                 if v not in self.functions_in_progress:
@@ -3212,6 +3222,21 @@ class ModuleHasher:
 
     def get_unique_kernels(self):
         return self.unique_kernels.values()
+
+
+class _ModuleCodegenResult(NamedTuple):
+    source: str
+    metadata: dict[str, int]
+    kernels: tuple[CompiledKernel, ...]
+    ltoirs: tuple[bytes, ...]
+    fatbins: tuple[bytes, ...]
+
+
+class _ModuleCompileResult(NamedTuple):
+    binary_path: str
+    meta: dict[str, int]
+    compiled: bool
+    artifact: warp._src.cuda_build.CudaArtifact | None = None
 
 
 class ModuleBuilder:
@@ -3446,25 +3471,40 @@ class ModuleBuilder:
             adj.max_required_extra_shared_memory_backward = required
             folded.add(adj)
 
-    def build_meta(self):
-        meta = {}
-
+    def build_kernel_descriptors(self):
+        """Freeze each emitted kernel's entry points and launch requirements."""
+        kernels = []
         for kernel in self.kernels:
-            forward_name = warp._src.codegen.cuda_kernel_forward_name(kernel)
-            backward_name = warp._src.codegen.cuda_kernel_backward_name(kernel)
             options = self.options | kernel.options
+            backward = options["enable_backward"] and options.get("entry_point_abi", "warp") == "warp"
+            kernels.append(
+                CompiledKernel(
+                    warp._src.codegen.cuda_kernel_forward_name(kernel),
+                    warp._src.codegen.cuda_kernel_backward_name(kernel) if backward else "",
+                    kernel.adj.get_total_required_shared(),
+                    kernel.adj.get_total_required_shared_backward() if backward else 0,
+                    _get_kernel_cluster_dim(kernel, self.options),
+                )
+            )
+        return tuple(sorted(kernels, key=lambda kernel: kernel.forward_name))
 
-            meta[forward_name + "_smem_bytes"] = kernel.adj.get_total_required_shared()
-            if options["enable_backward"] and options.get("entry_point_abi", "warp") == "warp":
-                meta[backward_name + "_smem_bytes"] = kernel.adj.get_total_required_shared_backward()
-
-        return meta
+    def build_meta(self):
+        """Return numeric shared-memory metadata for the current compile target."""
+        return {
+            name + "_smem_bytes": size
+            for kernel in self.build_kernel_descriptors()
+            for name, size in (
+                (kernel.forward_name, kernel.forward_smem_bytes),
+                (kernel.backward_name, kernel.backward_smem_bytes),
+            )
+            if name
+        }
 
     def get_link_inputs(self):
         """Return deterministic snapshots of native link inputs."""
         return (
-            [self.ltoirs[key] for key in sorted(self.ltoirs)],
-            [self.fatbins[key] for key in sorted(self.fatbins)],
+            tuple(self.ltoirs[key] for key in sorted(self.ltoirs)),
+            tuple(self.fatbins[key] for key in sorted(self.fatbins)),
         )
 
     def _codegen_functions(self, functions, device, forward_only=False, reverse_only=False):
@@ -3569,7 +3609,7 @@ class ModuleBuilder:
                     )
 
         # code-gen LTO forward declarations
-        if len(self.ltoirs_decl) > 0:
+        if self.ltoirs_decl:
             source += 'extern "C" {\n'
             # IMPORTANT: Sort by symbol so LTO discovery order cannot change the generated source.
             for symbol in sorted(self.ltoirs_decl):
@@ -3653,6 +3693,39 @@ class ModuleBuilder:
         return source
 
 
+def _cuda_native_options(options: Mapping[str, Any], arch_suffix: str) -> CudaNativeOptions:
+    """Freeze the resolved native CUDA arguments, including their effective defaults."""
+    return CudaNativeOptions(
+        mode=options["mode"],
+        optimization_level=3 if options["optimization_level"] is None else options["optimization_level"],
+        verify_fp=options["verify_fp"],
+        fast_math=options["fast_math"],
+        fuse_fp=options["fuse_fp"],
+        lineinfo=options["lineinfo"],
+        compile_time_trace=options["compile_time_trace"],
+        llvm_cuda=options["llvm_cuda"],
+        use_precompiled_headers=options["use_precompiled_headers"],
+        extra_cuda_include_dirs=tuple(options["extra_cuda_include_dirs"]),
+        cuda_arch_suffix=arch_suffix,
+    )
+
+
+def _module_binary_kind(binary_path: str | os.PathLike) -> Literal["ptx", "cubin", "object"]:
+    extension = Path(binary_path).suffix.lower()
+    kinds = {".ptx": "ptx", ".cubin": "cubin", ".o": "object"}
+    try:
+        return kinds[extension]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported Warp module binary extension {extension!r}") from exc
+
+
+def _module_arch_suffix(binary_path: str | os.PathLike, target_arch: int | None) -> str:
+    if target_arch is None:
+        return ""
+    match = re.search(rf"\.sm{target_arch}([af]?)\.(?:ptx|cubin)$", Path(binary_path).name)
+    return match.group(1) if match else ""
+
+
 # ModuleExec holds the compiled executable code for a specific device.
 # It can be used to obtain kernel hooks on that device and serves
 # as a reference-counted wrapper of the loaded module.
@@ -3677,6 +3750,11 @@ class ModuleExec:
         compile_arch: int | None = None,
         det_launch_meta_map: dict[str, DeterministicMeta] | None = None,
         kernel_hashes: Mapping[Kernel, bytes] | None = None,
+        binary_path: str | None = None,
+        binary_kind: Literal["ptx", "cubin", "object"] | None = None,
+        arch_suffix: str = "",
+        compile_record: CudaCompileRecord | None = None,
+        kernel_descriptors: tuple[CompiledKernel, ...] = (),
     ):
         self.handle = handle
         self.module_hash = module_hash
@@ -3693,6 +3771,11 @@ class ModuleExec:
         # CPU). Cluster classification must use this frozen target, not the current
         # global config, which can change after the module is loaded.
         self.compile_arch = compile_arch
+        self.binary_path = binary_path
+        self.binary_kind = binary_kind
+        self.arch_suffix = arch_suffix
+        self.compile_record = compile_record
+        self.kernel_descriptors = {kernel.forward_name: kernel for kernel in kernel_descriptors}
 
     # release the loaded module
     def __del__(self):
@@ -3720,6 +3803,27 @@ class ModuleExec:
             name = kernel.get_mangled_name(kernel_hash=kernel_hash)
             self.kernel_names[kernel] = name
         return name
+
+    def get_kernel_descriptor(self, kernel: Kernel) -> CompiledKernel:
+        """Return this executable's frozen kernel entry points and requirements."""
+        name = self.get_kernel_mangled_name(kernel)
+        forward = warp._src.codegen.cuda_kernel_forward_name(kernel, name=name)
+        descriptor = self.kernel_descriptors.get(forward)
+        if descriptor is None:
+            # Explicit binary loads and CPU objects use their companion metadata.
+            backward = warp._src.codegen.cuda_kernel_backward_name(kernel, name=name)
+            has_backward = backward + "_smem_bytes" in self.meta
+            descriptor = CompiledKernel(
+                forward if self.device.is_cuda else name + "_cpu_forward",
+                (backward if self.device.is_cuda else name + "_cpu_backward") if has_backward else "",
+                self.meta[forward + "_smem_bytes"]
+                if self.device.is_cuda
+                else self.meta.get(forward + "_smem_bytes", 0),
+                self.meta[backward + "_smem_bytes"] if has_backward else 0,
+                _get_kernel_cluster_dim(kernel),
+            )
+            self.kernel_descriptors[forward] = descriptor
+        return descriptor
 
     def _get_forward_cuda_kernel(self, kernel):
         """Return the forward CUDA function without initializing launch hooks.
@@ -3750,6 +3854,7 @@ class ModuleExec:
             return hooks
 
         options = kernel.module.options | kernel.options
+        descriptor = self.get_kernel_descriptor(kernel)
 
         if self.device.is_cuda:
             if options.get("entry_point_abi", "warp") != "warp":
@@ -3757,13 +3862,13 @@ class ModuleExec:
                     f"Kernel '{kernel.key}' uses entry_point_abi='{options['entry_point_abi']}' and cannot be launched with wp.launch()."
                 )
 
-            forward_name = warp._src.codegen.cuda_kernel_forward_name(kernel, name=name)
+            forward_name = descriptor.forward_name
             forward_kernel = runtime.core.wp_cuda_get_kernel(
                 self.device.context, self.handle, forward_name.encode("utf-8")
             )
 
-            if options["enable_backward"]:
-                backward_name = warp._src.codegen.cuda_kernel_backward_name(kernel, name=name)
+            if descriptor.backward_name:
+                backward_name = descriptor.backward_name
                 backward_kernel = runtime.core.wp_cuda_get_kernel(
                     self.device.context, self.handle, backward_name.encode("utf-8")
                 )
@@ -3771,8 +3876,8 @@ class ModuleExec:
                 backward_kernel = None
 
             # look up the required shared memory size for each kernel from module metadata
-            forward_smem_bytes = self.meta[forward_name + "_smem_bytes"]
-            backward_smem_bytes = self.meta[backward_name + "_smem_bytes"] if options["enable_backward"] else 0
+            forward_smem_bytes = descriptor.forward_smem_bytes
+            backward_smem_bytes = descriptor.backward_smem_bytes
 
             # configure kernels maximum shared memory size
             max_smem_bytes = self.device.max_shared_memory_per_block
@@ -3803,7 +3908,7 @@ class ModuleExec:
 
             forward_smem_shortfall = configure_smem(forward_kernel, "forward", forward_smem_bytes)
             backward_smem_shortfall = (
-                configure_smem(backward_kernel, "backward", backward_smem_bytes) if options["enable_backward"] else None
+                configure_smem(backward_kernel, "backward", backward_smem_bytes) if descriptor.backward_name else None
             )
 
             # Resolve the effective cluster_dim once here (cached on the hooks)
@@ -3811,7 +3916,7 @@ class ModuleExec:
             # status: "active" configures the attribute, "ignored" stays
             # unclustered, "dropped" raises; see _cluster_dim_target_status.
             effective_cluster_dim = 1
-            cluster_dim = _normalize_cluster_dim(options.get("cluster_dim", 1))
+            cluster_dim = descriptor.cluster_dim
             if cluster_dim != 1:
                 # Classify against the target the loaded binary was compiled for,
                 # frozen on this ModuleExec at load time. Re-reading the global
@@ -3834,7 +3939,7 @@ class ModuleExec:
                             f"Failed to set cluster attributes on {forward_name} for "
                             f"cluster_dim={cluster_dim}; launches may fail on this device"
                         )
-                    if options["enable_backward"] and not runtime.core.wp_cuda_set_kernel_cluster_attrs(
+                    if descriptor.backward_name and not runtime.core.wp_cuda_set_kernel_cluster_attrs(
                         backward_kernel, cluster_dim, 1, 1
                     ):
                         log_warning(
@@ -3860,7 +3965,7 @@ class ModuleExec:
                 or None
             )
 
-            if options["enable_backward"]:
+            if descriptor.backward_name:
                 backward = (
                     func(runtime.llvm.wp_lookup(self.handle.encode("utf-8"), (name + "_cpu_backward").encode("utf-8")))
                     or None
@@ -4421,6 +4526,7 @@ class Module:
         the host CPU's ISA features (e.g. ``wp___main___0340cd1.cpu1a2b3c4d.o``).
         This distinguishes incompatible CPU objects without affecting the shared
         module directory and its CUDA caches.
+
         """
         module_name_short = self.get_module_identifier(block_dim=block_dim)
 
@@ -4487,12 +4593,15 @@ class Module:
             self.failed_builds[(device.context, active_block_dim)] = error
 
     @synchronized(_codegen_lock)
-    def _run_codegen(self, options: dict, is_cpu: bool) -> tuple[str, str, dict, list, list]:
+    def _run_codegen(
+        self,
+        options: dict,
+        is_cpu: bool,
+    ) -> _ModuleCodegenResult:
         """Run the Python-side codegen window.
 
-        Returns ``(source, ext, meta, ltoirs, fatbins)``: the emitted C++/CUDA
-        source, its file extension, the metadata dict, and snapshots of the
-        builder's LTO-IR and fatbin collections.
+        Returns emitted source, concrete kernel metadata, and immutable
+        snapshots of any native link inputs.
 
         Held under ``_codegen_lock`` so concurrent ``Module._compile`` callers
         cannot interleave ``adj.build`` writes and ``codegen()`` reads on a
@@ -4500,20 +4609,12 @@ class Module:
         Clang invocation runs after this returns, so N modules still compile
         in parallel -- only the cheap codegen window serialises.
         """
-        builder = ModuleBuilder(
-            self,
-            options,
-            hasher=self.hashers.get(options["block_dim"], None),
-        )
-        if is_cpu:
-            ext = "cpp"
-            source = builder.codegen("cpu")
-        else:
-            ext = "cu"
-            source = builder.codegen("cuda")
-        meta = builder.build_meta()
+        hasher = self.hashers.get(options["block_dim"])
+        builder = ModuleBuilder(self, options, hasher=hasher)
+        source = builder.codegen("cpu" if is_cpu else "cuda")
+        kernels = builder.build_kernel_descriptors()
         ltoirs, fatbins = builder.get_link_inputs()
-        return source, ext, meta, ltoirs, fatbins
+        return _ModuleCodegenResult(source, builder.build_meta(), kernels, ltoirs, fatbins)
 
     def _compile(
         self,
@@ -4523,37 +4624,18 @@ class Module:
         output_arch: int | None = None,
         use_ptx: bool | None = None,
         options: dict | None = None,
-    ) -> bool:
-        """Compile this module for a specific device.
+    ) -> _ModuleCompileResult:
+        """Return a compiled artifact or a validated cache hit without loading it.
 
-        Note that this function only generates and compiles code. The resulting
-        binary is not loaded into the runtime.
-
-        Args:
-            device: The device to compile the module for.
-            output_dir: The directory to write the compiled module to.
-            output_name: The name of the compiled module binary file.
-            output_arch: The architecture to compile the module for.
-            use_ptx: Whether to compile to PTX instead of CUBIN. If ``None``,
-                auto-determined from the device and architecture.
-            options: Resolved module options dict. If ``None``, resolved from
-                current config.
-
-        Returns:
-            ``True`` if compilation was performed, ``False`` if a cached
-            binary already exists and compilation was skipped.
+        An explicit ``output_dir`` also receives conventional AOT files. CUDA
+        executables retain the immutable artifact independently of those copies.
         """
         if options is None:
             options = self.resolve_options(warp.config)
-
         if output_arch is None:
-            output_arch = self._get_compile_arch(device)  # Will remain at None if device is CPU
-
-        # output_arch is None for CPU targets, set to a SM architecture for CUDA
+            output_arch = self._get_compile_arch(device)
         is_cpu = output_arch is None
-
         options = options | {"output_arch": output_arch}
-
         # Reject cluster_dim > 1 when the compile target drops the cluster
         # attribute (status == "dropped"); see _cluster_dim_target_status.
         if not is_cpu and output_arch < 90:
@@ -4564,235 +4646,198 @@ class Module:
                 # redefined with the same key can leave an older *live* clustered
                 # kernel that still generates WP_CLUSTER_DIMS yet would be missed
                 # by self.kernels.values().
-                cluster_hasher = ModuleHasher(self._get_live_kernels(), options)
-                for kernel in cluster_hasher.get_unique_kernels():
-                    cluster_dim = _get_kernel_cluster_dim(kernel)
-                    if cluster_dim > 1:
-                        target = "this ahead-of-time compile" if device is None else device.alias
-                        raise RuntimeError(
-                            f"Kernel {kernel.key!r} requests cluster_dim={cluster_dim}, but {target} is "
-                            f"compiling for sm_{output_arch}, where thread block clusters are unavailable and "
-                            f"the cluster attribute is dropped. Compile for sm_90 or higher (raise "
-                            f"warp.config.ptx_target_arch to >= 90, target a cluster-capable arch, or build "
-                            f"CUBIN for a cluster-capable device) to use clustering, or remove cluster_dim."
-                        )
+                with _codegen_lock:
+                    cluster_hasher = ModuleHasher(self._get_live_kernels(), options)
+                    for kernel in cluster_hasher.get_unique_kernels():
+                        cluster_dim = _get_kernel_cluster_dim(kernel, options)
+                        if cluster_dim > 1:
+                            target = "this ahead-of-time compile" if device is None else device.alias
+                            raise RuntimeError(
+                                f"Kernel {kernel.key!r} requests cluster_dim={cluster_dim}, but {target} is "
+                                f"compiling for sm_{output_arch}, where thread block clusters are unavailable and "
+                                f"the cluster attribute is dropped. Compile for sm_90 or higher (raise "
+                                f"warp.config.ptx_target_arch to >= 90, target a cluster-capable arch, or build "
+                                f"CUBIN for a cluster-capable device) to use clustering, or remove cluster_dim."
+                            )
 
-        # ``options`` is the resolved dict for the active block_dim variant
-        # (set by ``Module.load`` via ``resolve_options(block_dim=...)``). Use
-        # it for every cache-path lookup below so the .meta filename and
-        # module dir line up with the variant being compiled -- not the
-        # module-level default in ``self.options["block_dim"]``.
         active_block_dim = options["block_dim"]
-
-        # Resolve the arch suffix once for both the output filename and the build call
-        if not is_cpu:
+        module_name_short = self.get_module_identifier(block_dim=active_block_dim)
+        explicit_output = output_dir is not None
+        output_dir = Path(output_dir) if explicit_output else Path(warp.config.kernel_cache_dir) / module_name_short
+        if is_cpu:
+            arch_suffix = ""
+        else:
             init()
             arch_suffix = _validate_cuda_arch_suffix(
                 output_arch,
-                device_arch=device.arch if device else output_arch,
-                toolkit_version=runtime.toolkit_version,
-                device_name=device.alias if device else None,
+                device.arch if device else output_arch,
+                runtime.toolkit_version,
+                device.alias if device else None,
             )
-        else:
-            arch_suffix = ""
-
         if output_name is None:
             output_name = self._get_compile_output_name(
-                device, output_arch, arch_suffix, use_ptx, block_dim=active_block_dim
+                device,
+                output_arch,
+                arch_suffix,
+                use_ptx,
+                block_dim=active_block_dim,
             )
-
-        # Resolve output directory early so we can check for cached binaries
-        module_name_short = self.get_module_identifier(block_dim=active_block_dim)
-
-        if output_dir is None:
-            output_dir = os.path.join(warp.config.kernel_cache_dir, f"{module_name_short}")
-        else:
-            output_dir = os.fspath(output_dir)
-
-        # Skip compilation if the binary and metadata are already cached
-        # (forced rebuild when verifying autograd array access)
-        if (
-            warp.config.cache_kernels
-            and not options.get("verify_autograd_array_access", False)
-            and os.path.exists(os.path.join(output_dir, output_name))
-            and os.path.exists(os.path.join(output_dir, self._get_meta_name(block_dim=active_block_dim)))
-        ):
-            return False
-
-        # Python codegen window -- runs serialised under ``_codegen_lock``
-        # inside ``_run_codegen``. Snapshots all builder state needed by
-        # the native compile below, so the native step (the dominant cost)
-        # runs unlocked and parallelises across N modules.
-        #
-        # A kernel that fails here fails the module, exactly as a native
-        # compile error does. The module is the compilation unit, so a
-        # successful build has to mean every kernel in it built; dropping the
-        # failing kernel and continuing would leave the module claiming
-        # kernels its binary does not contain.
-        try:
-            source_str, source_code_ext, meta, ltoir_values, fatbin_values = self._run_codegen(options, is_cpu)
-        except Exception as e:
-            self._record_build_failure(device, is_cpu, active_block_dim, e)
-            raise
-
-        meta_path = os.path.join(output_dir, self._get_meta_name(block_dim=active_block_dim))
-
-        build_dir = os.path.normpath(output_dir) + f"_p{os.getpid()}_t{threading.get_ident()}"
-
-        # dir may exist from previous attempts / runs / archs
-        Path(build_dir).mkdir(parents=True, exist_ok=True)
-
-        mode = options["mode"]
-        opt = options["optimization_level"]
-        if opt is None:
-            # Default to O2 for CPU, O3 for CUDA
-            opt = 2 if is_cpu else 3
-
-        if opt != 3 and not is_cpu and runtime.toolkit_version is not None and runtime.toolkit_version < (12, 9):
-            log_warning("Optimization level other than 3 has no effect on CUDA versions prior to 12.9.", once=True)
-
-        if (
-            opt == 0
-            and not is_cpu
-            and not options["llvm_cuda"]
-            and runtime.toolkit_version is not None
-            and runtime.toolkit_version >= (13, 1)
-        ):
-            log_warning(
-                "CUDA Toolkit 13.1 and newer have an NVRTC compiler issue that makes Warp optimization level 0 "
-                "unsafe; using optimization level 1 instead.",
-                once=True,
-            )
-
-        source_code_path = os.path.join(build_dir, f"{module_name_short}.{source_code_ext}")
-        try:
-            with open(source_code_path, "w") as source_file:
-                source_file.write(source_str)
-        except FileNotFoundError as e:
-            # Same reasoning as the native build below: record whichever error the caller
-            # sees, so a module that could not write its source replays that on later launches.
-            try:
-                _check_and_raise_long_path_error(e)
-            except Exception as reported:
-                self._record_build_failure(device, is_cpu, active_block_dim, reported)
-                raise
-
-        output_path = os.path.join(build_dir, output_name)
-
-        try:
-            if is_cpu:
-                # build object code
-                with warp.ScopedTimer("Compile x86", active=warp.config.log_level <= warp.LOG_DEBUG):
-                    warp._src.build.build_cpu(
-                        output_path,
-                        source_code_path,
-                        mode=mode,
-                        fast_math=options["fast_math"],
-                        verify_fp=options["verify_fp"],
-                        fuse_fp=options["fuse_fp"],
-                        extra_flags=options["cpu_compiler_flags"],
-                        optimization_level=opt,
-                        verbose=warp.config.log_level <= warp.LOG_DEBUG,
-                        use_precompiled_headers=options["use_precompiled_headers"],
-                        pch_dir=runtime.get_clang_pch_dir() if options["use_precompiled_headers"] else None,
-                        block_dim=options["block_dim"],
-                        enable_tiles_in_stack_memory=options["enable_tiles_in_stack_memory"],
-                        extra_include_dirs=options["extra_cpu_include_dirs"],
-                    )
-            else:
-                # generate PTX or CUBIN
-                with warp.ScopedTimer(
-                    f"Compile CUDA (arch={options['output_arch']}{arch_suffix}, mode={mode}, block_dim={options['block_dim']})",
-                    active=warp.config.log_level <= warp.LOG_DEBUG,
-                ):
-                    warp._src.build.build_cuda(
-                        source_code_path,
-                        options["output_arch"],
-                        output_path,
-                        config=mode,
-                        optimization_level=opt,
-                        verify_fp=options["verify_fp"],
-                        fast_math=options["fast_math"],
-                        fuse_fp=options["fuse_fp"],
-                        lineinfo=options["lineinfo"],
-                        compile_time_trace=options["compile_time_trace"],
-                        ltoirs=ltoir_values,
-                        fatbins=fatbin_values,
-                        arch_suffix=arch_suffix,
-                        pch_dir=runtime.get_nvrtc_pch_dir(),
-                        llvm_cuda=options["llvm_cuda"],
-                        use_precompiled_headers=options["use_precompiled_headers"],
-                        extra_include_dirs=options["extra_cuda_include_dirs"],
-                    )
-
-        except Exception as e:
-            # ``_check_and_raise_long_path_error`` always raises, either ``e`` itself or a
-            # clearer error naming the Windows path limit. Catch whichever it raises so the
-            # module records the error the caller actually sees; letting it escape from here
-            # would leave the failure unrecorded and rebuild the module on every later launch.
-            if isinstance(e, FileNotFoundError):
+        binary_path = output_dir / output_name
+        meta_path = output_dir / f"{module_name_short}.meta"
+        index_path = Path(str(binary_path) + ".cache.json")
+        use_cache = warp.config.cache_kernels and not options.get("verify_autograd_array_access", False)
+        if not is_cpu:
+            native_options = _cuda_native_options(options, arch_suffix)
+            binary_kind = _module_binary_kind(binary_path)
+            if use_cache:
                 try:
-                    _check_and_raise_long_path_error(e)
+                    artifact = warp._src.cuda_build.read_cuda_index(warp.config.kernel_cache_dir, index_path, self.name)
+                    record = artifact.record
+                    if (
+                        record.module_hash != self.get_module_hash(active_block_dim).hex()
+                        or record.block_dim != active_block_dim
+                        or record.native_options != native_options
+                        or record.dependencies != tuple(sorted(options.get("extra_build_dependencies", ())))
+                        or (artifact.target_arch, artifact.arch_suffix, artifact.binary_kind)
+                        != (output_arch, arch_suffix, binary_kind)
+                    ):
+                        raise ValueError("Cached CUDA artifact does not match the requested module variant")
+                    result_path = (
+                        warp._src.cuda_build.export_cuda_artifact(artifact, binary_path)
+                        if explicit_output
+                        else artifact.binary_path
+                    )
+                    return _ModuleCompileResult(str(result_path), artifact.meta, False, artifact)
+                except (OSError, ValueError, TypeError, KeyError, RuntimeError):
+                    try:
+                        unsupported = warp._src.cuda_build.read_unsupported_index(index_path)
+                    except (OSError, ValueError, TypeError, KeyError):
+                        unsupported = None
+                    if unsupported and binary_path.is_file() and meta_path.is_file():
+                        return _ModuleCompileResult(str(binary_path), json.loads(meta_path.read_bytes()), False)
+        elif use_cache and binary_path.is_file() and meta_path.is_file():
+            return _ModuleCompileResult(str(binary_path), json.loads(meta_path.read_bytes()), False)
+
+        try:
+            generated = self._run_codegen(options, is_cpu)
+            mode = options["mode"]
+            opt = options["optimization_level"]
+            if opt is None:
+                opt = 2 if is_cpu else 3
+            if not is_cpu:
+                if opt != 3 and runtime.toolkit_version is not None and runtime.toolkit_version < (12, 9):
+                    log_warning(
+                        "Optimization level other than 3 has no effect on CUDA versions prior to 12.9.", once=True
+                    )
+                if (
+                    opt == 0
+                    and not options["llvm_cuda"]
+                    and runtime.toolkit_version is not None
+                    and runtime.toolkit_version >= (13, 1)
+                ):
+                    log_warning(
+                        "CUDA Toolkit 13.1 and newer have an NVRTC compiler issue that makes Warp optimization level 0 "
+                        "unsafe; using optimization level 1 instead.",
+                        once=True,
+                    )
+                if not generated.ltoirs and not generated.fatbins:
+                    record = CudaCompileRecord.create(
+                        module_hash=self.get_module_hash(active_block_dim),
+                        block_dim=active_block_dim,
+                        source=generated.source.encode(),
+                        source_basename=f"{module_name_short}.cu",
+                        native_options=native_options,
+                        kernels=generated.kernels,
+                        dependencies=tuple(options.get("extra_build_dependencies", ())),
+                    )
+                    with warp.ScopedTimer(
+                        f"Compile CUDA (arch={output_arch}{arch_suffix}, mode={mode}, block_dim={active_block_dim})",
+                        active=warp.config.log_level <= warp.LOG_DEBUG,
+                    ):
+                        artifact, compiled = warp._src.cuda_build.compile_cuda(
+                            record,
+                            self.name,
+                            warp.config.kernel_cache_dir,
+                            output_arch,
+                            arch_suffix,
+                            binary_kind,
+                            pch_dir=runtime.get_nvrtc_pch_dir(),
+                            use_cache=use_cache,
+                        )
+                    warp._src.cuda_build.publish_cuda_index(index_path, artifact)
+                    result_path = (
+                        warp._src.cuda_build.export_cuda_artifact(artifact, binary_path, overwrite=not use_cache)
+                        if explicit_output
+                        else artifact.binary_path
+                    )
+                    return _ModuleCompileResult(str(result_path), artifact.meta, compiled, artifact)
+
+            output_dir.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(prefix=f".{module_name_short}-", dir=output_dir.parent) as staging_dir:
+                staging = Path(staging_dir)
+                source = staging / f"{module_name_short}.{'cpp' if is_cpu else 'cu'}"
+                source.write_text(generated.source)
+                output = staging / output_name
+                if is_cpu:
+                    with warp.ScopedTimer("Compile x86", active=warp.config.log_level <= warp.LOG_DEBUG):
+                        warp._src.build.build_cpu(
+                            str(output),
+                            str(source),
+                            mode=mode,
+                            fast_math=options["fast_math"],
+                            verify_fp=options["verify_fp"],
+                            fuse_fp=options["fuse_fp"],
+                            extra_flags=options["cpu_compiler_flags"],
+                            optimization_level=opt,
+                            verbose=warp.config.log_level <= warp.LOG_DEBUG,
+                            use_precompiled_headers=options["use_precompiled_headers"],
+                            pch_dir=runtime.get_clang_pch_dir() if options["use_precompiled_headers"] else None,
+                            block_dim=active_block_dim,
+                            enable_tiles_in_stack_memory=options["enable_tiles_in_stack_memory"],
+                            extra_include_dirs=options["extra_cpu_include_dirs"],
+                        )
+                else:
+                    with warp.ScopedTimer(
+                        f"Compile CUDA (arch={output_arch}{arch_suffix}, mode={mode}, block_dim={active_block_dim})",
+                        active=warp.config.log_level <= warp.LOG_DEBUG,
+                    ):
+                        warp._src.build.build_cuda(
+                            str(source),
+                            output_arch,
+                            str(output),
+                            config=mode,
+                            optimization_level=opt,
+                            verify_fp=options["verify_fp"],
+                            fast_math=options["fast_math"],
+                            fuse_fp=options["fuse_fp"],
+                            lineinfo=options["lineinfo"],
+                            compile_time_trace=options["compile_time_trace"],
+                            ltoirs=generated.ltoirs,
+                            fatbins=generated.fatbins,
+                            arch_suffix=arch_suffix,
+                            pch_dir=runtime.get_nvrtc_pch_dir(),
+                            llvm_cuda=options["llvm_cuda"],
+                            use_precompiled_headers=options["use_precompiled_headers"],
+                            extra_include_dirs=options["extra_cuda_include_dirs"],
+                        )
+                self._write_meta(staging / meta_path.name, generated.metadata)
+                output_dir.mkdir(exist_ok=True)
+                for file in (output, source, staging / meta_path.name):
+                    os.replace(file, output_dir / file.name)
+                if not is_cpu:
+                    warp._src.cuda_build.publish_unsupported_index(
+                        index_path, "modules with MathDx link inputs are unsupported"
+                    )
+            return _ModuleCompileResult(str(binary_path), generated.metadata, True)
+        except Exception as error:
+            if isinstance(error, FileNotFoundError):
+                try:
+                    _check_and_raise_long_path_error(error)
                 except Exception as reported:
                     self._record_build_failure(device, is_cpu, active_block_dim, reported)
                     raise
-
-            self._record_build_failure(device, is_cpu, active_block_dim, e)
-
-            raise (e)
-
-        # ------------------------------------------------------------
-        # write meta data (already produced by ``_run_codegen`` above)
-
-        output_meta_path = os.path.join(build_dir, self._get_meta_name(block_dim=active_block_dim))
-
-        self._write_meta(output_meta_path, meta)
-
-        # -----------------------------------------------------------
-        # update cache
-
-        # try to move process outputs to cache
-        warp._src.build.safe_rename(build_dir, output_dir)
-
-        if os.path.exists(output_dir):
-            # final object binary path
-            binary_path = os.path.join(output_dir, output_name)
-
-            if not os.path.exists(binary_path) or self.options["strip_hash"]:
-                # copy our output file to the destination module
-                # this is necessary in case different processes
-                # have different GPU architectures / devices
-                try:
-                    os.replace(output_path, binary_path)
-                except OSError:
-                    # another process likely updated the module dir first
-                    pass
-
-            if not os.path.exists(meta_path) or self.options["strip_hash"]:
-                # copy our output file to the destination module
-                # this is necessary in case different processes
-                # have different GPU architectures / devices
-                try:
-                    os.replace(output_meta_path, meta_path)
-                except OSError:
-                    # another process likely updated the module dir first
-                    pass
-
-            try:
-                final_source_path = os.path.join(output_dir, os.path.basename(source_code_path))
-                if not os.path.exists(final_source_path) or self.options["strip_hash"]:
-                    os.replace(source_code_path, final_source_path)
-            except OSError:
-                # another process likely updated the module dir first
-                pass
-            except Exception as e:
-                # We don't need source_code_path to be copied successfully to proceed, so warn and keep running
-                log_warning(f"Exception when renaming {source_code_path}: {e}")
-
-            # clean up build_dir used for this process regardless
-            shutil.rmtree(build_dir, ignore_errors=True)
-
-        return True
+            self._record_build_failure(device, is_cpu, active_block_dim, error)
+            raise
 
     def load(
         self,
@@ -4801,6 +4846,7 @@ class Module:
         binary_path: os.PathLike | None = None,
         output_arch: int | None = None,
         meta_path: os.PathLike | None = None,
+        artifact: warp._src.cuda_build.CudaArtifact | None = None,
     ) -> ModuleExec | None:
         device = runtime.get_device(device)
 
@@ -4832,9 +4878,6 @@ class Module:
         module_hash = self.get_module_hash(active_block_dim)
         options = self.resolved_options[active_block_dim]
 
-        # use a unique module path using the module short hash
-        module_name_short = self.get_module_identifier(active_block_dim)
-
         module_load_timer_name = (
             f"Module {self.name} {module_hash.hex()[:7]} load on device '{device}'"
             if self.options["strip_hash"] is False
@@ -4855,6 +4898,8 @@ class Module:
             # Determine binary path and build if necessary
 
             compiled = False
+            compile_record = artifact.record if artifact else None
+            meta = artifact.meta if artifact else None
             if binary_path:
                 # We will never re-codegen or re-compile in this situation
                 # The expected files must already exist
@@ -4862,7 +4907,7 @@ class Module:
                 if device.is_cuda and output_arch is None:
                     raise ValueError("'output_arch' must be provided if a 'binary_path' is provided")
 
-                if meta_path is None:
+                if meta_path is None and artifact is None:
                     raise ValueError("'meta_path' must be provided if a 'binary_path' is provided")
 
                 if not os.path.exists(binary_path):
@@ -4871,31 +4916,30 @@ class Module:
                 else:
                     module_load_timer.extra_msg = " (cached)"
             else:
-                output_name = self._get_compile_output_name(device, block_dim=active_block_dim)
-                output_arch = self._get_compile_arch(device)
-
-                module_dir = os.path.join(warp.config.kernel_cache_dir, module_name_short)
-                meta_path = os.path.join(module_dir, self._get_meta_name(block_dim=active_block_dim))
-                binary_path = os.path.join(module_dir, output_name)
-
                 try:
-                    compiled = self._compile(device, module_dir, output_name, output_arch, options=options)
-                except Exception as e:
+                    result = self._compile(device, options=options)
+                except Exception:
                     module_load_timer.extra_msg = " (error)"
-                    raise e
-
+                    raise
+                binary_path, meta, compiled, artifact = result
+                output_arch = artifact.target_arch if artifact else self._get_compile_arch(device)
+                compile_record = artifact.record if artifact else None
                 module_load_timer.extra_msg = " (compiled)" if compiled else " (cached)"
+
+            # Retain the location used to load the binary even if the working
+            # directory changes before an APIC graph is saved.
+            binary_path = os.path.abspath(binary_path)
+            binary_kind = artifact.binary_kind if artifact else _module_binary_kind(binary_path)
+            binary_arch_suffix = artifact.arch_suffix if artifact else _module_arch_suffix(binary_path, output_arch)
 
             det_launch_meta_map = self._snapshot_deterministic_metadata(active_block_dim, options, rebuild=not compiled)
 
             # -----------------------------------------------------------
             # Load CPU or CUDA binary
 
-            if os.path.exists(meta_path):
+            if meta is None:
                 with open(meta_path) as meta_file:
                     meta = json.load(meta_file)
-            else:
-                raise FileNotFoundError(f"Module metadata file {meta_path} was not found in the cache")
 
             if device.is_cpu:
                 # LLVM modules are identified using strings, so we need to ensure uniqueness
@@ -4916,9 +4960,12 @@ class Module:
                     device,
                     meta,
                     active_block_dim,
-                    output_arch,
-                    det_launch_meta_map,
-                    self.hashers[active_block_dim].kernel_hashes,
+                    compile_arch=output_arch,
+                    det_launch_meta_map=det_launch_meta_map,
+                    kernel_hashes=self.hashers[active_block_dim].kernel_hashes,
+                    binary_path=binary_path,
+                    binary_kind=binary_kind,
+                    arch_suffix=binary_arch_suffix,
                 )
                 self.execs[(None, active_block_dim)] = module_exec
 
@@ -4931,9 +4978,14 @@ class Module:
                         device,
                         meta,
                         active_block_dim,
-                        output_arch,
-                        det_launch_meta_map,
-                        self.hashers[active_block_dim].kernel_hashes,
+                        compile_arch=output_arch,
+                        det_launch_meta_map=det_launch_meta_map,
+                        kernel_hashes=self.hashers[active_block_dim].kernel_hashes,
+                        binary_path=binary_path,
+                        binary_kind=binary_kind,
+                        arch_suffix=binary_arch_suffix,
+                        compile_record=compile_record,
+                        kernel_descriptors=artifact.kernels if artifact else (),
                     )
                     self.execs[(device.context, active_block_dim)] = module_exec
                 else:
@@ -6112,11 +6164,16 @@ def _validate_cuda_device_arch(
         )
 
 
+_LIVE_CUDA_ARCH_SUFFIX = object()
+
+
 def _validate_cuda_arch_suffix(
     output_arch: int,
     device_arch: int,
     toolkit_version: tuple[int, int] | None,
     device_name: str | None = None,
+    *,
+    suffix: str | object | None = _LIVE_CUDA_ARCH_SUFFIX,
 ) -> str:
     """Validate :data:`warp.config.cuda_arch_suffix` and return the suffix string.
 
@@ -6128,6 +6185,7 @@ def _validate_cuda_arch_suffix(
         device_arch: The architecture of the target device (or the AOT target).
         toolkit_version: The CUDA toolkit version as ``(major, minor)``, or ``None``.
         device_name: Optional device name for error messages.
+        suffix: Frozen suffix for record compilation; otherwise read the live config.
 
     Returns:
         The validated suffix string (``"a"``, ``"f"``, or ``""``).
@@ -6135,7 +6193,10 @@ def _validate_cuda_arch_suffix(
     Raises:
         RuntimeError: If the suffix is invalid for the target architecture or toolkit.
     """
-    suffix = warp.config.cuda_arch_suffix
+    if suffix is _LIVE_CUDA_ARCH_SUFFIX:
+        suffix = warp.config.cuda_arch_suffix
+    elif suffix == "":
+        return ""
     if suffix is None:
         return ""
 
@@ -6706,27 +6767,6 @@ class Runtime:
             self.core.wp_apic_cpu_replay_graph.restype = ctypes.c_bool
 
             # APIC serialization bindings
-            self.core.wp_apic_register_module.argtypes = [
-                ctypes.c_void_p,
-                ctypes.c_char_p,
-                ctypes.c_char_p,
-                ctypes.c_char_p,
-                ctypes.c_int,
-            ]
-            self.core.wp_apic_register_module.restype = None
-            self.core.wp_apic_register_kernel.argtypes = [
-                ctypes.c_void_p,
-                ctypes.c_char_p,
-                ctypes.c_char_p,
-                ctypes.c_char_p,
-                ctypes.c_char_p,
-                ctypes.c_int,
-                ctypes.c_int,
-                ctypes.c_int,
-            ]
-            self.core.wp_apic_register_kernel.restype = None
-            self.core.wp_apic_register_binding.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
-            self.core.wp_apic_register_binding.restype = None
             self.core.wp_apic_register_ptr_location.argtypes = [
                 ctypes.c_void_p,
                 ctypes.c_uint32,
@@ -6744,7 +6784,15 @@ class Runtime:
             self.core.wp_apic_register_memory_region.restype = None
             self.core.wp_apic_register_mesh.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
             self.core.wp_apic_register_mesh.restype = ctypes.c_bool
-            self.core.wp_apic_state_save.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int, ctypes.c_void_p]
+            from warp._src.apic.types import APICExportDescriptor  # noqa: PLC0415
+
+            self.core.wp_apic_state_save.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_char_p,
+                ctypes.c_int,
+                ctypes.c_void_p,
+                ctypes.POINTER(APICExportDescriptor),
+            ]
             self.core.wp_apic_state_save.restype = ctypes.c_bool
 
             # APIC loading bindings
@@ -12541,43 +12589,6 @@ def _resolve_module(module: Module | types.ModuleType | str) -> Module:
     return module_object
 
 
-def _get_module_artifact_path(
-    module: Module,
-    device: Device | None,
-    output_arch: int | None,
-    module_dir: str | os.PathLike | None,
-    use_ptx: bool | None,
-) -> Path:
-    active_block_dim = module.options["block_dim"]
-
-    if output_arch is None:
-        output_arch = module._get_compile_arch(device)
-
-    if output_arch is None:
-        output_name = module._get_compile_output_name(device, None, use_ptx=use_ptx, block_dim=active_block_dim)
-    else:
-        arch_suffix = _validate_cuda_arch_suffix(
-            output_arch,
-            device_arch=device.arch if device is not None else output_arch,
-            toolkit_version=runtime.toolkit_version,
-            device_name=device.alias if device is not None else None,
-        )
-        output_name = module._get_compile_output_name(
-            device,
-            output_arch,
-            arch_suffix=arch_suffix,
-            use_ptx=use_ptx,
-            block_dim=active_block_dim,
-        )
-
-    if module_dir is None:
-        output_dir = Path(warp.config.kernel_cache_dir) / module.get_module_identifier(block_dim=active_block_dim)
-    else:
-        output_dir = Path(module_dir)
-
-    return output_dir / output_name
-
-
 def compile_aot_module(
     module: Module | types.ModuleType | str,
     device: Device | str | list[Device] | list[str] | None = None,
@@ -12594,7 +12605,7 @@ def compile_aot_module(
           and ``arch`` is not specified, compile the module for the current device.
         arch: The architecture or architectures to compile the module for. If ``None``,
           the architecture to compile for will be inferred from the current device.
-        module_dir: The directory to save the source, meta, and compiled files to.
+        module_dir: The directory to save the source, per-target metadata, and compiled files to.
           If not specified, the module will be compiled to the default cache directory.
         use_ptx: Whether to compile the module to PTX. This setting is only used
           when compiling modules for the GPU. If ``None``, Warp will decide an
@@ -12709,16 +12720,16 @@ def compile_aot_module(
     artifact_paths = []
 
     for d in devices:
-        module_object._compile(d, module_dir, use_ptx=use_ptx)
-        artifact_paths.append(_get_module_artifact_path(module_object, d, None, module_dir, use_ptx))
+        result = module_object._compile(d, module_dir, use_ptx=use_ptx)
+        artifact_paths.append(Path(result.binary_path))
 
     if arch:
         if isinstance(arch, str) or not hasattr(arch, "__iter__"):
             arch = [arch]
 
         for arch_value in arch:
-            module_object._compile(None, module_dir, output_arch=arch_value, use_ptx=use_ptx)
-            artifact_paths.append(_get_module_artifact_path(module_object, None, arch_value, module_dir, use_ptx))
+            result = module_object._compile(None, module_dir, output_arch=arch_value, use_ptx=use_ptx)
+            artifact_paths.append(Path(result.binary_path))
 
     if is_cuda_available():
         # restore original context to avoid side effects
@@ -12784,6 +12795,7 @@ def load_aot_module(
     if strip_hash is not None:
         module_object._set_strip_hash(strip_hash)
 
+    explicit_module_dir = module_dir is not None
     if module_dir is None:
         module_dir = os.path.join(warp.config.kernel_cache_dir, module_object.get_module_identifier())
     else:
@@ -12796,11 +12808,10 @@ def load_aot_module(
         else:
             output_arch = arch
 
-        meta_path = os.path.join(module_dir, module_object._get_meta_name())
-
         # Determine candidate binaries to try
         tried_paths = []
         binary_path = None
+        artifact = None
         if d.is_cuda and use_ptx is None:
             candidate_flags = (True, False)  # try PTX first, then CUBIN
         else:
@@ -12811,12 +12822,50 @@ def load_aot_module(
                 module_dir, module_object._get_compile_output_name(d, output_arch, use_ptx=candidate_use_ptx)
             )
             tried_paths.append(candidate_path)
-            if os.path.exists(candidate_path):
+            candidate_binary = Path(candidate_path)
+            companion_meta = candidate_binary.with_suffix(".meta")
+            legacy_meta = Path(module_dir) / module_object._get_meta_name()
+            conventional_meta = companion_meta if companion_meta.is_file() else legacy_meta
+            conventional_files_exist = candidate_binary.is_file() and conventional_meta.is_file()
+            if d.is_cuda and (not explicit_module_dir or conventional_files_exist):
+                try:
+                    candidate = warp._src.cuda_build.read_cuda_index(
+                        warp.config.kernel_cache_dir,
+                        candidate_path + ".cache.json",
+                        module_object.name,
+                    )
+                    if candidate.target_arch != output_arch or candidate.binary_kind != _module_binary_kind(
+                        candidate_path
+                    ):
+                        raise ValueError("AOT index does not match the requested target")
+                    if os.path.exists(candidate_path):
+                        # A user may replace conventional AOT files independently
+                        # of the producer cache. Retain provenance only when they agree.
+                        if candidate_binary.read_bytes() != Path(candidate.binary_path).read_bytes():
+                            raise ValueError("AOT binary differs from its producer artifact")
+                        if companion_meta.is_file() and json.loads(companion_meta.read_bytes()) != candidate.meta:
+                            raise ValueError("AOT metadata differs from its producer artifact")
+                    if explicit_module_dir and json.loads(conventional_meta.read_bytes()) != candidate.meta:
+                        raise ValueError("AOT metadata differs from its producer artifact")
+                    artifact = candidate
+                    binary_path = candidate_path if explicit_module_dir else candidate.binary_path
+                    break
+                except (OSError, ValueError, TypeError, KeyError, RuntimeError):
+                    pass
+            if candidate_binary.is_file() and (not d.is_cuda or not explicit_module_dir or conventional_meta.is_file()):
                 binary_path = candidate_path
                 break
 
         if binary_path is None:
             raise FileNotFoundError(f"Binary file not found. Tried: {', '.join(tried_paths)}")
+
+        if d.is_cuda:
+            meta_path = os.fspath(Path(binary_path).with_suffix(".meta"))
+            if not os.path.exists(meta_path):
+                # Accept the shared metadata layout produced by older AOT builds.
+                meta_path = os.path.join(module_dir, module_object._get_meta_name())
+        else:
+            meta_path = os.path.join(module_dir, module_object._get_meta_name())
 
         module_object.load(
             d,
@@ -12824,6 +12873,7 @@ def load_aot_module(
             binary_path=binary_path,
             output_arch=output_arch,
             meta_path=meta_path,
+            artifact=artifact,
         )
 
     if is_cuda_available():
@@ -13853,7 +13903,15 @@ def capture_launch(graph: Graph, stream: Stream | None = None):
         raise RuntimeError(f"Graph launch error: {runtime.get_error_string()}")
 
 
-def capture_save(graph: Graph, path: str, inputs: dict | None = None, outputs: dict | None = None):
+def capture_save(
+    graph: Graph,
+    path: str,
+    inputs: dict | None = None,
+    outputs: dict | None = None,
+    *,
+    target_arch: int | None = None,
+    use_ptx: bool = False,
+):
     """Serialize a captured graph to a ``.wrp`` file for later replay.
 
     The graph must have been captured with ``apic=True``. For graphs containing
@@ -13866,6 +13924,23 @@ def capture_save(graph: Graph, path: str, inputs: dict | None = None, outputs: d
           ``<stem>.wrp`` and ``<stem>_modules/``.
         inputs: Named input arrays (e.g., ``{"positions": pos_array}``).
         outputs: Named output arrays (e.g., ``{"results": result_array}``).
+        target_arch: CUDA architecture (e.g., ``80`` for sm_80). Must be a
+          positive integer supported by the bundled CUDA compiler and requires
+          a CUDA APIC graph. For baseline PTX, this is the minimum runtime
+          compute capability; for CUBIN, it is the native compiler target.
+          When omitted, exports the captured binaries without recompiling.
+        use_ptx: Export final PTX instead of CUBIN for a targeted CUDA export.
+          Requires an explicit ``target_arch``. With only ``target_arch``,
+          exports CUBIN. With neither option, copies the captured binaries.
+
+    Targeted export compiles the target-neutral CUDA source and native compile
+    record retained by each captured executable. It does not rerun Warp Python
+    code generation or reevaluate ``wp.static()`` expressions. The source is
+    frozen in memory when the executable is loaded. Missing or changed declared
+    build dependencies cause export to fail; untargeted export continues to copy
+    captured binaries. Targeted export is unsupported for LLVM CUDA
+    (``wp.config.llvm_cuda=True``), modules with linked MathDx inputs, and
+    explicit CUDA binaries; untargeted copying remains available.
 
     If the same array appears in both ``inputs`` and ``outputs`` (e.g., for
     in-place operations), both names will refer to the same memory region.
@@ -13874,148 +13949,9 @@ def capture_save(graph: Graph, path: str, inputs: dict | None = None, outputs: d
     offset. Arrays passed to ``set_param`` and ``get_param`` must have the same
     byte capacity as that serialized region.
     """
-    import os  # noqa: PLC0415
-    import shutil  # noqa: PLC0415
+    from warp._src.apic.export import save  # noqa: PLC0415
 
-    if not graph.apic:
-        raise RuntimeError(
-            "Graph was not captured with apic=True. Pass apic=True to capture_begin() or ScopedCapture()."
-        )
-
-    apic_capture = graph._apic_capture
-    if apic_capture is None or graph.apic_state is None:
-        raise RuntimeError("Graph has no APIC recording state.")
-
-    state = graph.apic_state
-
-    def _enc(s):
-        """Encode a string for C API calls."""
-        if isinstance(s, bytes):
-            return s
-        return s.encode("utf-8")
-
-    # Register module metadata with C++
-    for module_hash, info in apic_capture.collected_modules.items():
-        module_name = info["module_name"]
-        binary_filename = info["binary_filename"]
-
-        runtime.core.wp_apic_register_module(
-            state,
-            _enc(module_hash),
-            _enc(module_name),
-            _enc(binary_filename),
-            graph.device.get_cuda_compile_arch() if graph.device.is_cuda else 0,
-        )
-
-    # Register kernel metadata
-    for info in apic_capture.collected_kernels.values():
-        runtime.core.wp_apic_register_kernel(
-            state,
-            _enc(info["kernel_key"]),
-            _enc(info["module_hash"]),
-            _enc(info["forward_name"]),
-            _enc(info["backward_name"]),
-            info["forward_smem_bytes"],
-            info["backward_smem_bytes"],
-            info["block_dim"],
-        )
-
-    # Register named bindings
-    if inputs:
-        for name, arr in inputs.items():
-            region_id = apic_capture.get_region_id(arr)
-            runtime.core.wp_apic_register_binding(state, name.encode("utf-8"), region_id)
-    if outputs:
-        for name, arr in outputs.items():
-            region_id = apic_capture.get_region_id(arr)
-            runtime.core.wp_apic_register_binding(state, name.encode("utf-8"), region_id)
-
-    # Snapshot memory: copy device data to host and register with C++
-    for _base_id, (region_id, base_ptr, capacity, _base) in apic_capture._regions.items():
-        if graph.device.is_cuda:
-            if region_id in apic_capture._transient_regions:
-                # Allocated during capture (graph-scoped): its backing is gone now
-                # and its content is regenerated on replay. Serialize the size only
-                # and skip the device-to-host copy (which would fail and poison the
-                # CUDA context for the rebuild).
-                runtime.core.wp_apic_register_memory_region(state, region_id, capacity, 1, ctypes.c_void_p(0))
-                continue
-            # D2H copy for device memory
-            host_buf = (ctypes.c_uint8 * capacity)()
-            ok = runtime.core.wp_memcpy_d2h(
-                graph.device.context,
-                ctypes.addressof(host_buf),
-                ctypes.c_void_p(base_ptr),
-                capacity,
-                graph.device.stream.cuda_stream,
-            )
-            warp.synchronize_device(graph.device)
-            if not ok:
-                # Graph-scoped (capture-time) allocations are handled above via the
-                # transient-region branch (size-only, regenerated on replay). Any
-                # non-transient region whose memory is not host-readable here is
-                # unexpected: saving it size-only would silently drop its initial data
-                # and corrupt the replay, so fail loudly instead.
-                raise RuntimeError(
-                    f"APIC: region {region_id} could not be snapshotted for capture_save "
-                    f"(device-to-host copy failed for a non-transient region); the saved "
-                    f"graph would be missing this region's initial data."
-                )
-            runtime.core.wp_apic_register_memory_region(
-                state,
-                region_id,
-                capacity,
-                1,
-                ctypes.addressof(host_buf),
-            )
-        else:
-            # CPU memory: pass pointer directly
-            runtime.core.wp_apic_register_memory_region(
-                state,
-                region_id,
-                capacity,
-                1,
-                ctypes.c_void_p(base_ptr),
-            )
-
-    # Export CUBIN files to {path}_modules/
-    wrp_path = path if path.endswith(".wrp") else path + ".wrp"
-    base_name = wrp_path[:-4]
-    modules_dir = base_name + "_modules"
-    os.makedirs(modules_dir, exist_ok=True)
-
-    for info in apic_capture.collected_modules.values():
-        binary_path = info.get("binary_path")
-        binary_filename = info["binary_filename"]
-
-        if binary_path and os.path.exists(binary_path):
-            shutil.copy2(binary_path, os.path.join(modules_dir, binary_filename))
-            # Also copy the .meta file. CUDA modules require .meta at load time
-            # to resolve kernel shared-memory metadata. For CPU (APIC) modules,
-            # _apic_load_cpu_modules resolves kernel names directly from the
-            # C++ graph via wp_apic_get_kernel_forward_name / _backward_name,
-            # so copying .meta for CPU is harmless but unnecessary.
-            meta_filename = os.path.splitext(binary_filename)[0] + ".meta"
-            meta_path = os.path.join(os.path.dirname(binary_path), meta_filename)
-            if os.path.exists(meta_path):
-                shutil.copy2(meta_path, os.path.join(modules_dir, meta_filename))
-        else:
-            raise RuntimeError(
-                f"APIC: Could not find compiled binary for module {info['module_name']} "
-                f"at {binary_path}. Ensure modules are compiled before calling capture_save()."
-            )
-
-    # Register meshes used during capture
-    for mesh_id in apic_capture.collected_mesh_ids:
-        if not runtime.core.wp_apic_register_mesh(state, ctypes.c_uint64(mesh_id)):
-            raise RuntimeError(f"APIC: failed to register mesh for capture_save. {runtime.get_error_string()}")
-
-    # Write .wrp file
-    target_arch = graph.device.get_cuda_compile_arch() if graph.device.is_cuda else 0
-    context = graph.device.context if graph.device.is_cuda else None
-    result = runtime.core.wp_apic_state_save(state, wrp_path.encode("utf-8"), target_arch, context)
-    if not result:
-        raise RuntimeError(f"Failed to save APIC graph to {wrp_path}. {runtime.get_error_string()}")
+    save(graph, path, inputs, outputs, target_arch, use_ptx)
 
 
 def capture_load(path: str, device: DeviceLike = None) -> Graph:

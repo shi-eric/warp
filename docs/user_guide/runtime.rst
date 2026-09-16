@@ -1996,10 +1996,12 @@ API Capture: Saving and Loading Graphs
     surface, the C ``wp_apic_*`` API, and the recorded operation set are all
     subject to change without a formal deprecation cycle. ``.wrp`` files written
     by one version of Warp may not be loadable by another. The current writer
-    emits format version 16, and the reader accepts versions 13 through 16.
-    Version 16 stores kernel launch extents as unsigned 32-bit values. Older
-    files whose launch extents have the high bit set are rejected because those
-    values overflowed the signed representation used by their format.
+    emits format version 17, and the reader accepts versions 13 through 17.
+    Version 17 records each module's binary kind, target architecture, and
+    architecture suffix. Version 16 stores kernel launch extents as unsigned
+    32-bit values. Older files whose launch extents have the high bit set are
+    rejected because those values overflowed the signed representation used by
+    their format.
 
 The APIC operation stream lets Warp serialize a supported captured graph to
 disk and load it back later from another Python program or a standalone C++
@@ -2107,24 +2109,43 @@ region:
         outputs={"results": results},
     )
 
+    # Export final PTX for compatible CUDA GPUs with compute capability 7.5 or
+    # newer.
+    wp.capture_save(
+        capture.graph,
+        "simulation_portable",
+        inputs={"positions": positions},
+        outputs={"results": results},
+        target_arch=75,
+        use_ptx=True,
+    )
+
 .. testcleanup:: apic_save
 
     import shutil
     os.chdir(_apic_save_orig_cwd)
     shutil.rmtree(_apic_save_tmpdir, ignore_errors=True)
 
-This writes:
+The example writes two bundles: ``simulation.wrp`` with
+``simulation_modules/``, and ``simulation_portable.wrp`` with
+``simulation_portable_modules/``. Each ``.wrp`` file stores the graph structure
+and metadata. Its companion directory stores the module binaries.
 
-- ``simulation.wrp`` — a binary file containing the recorded operation stream,
-  memory region snapshots, kernel and module metadata, and named bindings.
-- ``simulation_modules/`` — a directory containing the compiled kernel binaries
-  (``.cubin`` / ``.ptx`` for CUDA, ``.o`` for CPU) referenced by the operation
-  stream.
+Without ``target_arch``, :func:`wp.capture_save() <warp.capture_save>` copies
+the binaries used during capture. Pass ``target_arch=N`` to compile for another
+CUDA architecture. Warp writes CUBIN for ``sm_N`` by default. Add
+``use_ptx=True`` to write final linked PTX for ``compute_N``.
 
-For a graph with recorded kernels, the ``.wrp`` file and its companion
-``_modules`` directory are one artifact. Keep their relative names and
-distribute or move them together; the graph cannot be loaded from either part
-alone.
+Baseline PTX can run on a compatible GPU with compute capability ``N`` or newer,
+subject to CUDA driver support. A targeted bundle contains one self-contained
+binary per module. The playback system does not need the original Python
+program or generated CUDA source.
+
+Targeted export uses the program recorded at capture time, including resolved
+``wp.static()`` values. If the requested target cannot represent a captured
+feature, export fails instead of choosing another target or implementation.
+Modules compiled with ``wp.config.llvm_cuda=True`` support only untargeted
+export.
 
 .. warning::
 
@@ -2384,10 +2405,10 @@ Current limitations of API Capture:
   Pre-reserving is optional for CPU replay but avoids allocation on the first
   launch. If used, call ``HashGrid.reserve()`` before capture; reserve calls
   inside CPU capture are rejected.
-- A CUBIN companion is specific to its compiled CUDA architecture. PTX may be
-  JIT-compiled on architectures supported by its target and the installed
-  driver, but PTX is not an unconditional cross-architecture guarantee. One
-  APIC graph cannot span multiple GPUs.
+- CUDA determines whether a CUBIN or suffixed PTX artifact is compatible with
+  the load device. One loaded APIC graph executes on one CUDA device.
+- Targeted export does not support modules containing linked MathDx operations.
+  Save those graphs without ``target_arch`` to copy the captured binary.
 - Loading CPU ``.wrp`` graphs requires the warp-clang backend and the companion
   ``_modules`` directory with compatible CPU kernel object files. Those
   ``.o`` files are tied to their platform, architecture, compiler ABI, and Warp

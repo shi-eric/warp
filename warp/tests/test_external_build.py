@@ -6,10 +6,12 @@ import hashlib
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import numpy as np
 
 import warp as wp
+from warp._src.cuda_compile import _canonical_dependencies
 from warp.tests.unittest_utils import add_function_test, get_test_devices
 
 
@@ -493,6 +495,16 @@ class TestExternalBuild(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, "ModuleBuildOptions"):
             base.merged(object())
 
+    def test_compile_record_dependency_canonicalization(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            dependency = Path(tmpdir) / "external.h"
+            dependency.write_bytes(b"// Dependency canonicalization\n")
+            digest = hashlib.sha256(dependency.read_bytes()).hexdigest()
+            path = str(dependency.resolve())
+            self.assertEqual(_canonical_dependencies((dependency, dependency, (path, digest))), ((path, digest),))
+            with self.assertRaisesRegex(ValueError, "Conflicting dependency digests"):
+                _canonical_dependencies(((path, digest), (path, "0" * 64)))
+
     def test_build_dependency_affects_hash(self):
         @wp.kernel(module="unique")
         def dependency_kernel():
@@ -541,6 +553,41 @@ class TestExternalBuild(unittest.TestCase):
             "wp_external_type_is_same<decltype(((warp_test::Pixel*)0)->color), warp_test::Color>::value",
             source,
         )
+
+
+def test_repeated_build_dependencies(test, device):
+    """Accept repeated and equivalent paths without changing hashes or rebuilding cache hits."""
+    with tempfile.TemporaryDirectory() as tmpdir, mock.patch.object(wp.config, "kernel_cache_dir", tmpdir):
+        dependency = Path(tmpdir) / "external.h"
+        dependency.write_text("// Declared build dependency\n", encoding="utf-8")
+        nested = Path(tmpdir) / "nested"
+        nested.mkdir()
+
+        @wp.kernel(module="unique", enable_backward=False)
+        def dependency_kernel(out: wp.array[int]):
+            out[0] = 42
+
+        module = dependency_kernel.module
+        wp.set_module_options(
+            {"extra_build_options": wp.ModuleBuildOptions(extra_build_dependencies=[dependency])}, module=module
+        )
+        single_hash = module.hash_module()
+        wp.set_module_options(
+            {
+                "extra_build_options": wp.ModuleBuildOptions(
+                    extra_build_dependencies=[dependency, dependency, nested / ".." / dependency.name]
+                )
+            },
+            module=module,
+        )
+        out = wp.zeros(1, dtype=int, device=device)
+        wp.launch(dependency_kernel, dim=1, outputs=[out], device=device)
+        np.testing.assert_array_equal(out.numpy(), [42])
+        test.assertEqual(module.hash_module(), single_hash)
+        module.unload()
+        with mock.patch.object(module, "_run_codegen", side_effect=AssertionError("Expected a cache hit")):
+            wp.launch(dependency_kernel, dim=1, outputs=[out], device=device)
+        np.testing.assert_array_equal(out.numpy(), [42])
 
 
 def test_preamble_follows_warp_headers(test, device):
@@ -618,6 +665,9 @@ wp.build_experimental.add_builtin(
 )
 
 add_function_test(TestExternalBuild, "test_native_value_types", test_native_value_types, devices=get_test_devices())
+add_function_test(
+    TestExternalBuild, "test_repeated_build_dependencies", test_repeated_build_dependencies, devices=get_test_devices()
+)
 add_function_test(
     TestExternalBuild,
     "test_native_value_tape_adjoint",

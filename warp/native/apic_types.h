@@ -10,7 +10,7 @@
 // APIC Format Constants
 // =============================================================================
 
-#define APIC_FORMAT_VERSION 16
+#define APIC_FORMAT_VERSION 17
 #define APIC_MIN_SUPPORTED_FORMAT_VERSION 13
 #define APIC_UNSIGNED_LAUNCH_BOUNDS_VERSION 16
 #define APIC_MAGIC "WRP1"
@@ -25,6 +25,13 @@
 // =============================================================================
 // Enums
 // =============================================================================
+
+enum APICBinaryKind : uint32_t {
+    APIC_BINARY_INVALID = 0,
+    APIC_BINARY_CUBIN = 1,
+    APIC_BINARY_PTX = 2,
+    APIC_BINARY_CPU_OBJECT = 3,
+};
 
 // Operation types
 enum APICOpType : uint32_t {

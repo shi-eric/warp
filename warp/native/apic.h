@@ -79,25 +79,44 @@ WP_API void wp_apic_register_memory_region(
 );
 
 // =============================================================================
-// Metadata Registration (called from Python for serialization)
+// Export Metadata (borrowed for the duration of one save)
 // =============================================================================
 
-WP_API void wp_apic_register_module(
-    APICState* state, const char* module_hash, const char* module_name, const char* binary_filename, int target_arch
-);
+// Arrays and strings remain caller-owned and must stay valid throughout save.
+// Optional module names, architecture suffixes, and entry point names may be
+// null; null strings are serialized as empty strings.
+struct APICExportModule {
+    const char* module_hash;
+    const char* module_name;
+    const char* binary_filename;
+    int32_t binary_kind;
+    int32_t target_arch;
+    const char* arch_suffix;
+};
 
-WP_API void wp_apic_register_kernel(
-    APICState* state,
-    const char* kernel_key,
-    const char* module_hash,
-    const char* forward_name,
-    const char* backward_name,
-    int forward_smem_bytes,
-    int backward_smem_bytes,
-    int block_dim
-);
+struct APICExportKernel {
+    const char* kernel_key;
+    const char* module_hash;
+    const char* forward_name;
+    const char* backward_name;
+    int32_t forward_smem_bytes;
+    int32_t backward_smem_bytes;
+    int32_t block_dim;
+};
 
-WP_API void wp_apic_register_binding(APICState* state, const char* name, uint32_t region_id);
+struct APICExportBinding {
+    const char* name;
+    uint32_t region_id;
+};
+
+struct APICExportDescriptor {
+    const APICExportModule* modules;
+    uint32_t num_modules;
+    const APICExportKernel* kernels;
+    uint32_t num_kernels;
+    const APICExportBinding* bindings;
+    uint32_t num_bindings;
+};
 
 WP_API void wp_apic_register_ptr_location(APICState* state, uint32_t region_id, uint64_t offset, uint64_t stride);
 
@@ -170,8 +189,11 @@ WP_API bool wp_apic_cpu_replay_graph(APICGraph* graph);
 
 // Returns true on success, false on failure. ``context`` is the CUDA context for
 // device-region D2H snapshotting on CUDA saves (target_arch != 0); pass null for
-// CPU saves.
-WP_API bool wp_apic_state_save(APICState* state, const char* path, int target_arch, void* context);
+// CPU saves. ``descriptor`` supplies metadata for this save only; null writes
+// a raw operation-only state without module, kernel, or binding metadata.
+WP_API bool wp_apic_state_save(
+    APICState* state, const char* path, int target_arch, void* context, const APICExportDescriptor* descriptor
+);
 
 // State queries
 WP_API uint32_t wp_apic_get_operation_count(APICState* state);

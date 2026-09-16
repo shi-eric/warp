@@ -235,7 +235,13 @@ bool apic_fixup_handle_cuda(APICGraph* graph, uint8_t* base, uint64_t offset)
 void* apic_resolve_region_ptr(APICGraph* graph, int32_t region_id, uint64_t offset, size_t access_size);
 
 static CUfunction apic_get_kernel_function(
-    APICGraph* graph, const char* module_hash, size_t hash_len, const char* kernel_key, size_t key_len, bool is_forward
+    APICGraph* graph,
+    const char* module_hash,
+    size_t hash_len,
+    const char* kernel_key,
+    size_t key_len,
+    bool is_forward,
+    const APICKernel** kernel_info = nullptr
 )
 {
     std::string hash_str(module_hash, hash_len);
@@ -252,6 +258,12 @@ static CUfunction apic_get_kernel_function(
         wp::set_error_string("Warp APIC error: Kernel not found: %s", key_str.c_str());
         return nullptr;
     }
+    if (kernel_info)
+        *kernel_info = &kern_it->second;
+
+    void*& cached_function = is_forward ? kern_it->second.forward_function : kern_it->second.backward_function;
+    if (cached_function)
+        return static_cast<CUfunction>(cached_function);
 
     const std::string& kernel_name = is_forward ? kern_it->second.forward_name : kern_it->second.backward_name;
     CUfunction kernel;
@@ -260,41 +272,67 @@ static CUfunction apic_get_kernel_function(
         wp::set_error_string("Warp APIC error: Failed to get kernel function %s: %d", kernel_name.c_str(), err);
         return nullptr;
     }
+    cached_function = kernel;
     return kernel;
 }
 
-static bool apic_configure_kernel_cluster_attrs(APICGraph* graph)
+struct APICKernelAttrs {
+    const std::string* name = nullptr;
+    int smem_bytes = 0;
+    int cluster_dim = 1;
+};
+
+// Resolve only entry points referenced by the validated operation stream,
+// including both branches of conditionals, before starting CUDA capture.
+static bool apic_collect_kernel_attrs(
+    APICGraph* graph,
+    const uint8_t* op_data,
+    size_t op_size,
+    uint32_t op_count,
+    std::unordered_map<CUfunction, APICKernelAttrs>& kernel_attrs,
+    bool& has_conditionals
+)
 {
-    if (!graph)
-        return true;
-    if (graph->operation_count == 0 || graph->operation_stream.empty())
+    if (op_count == 0)
         return true;
 
-    const uint8_t* ptr = graph->operation_stream.data();
-    const uint8_t* end = ptr + graph->operation_stream.size();
+    const uint8_t* ptr = op_data;
+    const uint8_t* end = ptr + op_size;
 
-    for (uint32_t i = 0; i < graph->operation_count && ptr < end; i++) {
+    for (uint32_t i = 0; i < op_count && ptr < end; i++) {
         const APICOpHeader* header = reinterpret_cast<const APICOpHeader*>(ptr);
 
         if (header->op_type == APIC_OP_KERNEL_LAUNCH) {
             const APICLaunchRecord* rec = reinterpret_cast<const APICLaunchRecord*>(ptr);
-            int cluster_dim = rec->cluster_dim > 0 ? rec->cluster_dim : 1;
+            const uint8_t* var_data = ptr + sizeof(APICLaunchRecord);
+            const char* kernel_key = reinterpret_cast<const char*>(var_data);
+            const char* module_hash = reinterpret_cast<const char*>(var_data + rec->kernel_key_len);
+            const APICKernel* info = nullptr;
+            CUfunction kernel = apic_get_kernel_function(
+                graph, module_hash, rec->module_hash_len, kernel_key, rec->kernel_key_len, rec->is_forward != 0, &info
+            );
+            if (!kernel)
+                return false;
 
-            if (cluster_dim > 1) {
-                const uint8_t* var_data = ptr + sizeof(APICLaunchRecord);
-                const char* kernel_key = reinterpret_cast<const char*>(var_data);
-                const char* module_hash = reinterpret_cast<const char*>(var_data + rec->kernel_key_len);
-                CUfunction kernel = apic_get_kernel_function(
-                    graph, module_hash, rec->module_hash_len, kernel_key, rec->kernel_key_len, rec->is_forward != 0
-                );
-                if (!kernel)
-                    return false;
-
-                if (!wp_cuda_set_kernel_cluster_attrs(kernel, cluster_dim, 1, 1)) {
-                    wp::set_error_string("Warp APIC error: Failed to set cluster attributes for APIC kernel launch");
-                    return false;
-                }
-            }
+            APICKernelAttrs& attrs = kernel_attrs[kernel];
+            attrs.name = rec->is_forward ? &info->forward_name : &info->backward_name;
+            attrs.smem_bytes
+                = std::max(attrs.smem_bytes, rec->is_forward ? info->forward_smem_bytes : info->backward_smem_bytes);
+            // Non-portable cluster permission belongs to the function; the
+            // launch path still validates each operation's actual dimensions.
+            attrs.cluster_dim = std::max(attrs.cluster_dim, static_cast<int>(rec->cluster_dim));
+        } else if (header->op_type == APIC_OP_IF || header->op_type == APIC_OP_WHILE) {
+            has_conditionals = true;
+            const APICCondRecord* rec = reinterpret_cast<const APICCondRecord*>(ptr);
+            const uint8_t* branch_a = ptr + sizeof(APICCondRecord);
+            const uint8_t* branch_b = branch_a + rec->branch_a_size;
+            if (!apic_collect_kernel_attrs(
+                    graph, branch_a, rec->branch_a_size, rec->branch_a_op_count, kernel_attrs, has_conditionals
+                )
+                || !apic_collect_kernel_attrs(
+                    graph, branch_b, rec->branch_b_size, rec->branch_b_op_count, kernel_attrs, has_conditionals
+                ))
+                return false;
         }
 
         ptr += header->total_size;
@@ -306,10 +344,10 @@ static bool apic_configure_kernel_cluster_attrs(APICGraph* graph)
 // Replay a (sub-)stream of ops onto an already-capturing `stream`. No begin/end
 // capture here: the caller (apic_rebuild_cuda_graph) owns the capture lifetime,
 // so this function can recurse into IF/WHILE branch sub-streams via the same
-// pause/resume mechanism the live capture_if/while path uses. `arch`/`use_ptx`
-// are forwarded to the conditional helpers, which JIT the set-condition kernels.
+// pause/resume mechanism the live capture_if/while path uses. Conditional helpers
+// use automatic target selection and are loaded by the pre-capture setup.
 static bool apic_replay_ops_into_cuda_capture(
-    APICGraph* graph, CUstream stream, const uint8_t* op_data, size_t op_size, uint32_t op_count, int arch, bool use_ptx
+    APICGraph* graph, CUstream stream, const uint8_t* op_data, size_t op_size, uint32_t op_count
 )
 {
     bool success = true;
@@ -328,13 +366,16 @@ static bool apic_replay_ops_into_cuda_capture(
             const char* kernel_key = reinterpret_cast<const char*>(var_data);
             const char* module_hash = reinterpret_cast<const char*>(var_data + rec->kernel_key_len);
 
+            const APICKernel* kernel_info = nullptr;
             CUfunction kernel = apic_get_kernel_function(
-                graph, module_hash, rec->module_hash_len, kernel_key, rec->kernel_key_len, rec->is_forward != 0
+                graph, module_hash, rec->module_hash_len, kernel_key, rec->kernel_key_len, rec->is_forward != 0,
+                &kernel_info
             );
             if (!kernel) {
                 success = false;
                 break;
             }
+            const int smem_bytes = rec->is_forward ? kernel_info->forward_smem_bytes : kernel_info->backward_smem_bytes;
 
             const uint8_t* params_ptr = var_data + rec->kernel_key_len + rec->module_hash_len;
             const uint8_t* adj_params_ptr = params_ptr + rec->num_params * sizeof(APICLaunchParamRecord);
@@ -448,7 +489,7 @@ static bool apic_replay_ops_into_cuda_capture(
             // the recording branch in wp_cuda_launch_kernel is a no-op.
             size_t launch_res = wp_cuda_launch_kernel(
                 graph->cuda_context, kernel, rec->dim, rec->max_blocks, rec->block_dim, rec->grid_stride,
-                rec->cluster_dim > 0 ? rec->cluster_dim : 1, rec->smem_bytes, args.data(), stream, /*apic_info=*/nullptr
+                rec->cluster_dim > 0 ? rec->cluster_dim : 1, smem_bytes, args.data(), stream, /*apic_info=*/nullptr
             );
             if (launch_res != CUDA_SUCCESS)
                 success = false;
@@ -882,7 +923,7 @@ static bool apic_replay_ops_into_cuda_capture(
             void* graph_on_true = nullptr;
             void* graph_on_false = nullptr;
             if (!wp_cuda_graph_insert_if_else(
-                    graph->cuda_context, (void*)stream, arch, use_ptx, reinterpret_cast<int*>(cond_ptr),
+                    graph->cuda_context, (void*)stream, 0, false, reinterpret_cast<int*>(cond_ptr),
                     rec->branch_a_size > 0 ? &graph_on_true : nullptr,
                     rec->branch_b_size > 0 ? &graph_on_false : nullptr
                 )) {
@@ -900,7 +941,7 @@ static bool apic_replay_ops_into_cuda_capture(
             if (success && rec->branch_a_size > 0) {
                 if (!wp_cuda_graph_resume_capture(graph->cuda_context, (void*)stream, graph_on_true)
                     || !apic_replay_ops_into_cuda_capture(
-                        graph, stream, branch_a, rec->branch_a_size, rec->branch_a_op_count, arch, use_ptx
+                        graph, stream, branch_a, rec->branch_a_size, rec->branch_a_op_count
                     )
                     || !wp_cuda_graph_pause_capture(graph->cuda_context, (void*)stream, &tmp)
                     || !wp_cuda_graph_check_conditional_body(graph_on_true)) {
@@ -910,7 +951,7 @@ static bool apic_replay_ops_into_cuda_capture(
             if (success && rec->branch_b_size > 0) {
                 if (!wp_cuda_graph_resume_capture(graph->cuda_context, (void*)stream, graph_on_false)
                     || !apic_replay_ops_into_cuda_capture(
-                        graph, stream, branch_b, rec->branch_b_size, rec->branch_b_op_count, arch, use_ptx
+                        graph, stream, branch_b, rec->branch_b_size, rec->branch_b_op_count
                     )
                     || !wp_cuda_graph_pause_capture(graph->cuda_context, (void*)stream, &tmp)
                     || !wp_cuda_graph_check_conditional_body(graph_on_false)) {
@@ -942,7 +983,7 @@ static bool apic_replay_ops_into_cuda_capture(
             void* body_graph = nullptr;
             uint64_t cond_handle = 0;
             if (!wp_cuda_graph_insert_while(
-                    graph->cuda_context, (void*)stream, arch, use_ptx, reinterpret_cast<int*>(cond_ptr), &body_graph,
+                    graph->cuda_context, (void*)stream, 0, false, reinterpret_cast<int*>(cond_ptr), &body_graph,
                     &cond_handle
                 )) {
                 success = false;
@@ -959,10 +1000,10 @@ static bool apic_replay_ops_into_cuda_capture(
             if (success && rec->branch_a_size > 0) {
                 if (!wp_cuda_graph_resume_capture(graph->cuda_context, (void*)stream, body_graph)
                     || !apic_replay_ops_into_cuda_capture(
-                        graph, stream, body, rec->branch_a_size, rec->branch_a_op_count, arch, use_ptx
+                        graph, stream, body, rec->branch_a_size, rec->branch_a_op_count
                     )
                     || !wp_cuda_graph_set_condition(
-                        graph->cuda_context, (void*)stream, arch, use_ptx, reinterpret_cast<int*>(cond_ptr), cond_handle
+                        graph->cuda_context, (void*)stream, 0, false, reinterpret_cast<int*>(cond_ptr), cond_handle
                     )
                     || !wp_cuda_graph_pause_capture(graph->cuda_context, (void*)stream, &tmp)
                     || !wp_cuda_graph_check_conditional_body(body_graph)) {
@@ -1000,8 +1041,42 @@ static bool apic_rebuild_cuda_graph(APICGraph* graph, CUstream stream)
         graph->cuda_graph = nullptr;
     }
 
-    if (!apic_configure_kernel_cluster_attrs(graph))
+    std::unordered_map<CUfunction, APICKernelAttrs> kernel_attrs;
+    bool has_conditionals = false;
+    if (!apic_collect_kernel_attrs(
+            graph, graph->operation_stream.data(), graph->operation_stream.size(), graph->operation_count, kernel_attrs,
+            has_conditionals
+        ))
         return false;
+
+    for (const auto& entry : kernel_attrs) {
+        const APICKernelAttrs& attrs = entry.second;
+        if (!wp_cuda_configure_kernel_shared_memory(entry.first, attrs.smem_bytes)) {
+            wp::set_error_string(
+                "Warp APIC error: Failed to configure %d bytes of dynamic shared memory for kernel %s",
+                attrs.smem_bytes, attrs.name->c_str()
+            );
+            return false;
+        }
+        if (attrs.cluster_dim > 1 && !wp_cuda_set_kernel_cluster_attrs(entry.first, attrs.cluster_dim, 1, 1)) {
+            wp::set_error_string("Warp APIC error: Failed to set cluster attributes for APIC kernel launch");
+            return false;
+        }
+    }
+
+    // Compile/load helper modules before capture, and only for graphs that use
+    // them. The loader owns automatic target selection and its per-context cache.
+    if (has_conditionals) {
+#if CUDA_VERSION >= 12040
+        if (!load_conditional_module(graph->cuda_context, 0, false))
+            return false;
+#else
+        wp::set_error_string(
+            "Warp error: Warp must be built with CUDA Toolkit 12.4+ to enable conditional graph nodes"
+        );
+        return false;
+#endif
+    }
 
     // Use Warp's capture management (not a raw cudaStreamBeginCapture) so the
     // allocator knows a capture is active. Extended ops (reduction/scan/sort/bsr) allocate
@@ -1019,11 +1094,8 @@ static bool apic_rebuild_cuda_graph(APICGraph* graph, CUstream stream)
     void* prev_current_stream = wp_cuda_context_get_stream(graph->cuda_context);
     wp_cuda_context_set_stream(graph->cuda_context, (void*)stream, 0);
 
-    // use_ptx is only consulted for IF/WHILE conditional kernels; loaded .wrp
-    // graphs use the cubin path for the JIT-compiled set-condition kernels.
     bool success = apic_replay_ops_into_cuda_capture(
-        graph, stream, graph->operation_stream.data(), graph->operation_stream.size(), graph->operation_count,
-        graph->target_arch, false
+        graph, stream, graph->operation_stream.data(), graph->operation_stream.size(), graph->operation_count
     );
 
     wp_cuda_context_set_stream(graph->cuda_context, prev_current_stream, 0);
@@ -1052,14 +1124,39 @@ bool apic_load_graph_cuda_setup(
     APICGraph* graph, void* context, const std::string& modules_dir, const uint8_t* memory_ptr, size_t memory_size
 )
 {
+    const int ordinal = wp_cuda_context_get_device_ordinal(context);
+    const int physical_arch = ordinal >= 0 ? wp_cuda_device_get_arch(ordinal) : 0;
+    if (!context || ordinal < 0 || physical_arch <= 0) {
+        wp::set_error_string("Warp APIC error: Invalid CUDA load context or physical device architecture");
+        return false;
+    }
+
+    // Check all portable PTX targets before any module load or device allocation.
+    // CUDA owns compatibility decisions for suffixed PTX and CUBIN.
+    for (const auto& pair : graph->modules) {
+        const APICModule& module = pair.second;
+        if (module.binary_kind == APIC_BINARY_PTX && module.arch_suffix.empty() && physical_arch < module.target_arch) {
+            wp::set_error_string(
+                "Warp APIC error: baseline PTX module '%s' targets sm_%d, but the physical load device is sm_%d",
+                module.binary_filename.c_str(), module.target_arch, physical_arch
+            );
+            return false;
+        }
+    }
+
     for (auto& pair : graph->modules) {
-        std::string cubin_path = modules_dir + "/" + pair.second.cubin_filename;
+        std::string binary_path = modules_dir + "/" + pair.second.binary_filename;
 #ifdef _WIN32
-        std::replace(cubin_path.begin(), cubin_path.end(), '/', '\\');
+        std::replace(binary_path.begin(), binary_path.end(), '/', '\\');
 #endif
-        CUmodule cuda_module = (CUmodule)wp_cuda_load_module(context, cubin_path.c_str());
+        CUmodule cuda_module = (CUmodule)wp_cuda_load_module(context, binary_path.c_str());
         if (!cuda_module) {
-            wp::set_error_string("Warp APIC error: Failed to load module %s", cubin_path.c_str());
+            const APICModule& module = pair.second;
+            wp::append_error_string(
+                "Warp APIC error: Failed to load module '%s' (kind=%s, target=sm_%d%s, suffix='%s', physical=sm_%d)",
+                module.binary_filename.c_str(), module.binary_kind == APIC_BINARY_PTX ? "ptx" : "cubin",
+                module.target_arch, module.arch_suffix.c_str(), module.arch_suffix.c_str(), physical_arch
+            );
             return false;
         }
         pair.second.cuda_module = cuda_module;

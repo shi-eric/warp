@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Pure-C++ APIC (API Capture) implementation. Compiled in all builds and
-// owns most of APIC: recording state, memory-region / metadata registration,
+// owns most of APIC: recording state, memory-region registration,
 // operation recording, CPU graph replay, .wrp serialization and load,
 // operation-stream validation, and the public Graph API dispatchers
 // (wp_apic_load_graph, wp_apic_set_param / wp_apic_get_param, etc.).
@@ -33,6 +33,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <unordered_set>
 
 // Convert a strided view into its lowest touched byte and full backing span,
 // including negative strides whose logical first element is not the base.
@@ -261,59 +262,6 @@ static void* apic_resolve_state_region_ptr(APICState* state, int32_t region_id, 
 // ============================================================================
 // Metadata Registration (for serialization)
 // ============================================================================
-
-void wp_apic_register_module(
-    APICState* state, const char* module_hash, const char* module_name, const char* bf, int arch
-)
-{
-    if (!state || !module_hash)
-        return;
-    std::string hash_str(module_hash);
-    if (state->modules.find(hash_str) == state->modules.end()) {
-        APICModule mod;
-        mod.module_hash = hash_str;
-        mod.module_name = module_name ? module_name : "";
-        mod.cubin_filename = bf ? bf : "";
-        mod.target_arch = arch;
-        state->modules[hash_str] = mod;
-    }
-}
-
-void wp_apic_register_kernel(
-    APICState* state,
-    const char* kernel_key,
-    const char* module_hash,
-    const char* forward_name,
-    const char* backward_name,
-    int forward_smem_bytes,
-    int backward_smem_bytes,
-    int block_dim
-)
-{
-    if (!state || !kernel_key)
-        return;
-    std::string key_str(kernel_key);
-    std::string hash_str = module_hash ? module_hash : "";
-    std::string map_key = apic_kernel_map_key(hash_str, key_str);
-    if (state->kernels.find(map_key) == state->kernels.end()) {
-        APICKernel kern;
-        kern.kernel_key = key_str;
-        kern.module_hash = hash_str;
-        kern.forward_name = forward_name ? forward_name : "";
-        kern.backward_name = backward_name ? backward_name : "";
-        kern.forward_smem_bytes = forward_smem_bytes;
-        kern.backward_smem_bytes = backward_smem_bytes;
-        kern.block_dim = block_dim;
-        state->kernels[map_key] = kern;
-    }
-}
-
-void wp_apic_register_binding(APICState* state, const char* name, uint32_t region_id)
-{
-    if (!state || !name)
-        return;
-    state->bindings.push_back({ std::string(name), region_id });
-}
 
 void wp_apic_register_ptr_location(APICState* state, uint32_t region_id, uint64_t offset, uint64_t stride)
 {
@@ -1134,79 +1082,212 @@ bool apic_read_file(const char* path, std::vector<uint8_t>& data)
     return read == static_cast<size_t>(size);
 }
 
-template <typename T> static T apic_read_value(const uint8_t*& ptr)
+class APICMetadataReader {
+public:
+    APICMetadataReader(const uint8_t* data, size_t size)
+        : ptr_(data)
+        , end_(data ? data + size : nullptr)
+    {
+    }
+
+    template <typename T> bool read(T* value)
+    {
+        if (!value || !ptr_ || static_cast<size_t>(end_ - ptr_) < sizeof(T))
+            return false;
+        memcpy(value, ptr_, sizeof(T));
+        ptr_ += sizeof(T);
+        return true;
+    }
+
+    bool read_string(std::string* value)
+    {
+        uint32_t length = 0;
+        if (!read(&length) || static_cast<size_t>(end_ - ptr_) < length)
+            return false;
+        value->assign(reinterpret_cast<const char*>(ptr_), length);
+        ptr_ += length;
+        return true;
+    }
+
+    bool at_end() const { return ptr_ == end_; }
+
+private:
+    const uint8_t* ptr_;
+    const uint8_t* end_;
+};
+
+static APICBinaryKind apic_binary_kind_from_extension(const std::string& filename)
 {
-    T value;
-    memcpy(&value, ptr, sizeof(T));
-    ptr += sizeof(T);
-    return value;
+    const size_t dot = filename.find_last_of('.');
+    if (dot == std::string::npos)
+        return APIC_BINARY_INVALID;
+    const std::string extension = filename.substr(dot);
+    if (extension == ".cubin")
+        return APIC_BINARY_CUBIN;
+    if (extension == ".ptx")
+        return APIC_BINARY_PTX;
+    if (extension == ".o")
+        return APIC_BINARY_CPU_OBJECT;
+    return APIC_BINARY_INVALID;
 }
 
-static std::string apic_read_lp_string(const uint8_t*& ptr)
+static std::string apic_arch_suffix_from_filename(const std::string& filename, int target_arch)
 {
-    uint32_t len = apic_read_value<uint32_t>(ptr);
-    std::string s(reinterpret_cast<const char*>(ptr), len);
-    ptr += len;
-    return s;
+    const APICBinaryKind kind = apic_binary_kind_from_extension(filename);
+    if (kind != APIC_BINARY_CUBIN && kind != APIC_BINARY_PTX)
+        return "";
+    const size_t dot = filename.find_last_of('.');
+    const std::string arch_tag = ".sm" + std::to_string(target_arch);
+    for (const char suffix : { 'a', 'f' }) {
+        const std::string ending = arch_tag + suffix;
+        if (dot >= ending.size() && filename.compare(dot - ending.size(), ending.size(), ending) == 0)
+            return std::string(1, suffix);
+    }
+    return "";
+}
+
+static bool apic_validate_module_record(const APICModule& module, APICDeviceType device_type)
+{
+    const bool is_cuda = module.binary_kind == APIC_BINARY_PTX || module.binary_kind == APIC_BINARY_CUBIN;
+    const char* reason = nullptr;
+    const APICBinaryKind extension_kind = apic_binary_kind_from_extension(module.binary_filename);
+    if (module.binary_filename.empty() || module.binary_filename.find_first_of("/\\") != std::string::npos
+        || module.binary_filename.find('\0') != std::string::npos) {
+        reason = "binary filename must be a non-empty basename";
+    } else if (extension_kind == APIC_BINARY_INVALID || extension_kind != module.binary_kind) {
+        reason = "binary kind does not agree with a supported filename extension";
+    } else if (is_cuda && module.target_arch <= 0) {
+        reason = "CUDA module target architecture must be positive";
+    } else if (module.binary_kind == APIC_BINARY_CPU_OBJECT && module.target_arch != 0) {
+        reason = "CPU module target architecture must be zero";
+    } else if (!module.arch_suffix.empty() && module.arch_suffix != "a" && module.arch_suffix != "f") {
+        reason = "invalid architecture suffix (expected empty, a, or f)";
+    } else if (module.binary_kind == APIC_BINARY_CPU_OBJECT && !module.arch_suffix.empty()) {
+        reason = "CPU module architecture suffix must be empty";
+    } else if (is_cuda != (device_type == APIC_DEVICE_CUDA)) {
+        reason = "module kind does not agree with the graph device family";
+    }
+    if (reason) {
+        wp::set_error_string(
+            "Warp APIC error: %s (binary_filename='%s', kind=%d, target=%d, suffix='%s')", reason,
+            module.binary_filename.c_str(), static_cast<int>(module.binary_kind), module.target_arch,
+            module.arch_suffix.c_str()
+        );
+        return false;
+    }
+    return true;
 }
 
 bool apic_parse_metadata(const uint8_t* data, size_t size, APICGraph* graph)
 {
-    if (!data || size < 28)
+    APICMetadataReader reader(data, size);
+    uint32_t version = 0;
+    uint32_t target_arch = 0;
+    if (!reader.read(&version)) {
+        wp::set_error_string("Warp APIC error: Truncated metadata version");
         return false;
-    const uint8_t* ptr = data;
-
-    /*uint32_t version =*/apic_read_value<uint32_t>(ptr);
-    graph->target_arch = apic_read_value<uint32_t>(ptr);
-    uint32_t num_modules = apic_read_value<uint32_t>(ptr);
-    uint32_t num_kernels = apic_read_value<uint32_t>(ptr);
-    uint32_t num_params = apic_read_value<uint32_t>(ptr);
-    uint32_t num_meshes = apic_read_value<uint32_t>(ptr);
-    uint32_t num_ptr_locations = apic_read_value<uint32_t>(ptr);
+    }
+    if (!reader.read(&target_arch)) {
+        wp::set_error_string("Warp APIC error: Truncated metadata target architecture");
+        return false;
+    }
+    if (version != graph->format_version || target_arch != static_cast<uint32_t>(graph->target_arch)) {
+        wp::set_error_string("Warp APIC error: Metadata version or target architecture does not match the header");
+        return false;
+    }
+    uint32_t num_modules = 0, num_kernels = 0, num_params = 0, num_meshes = 0, num_ptr_locations = 0;
+    if (!reader.read(&num_modules) || !reader.read(&num_kernels) || !reader.read(&num_params)
+        || !reader.read(&num_meshes) || !reader.read(&num_ptr_locations)) {
+        wp::set_error_string("Warp APIC error: Truncated metadata record counts");
+        return false;
+    }
 
     for (uint32_t i = 0; i < num_modules; i++) {
         APICModule mod;
-        mod.module_hash = apic_read_lp_string(ptr);
-        mod.module_name = apic_read_lp_string(ptr);
-        mod.cubin_filename = apic_read_lp_string(ptr);
-        mod.target_arch = apic_read_value<uint32_t>(ptr);
-        graph->modules[mod.module_hash] = mod;
+        uint32_t target_arch = 0;
+        if (!reader.read_string(&mod.module_hash) || !reader.read_string(&mod.module_name)
+            || !reader.read_string(&mod.binary_filename) || !reader.read(&target_arch)) {
+            wp::set_error_string("Warp APIC error: Truncated module record %u", i);
+            return false;
+        }
+        mod.target_arch = static_cast<int>(target_arch);
+        if (graph->format_version >= 17) {
+            uint32_t binary_kind = 0;
+            if (!reader.read(&binary_kind) || !reader.read_string(&mod.arch_suffix)) {
+                wp::set_error_string("Warp APIC error: Truncated version 17 module record %u", i);
+                return false;
+            }
+            mod.binary_kind = static_cast<APICBinaryKind>(binary_kind);
+        } else {
+            mod.binary_kind = apic_binary_kind_from_extension(mod.binary_filename);
+            mod.arch_suffix = apic_arch_suffix_from_filename(mod.binary_filename, mod.target_arch);
+        }
+        if (!apic_validate_module_record(mod, graph->device_type))
+            return false;
+        if (!graph->modules.emplace(mod.module_hash, mod).second) {
+            wp::set_error_string("Warp APIC error: Duplicate module hash in metadata record %u", i);
+            return false;
+        }
     }
 
     for (uint32_t i = 0; i < num_kernels; i++) {
         APICKernel info;
-        info.kernel_key = apic_read_lp_string(ptr);
-        info.module_hash = apic_read_lp_string(ptr);
-        info.forward_name = apic_read_lp_string(ptr);
-        info.backward_name = apic_read_lp_string(ptr);
-        info.forward_smem_bytes = apic_read_value<uint32_t>(ptr);
-        info.backward_smem_bytes = apic_read_value<uint32_t>(ptr);
-        info.block_dim = apic_read_value<uint32_t>(ptr);
+        uint32_t forward_smem_bytes = 0, backward_smem_bytes = 0, block_dim = 0;
+        if (!reader.read_string(&info.kernel_key) || !reader.read_string(&info.module_hash)
+            || !reader.read_string(&info.forward_name) || !reader.read_string(&info.backward_name)
+            || !reader.read(&forward_smem_bytes) || !reader.read(&backward_smem_bytes) || !reader.read(&block_dim)) {
+            wp::set_error_string("Warp APIC error: Truncated kernel metadata record %u", i);
+            return false;
+        }
+        info.forward_smem_bytes = static_cast<int>(forward_smem_bytes);
+        info.backward_smem_bytes = static_cast<int>(backward_smem_bytes);
+        info.block_dim = static_cast<int>(block_dim);
         graph->kernels[apic_kernel_map_key(info.module_hash, info.kernel_key)] = info;
     }
 
     for (uint32_t i = 0; i < num_params; i++) {
-        std::string name = apic_read_lp_string(ptr);
-        uint32_t region_id = apic_read_value<uint32_t>(ptr);
+        std::string name;
+        uint32_t region_id = 0;
+        if (!reader.read_string(&name) || !reader.read(&region_id)) {
+            wp::set_error_string("Warp APIC error: Truncated binding metadata record %u", i);
+            return false;
+        }
         graph->bindings[name] = region_id;
         graph->binding_names.push_back(name);
     }
 
     for (uint32_t i = 0; i < num_meshes; i++) {
         APICMeshRecord rec;
-        memcpy(&rec, ptr, sizeof(APICMeshRecord));
-        ptr += sizeof(APICMeshRecord);
+        if (!reader.read(&rec)) {
+            wp::set_error_string("Warp APIC error: Truncated mesh metadata record %u", i);
+            return false;
+        }
         graph->mesh_records.push_back(rec);
     }
 
     for (uint32_t i = 0; i < num_ptr_locations; i++) {
         APICMemoryPtrLocation loc;
-        loc.region_id = apic_read_value<uint32_t>(ptr);
-        loc.offset = apic_read_value<uint64_t>(ptr);
-        loc.stride = apic_read_value<uint64_t>(ptr);
+        if (!reader.read(&loc.region_id) || !reader.read(&loc.offset) || !reader.read(&loc.stride)) {
+            wp::set_error_string("Warp APIC error: Truncated pointer metadata record %u", i);
+            return false;
+        }
         graph->ptr_locations.push_back(loc);
     }
 
+    if (!reader.at_end()) {
+        wp::set_error_string("Warp APIC error: Trailing data in metadata section");
+        return false;
+    }
+    for (const auto& pair : graph->kernels) {
+        const APICKernel& kernel = pair.second;
+        if (graph->modules.find(kernel.module_hash) == graph->modules.end()) {
+            wp::set_error_string(
+                "Warp APIC error: kernel '%s' references missing module '%s'", kernel.kernel_key.c_str(),
+                kernel.module_hash.c_str()
+            );
+            return false;
+        }
+    }
     return true;
 }
 
@@ -1215,7 +1296,8 @@ bool apic_parse_operations(const uint8_t* data, size_t size, APICGraph* graph)
     if (!data || size < 4)
         return false;
     const uint8_t* ptr = data;
-    graph->operation_count = apic_read_value<uint32_t>(ptr);
+    memcpy(&graph->operation_count, ptr, sizeof(graph->operation_count));
+    ptr += sizeof(graph->operation_count);
     size_t stream_size = size - 4;
     if (stream_size > 0) {
         graph->operation_stream.resize(stream_size);
@@ -2858,17 +2940,130 @@ template <typename T> static void apic_write_nc(std::vector<uint8_t>& buf, T val
     memcpy(buf.data() + off, &val, sizeof(T));
 }
 
-static void apic_write_string_nc(std::vector<uint8_t>& buf, const std::string& s)
+static void apic_write_string_nc(std::vector<uint8_t>& buf, const char* s)
 {
-    apic_write_nc<uint32_t>(buf, static_cast<uint32_t>(s.size()));
-    if (!s.empty()) {
+    const size_t size = s ? strlen(s) : 0;
+    apic_write_nc<uint32_t>(buf, static_cast<uint32_t>(size));
+    if (size != 0) {
         size_t off = buf.size();
-        buf.resize(off + s.size());
-        memcpy(buf.data() + off, s.data(), s.size());
+        buf.resize(off + size);
+        memcpy(buf.data() + off, s, size);
     }
 }
 
-bool wp_apic_state_save(APICState* state, const char* path, int target_arch, void* context)
+// Call only after structural validation of the operation stream.
+static bool apic_validate_export_launches(
+    const uint8_t* data,
+    uint32_t operation_count,
+    const std::unordered_map<std::string, const APICExportKernel*>& kernels
+)
+{
+    const uint8_t* ptr = data;
+    for (uint32_t i = 0; i < operation_count; ++i) {
+        const auto* header = reinterpret_cast<const APICOpHeader*>(ptr);
+        if (header->op_type == APIC_OP_KERNEL_LAUNCH) {
+            const auto* rec = reinterpret_cast<const APICLaunchRecord*>(ptr);
+            const char* strings = reinterpret_cast<const char*>(ptr + sizeof(APICLaunchRecord));
+            const std::string key(strings, rec->kernel_key_len);
+            const std::string hash(strings + rec->kernel_key_len, rec->module_hash_len);
+            const auto it = kernels.find(apic_kernel_map_key(hash, key));
+            if (it == kernels.end()) {
+                wp::set_error_string(
+                    "Warp APIC error: Captured kernel '%s' in module '%s' is missing from export metadata", key.c_str(),
+                    hash.c_str()
+                );
+                return false;
+            }
+            const char* entry_point = rec->is_forward ? it->second->forward_name : it->second->backward_name;
+            if (!entry_point || !*entry_point) {
+                wp::set_error_string("Warp APIC error: Captured kernel '%s' has no exported entry point", key.c_str());
+                return false;
+            }
+        } else if (header->op_type == APIC_OP_IF || header->op_type == APIC_OP_WHILE) {
+            const auto* rec = reinterpret_cast<const APICCondRecord*>(ptr);
+            const uint8_t* branch_a = ptr + sizeof(APICCondRecord);
+            const uint8_t* branch_b = branch_a + rec->branch_a_size;
+            if (!apic_validate_export_launches(branch_a, rec->branch_a_op_count, kernels)
+                || !apic_validate_export_launches(branch_b, rec->branch_b_op_count, kernels))
+                return false;
+        }
+        ptr += header->total_size;
+    }
+    return true;
+}
+
+static bool apic_validate_export_descriptor(
+    const APICState* state, const APICExportDescriptor& descriptor, APICDeviceType device_type
+)
+{
+    if ((descriptor.num_modules && !descriptor.modules) || (descriptor.num_kernels && !descriptor.kernels)
+        || (descriptor.num_bindings && !descriptor.bindings)) {
+        wp::set_error_string("Warp APIC error: Export metadata count requires a non-null array");
+        return false;
+    }
+
+    std::unordered_set<std::string> modules;
+    for (uint32_t i = 0; i < descriptor.num_modules; ++i) {
+        const APICExportModule& m = descriptor.modules[i];
+        if (!m.module_hash || !*m.module_hash || !m.binary_filename) {
+            wp::set_error_string("Warp APIC error: Export module %u requires a hash and binary filename", i);
+            return false;
+        }
+        APICModule module;
+        module.module_hash = m.module_hash;
+        module.binary_filename = m.binary_filename;
+        module.binary_kind = static_cast<APICBinaryKind>(m.binary_kind);
+        module.target_arch = m.target_arch;
+        module.arch_suffix = m.arch_suffix ? m.arch_suffix : "";
+        if (!apic_validate_module_record(module, device_type))
+            return false;
+        if (!modules.emplace(m.module_hash).second) {
+            wp::set_error_string("Warp APIC error: Duplicate export module hash '%s'", m.module_hash);
+            return false;
+        }
+    }
+
+    std::unordered_map<std::string, const APICExportKernel*> kernels;
+    for (uint32_t i = 0; i < descriptor.num_kernels; ++i) {
+        const APICExportKernel& k = descriptor.kernels[i];
+        if (!k.kernel_key || !*k.kernel_key || !k.module_hash || !*k.module_hash || k.forward_smem_bytes < 0
+            || k.backward_smem_bytes < 0 || k.block_dim < 0) {
+            wp::set_error_string("Warp APIC error: Invalid export kernel metadata at index %u", i);
+            return false;
+        }
+        if (modules.find(k.module_hash) == modules.end()) {
+            wp::set_error_string(
+                "Warp APIC error: Kernel '%s' references missing module '%s'", k.kernel_key, k.module_hash
+            );
+            return false;
+        }
+        if (!kernels.emplace(apic_kernel_map_key(k.module_hash, k.kernel_key), &k).second) {
+            wp::set_error_string(
+                "Warp APIC error: Duplicate export kernel '%s' in module '%s'", k.kernel_key, k.module_hash
+            );
+            return false;
+        }
+    }
+
+    std::unordered_set<std::string> bindings;
+    for (uint32_t i = 0; i < descriptor.num_bindings; ++i) {
+        const APICExportBinding& b = descriptor.bindings[i];
+        if (!b.name || !*b.name || b.region_id == 0
+            || state->memory_regions.find(b.region_id) == state->memory_regions.end()) {
+            wp::set_error_string("Warp APIC error: Export binding %u requires a name and registered memory region", i);
+            return false;
+        }
+        if (!bindings.emplace(b.name).second) {
+            wp::set_error_string("Warp APIC error: Duplicate export binding name '%s'", b.name);
+            return false;
+        }
+    }
+    return apic_validate_export_launches(state->operation_stream.data(), state->operation_count, kernels);
+}
+
+bool wp_apic_state_save(
+    APICState* state, const char* path, int target_arch, void* context, const APICExportDescriptor* descriptor
+)
 {
     if (!state || !path) {
         fprintf(stderr, "Warp APIC error: Null %s passed to wp_apic_state_save\n", !state ? "state" : "path");
@@ -2904,6 +3099,12 @@ bool wp_apic_state_save(APICState* state, const char* path, int target_arch, voi
         return false;
     }
 
+    const APICDeviceType device_type = target_arch == 0 ? APIC_DEVICE_CPU : APIC_DEVICE_CUDA;
+    if (descriptor && !apic_validate_export_descriptor(state, *descriptor, device_type))
+        return false;
+    const APICExportDescriptor empty_descriptor = {};
+    const APICExportDescriptor& metadata = descriptor ? *descriptor : empty_descriptor;
+
 #if WP_ENABLE_CUDA
     // Snapshot device regions auto-registered by native hooks (and thus absent
     // from Python's capture_save snapshot of apic_capture._regions) so a saved
@@ -2919,21 +3120,23 @@ bool wp_apic_state_save(APICState* state, const char* path, int target_arch, voi
     std::vector<uint8_t> metadata_section;
     apic_write_nc<uint32_t>(metadata_section, APIC_FORMAT_VERSION);
     apic_write_nc<uint32_t>(metadata_section, target_arch);
-    apic_write_nc<uint32_t>(metadata_section, static_cast<uint32_t>(state->modules.size()));
-    apic_write_nc<uint32_t>(metadata_section, static_cast<uint32_t>(state->kernels.size()));
-    apic_write_nc<uint32_t>(metadata_section, static_cast<uint32_t>(state->bindings.size()));
+    apic_write_nc<uint32_t>(metadata_section, metadata.num_modules);
+    apic_write_nc<uint32_t>(metadata_section, metadata.num_kernels);
+    apic_write_nc<uint32_t>(metadata_section, metadata.num_bindings);
     apic_write_nc<uint32_t>(metadata_section, static_cast<uint32_t>(state->mesh_records.size()));
     apic_write_nc<uint32_t>(metadata_section, static_cast<uint32_t>(state->ptr_locations.size()));
 
-    for (const auto& kv : state->modules) {
-        const APICModule& m = kv.second;
+    for (uint32_t i = 0; i < metadata.num_modules; ++i) {
+        const APICExportModule& m = metadata.modules[i];
         apic_write_string_nc(metadata_section, m.module_hash);
         apic_write_string_nc(metadata_section, m.module_name);
-        apic_write_string_nc(metadata_section, m.cubin_filename);
+        apic_write_string_nc(metadata_section, m.binary_filename);
         apic_write_nc<uint32_t>(metadata_section, static_cast<uint32_t>(m.target_arch));
+        apic_write_nc<uint32_t>(metadata_section, static_cast<uint32_t>(m.binary_kind));
+        apic_write_string_nc(metadata_section, m.arch_suffix);
     }
-    for (const auto& kv : state->kernels) {
-        const APICKernel& k = kv.second;
+    for (uint32_t i = 0; i < metadata.num_kernels; ++i) {
+        const APICExportKernel& k = metadata.kernels[i];
         apic_write_string_nc(metadata_section, k.kernel_key);
         apic_write_string_nc(metadata_section, k.module_hash);
         apic_write_string_nc(metadata_section, k.forward_name);
@@ -2942,9 +3145,10 @@ bool wp_apic_state_save(APICState* state, const char* path, int target_arch, voi
         apic_write_nc<uint32_t>(metadata_section, static_cast<uint32_t>(k.backward_smem_bytes));
         apic_write_nc<uint32_t>(metadata_section, static_cast<uint32_t>(k.block_dim));
     }
-    for (const auto& b : state->bindings) {
-        apic_write_string_nc(metadata_section, b.first);
-        apic_write_nc<uint32_t>(metadata_section, b.second);
+    for (uint32_t i = 0; i < metadata.num_bindings; ++i) {
+        const APICExportBinding& b = metadata.bindings[i];
+        apic_write_string_nc(metadata_section, b.name);
+        apic_write_nc<uint32_t>(metadata_section, b.region_id);
     }
     for (const auto& rec : state->mesh_records) {
         size_t off = metadata_section.size();
@@ -3124,7 +3328,7 @@ const char* wp_apic_get_kernel_module_binary_filename(APICGraph* graph, int inde
     if (it == graph->modules.end())
         return nullptr;
 
-    return it->second.cubin_filename.c_str();
+    return it->second.binary_filename.c_str();
 }
 
 const char* wp_apic_get_kernel_forward_name(APICGraph* graph, int index)
@@ -3279,6 +3483,11 @@ APICGraph* wp_apic_load_graph(void* context, const char* path, int device_type)
         return nullptr;
     }
 
+    if (header->section_table_offset > file_data.size()
+        || header->num_sections > (file_data.size() - header->section_table_offset) / sizeof(APICSectionEntry)) {
+        wp::set_error_string("Warp APIC error: Truncated section table");
+        return nullptr;
+    }
     const APICSectionEntry* sections
         = reinterpret_cast<const APICSectionEntry*>(file_data.data() + header->section_table_offset);
 
@@ -3290,6 +3499,10 @@ APICGraph* wp_apic_load_graph(void* context, const char* path, int device_type)
     size_t operations_size = 0;
 
     for (uint32_t i = 0; i < header->num_sections; i++) {
+        if (sections[i].offset > file_data.size() || sections[i].size > file_data.size() - sections[i].offset) {
+            wp::set_error_string("Warp APIC error: Truncated section %u", i);
+            return nullptr;
+        }
         if (sections[i].type == APIC_SECTION_METADATA) {
             metadata_ptr = file_data.data() + sections[i].offset;
             metadata_size = sections[i].size;
@@ -3342,16 +3555,14 @@ APICGraph* wp_apic_load_graph(void* context, const char* path, int device_type)
 
     APICGraph* graph = new APICGraph();
     graph->cuda_context = context;
+    graph->format_version = header->version;
     graph->target_arch = header->target_arch;
     graph->device_type = static_cast<APICDeviceType>(device_type);
     graph->base_path = base_name;
 
-    if (metadata_ptr && metadata_size > 0) {
-        if (!apic_parse_metadata(metadata_ptr, metadata_size, graph)) {
-            wp::set_error_string("Warp APIC error: Failed to parse metadata");
-            delete graph;
-            return nullptr;
-        }
+    if (!apic_parse_metadata(metadata_ptr, metadata_size, graph)) {
+        delete graph;
+        return nullptr;
     }
 
     if (memory_ptr && !apic_parse_memory_regions(memory_ptr, memory_size, graph)) {
