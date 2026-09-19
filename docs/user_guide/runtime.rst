@@ -2965,6 +2965,10 @@ can be saved to a USD file using the :class:`warp.render.UsdRenderer`.
     with :class:`wp.geometry.IsoSurfaceMarchingCubes
     <warp.geometry.IsoSurfaceMarchingCubes>` instead.
 
+    The legacy ``domain_bounds_lower_corner`` and
+    ``domain_bounds_upper_corner`` constructor arguments and attributes remain
+    available as deprecated aliases of ``lower`` and ``upper``, respectively.
+
 .. testcode::
     :skipif: wp.get_cuda_device_count() == 0
 
