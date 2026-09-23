@@ -150,6 +150,80 @@ def test_identity_builtins_match_kernel_scope(test, device):
 
 
 class TestBuiltinsResolution(unittest.TestCase):
+    def test_builtin_call_preserves_instance_dispatch_hooks(self):
+        """Route calls through instance-level resolution and invocation hooks."""
+        builtin = make_mul_builtin({"a": wp.float32, "b": wp.float32}, wp.float32)
+        default_get_builtin = builtin.get_builtin
+        default_call_builtin = builtin.call_builtin
+        dispatch_order = []
+
+        def recording_get_builtin(*args, **kwargs):
+            dispatch_order.append("get_builtin")
+            return default_get_builtin(*args, **kwargs)
+
+        def recording_call_builtin(desc, *args, **kwargs):
+            dispatch_order.append("call_builtin")
+            return default_call_builtin(desc, *args, **kwargs)
+
+        builtin.get_builtin = recording_get_builtin
+        builtin.call_builtin = recording_call_builtin
+
+        self.assertEqual(builtin(2.0, 3.0), 6.0)
+        self.assertEqual(dispatch_order, ["get_builtin", "call_builtin"])
+
+    def test_builtin_dispatch_hooks_apply_selected_overload_defaults(self):
+        """Carry the selected overload's binding through explicit dispatch hooks."""
+        overload_group = make_mul_builtin(
+            {"value": wp.vec2f, "factor": wp.float32},
+            wp.vec2f,
+            defaults={"factor": 2.0},
+        )
+        overload_group.add_overload(
+            make_mul_builtin(
+                {"vector": wp.vec3f, "scale": wp.float32},
+                wp.vec3f,
+                defaults={"scale": 3.0},
+            )
+        )
+
+        cases = (
+            ("primary", {"value": wp.vec2f(1.0, 1.0)}, (2.0, 2.0)),
+            ("primary alias", {"value": wp.vec3f(1.0, 1.0, 1.0)}, (3.0, 3.0, 3.0)),
+            ("overload signature", {"vector": wp.vec3f(1.0, 1.0, 1.0)}, (3.0, 3.0, 3.0)),
+        )
+
+        for name, kwargs, expected in cases:
+            with self.subTest(name=name):
+                desc = overload_group.get_builtin(**kwargs)
+                result = overload_group.call_builtin(desc, **kwargs)
+                np.testing.assert_allclose(result, expected)
+
+    def test_builtin_primary_call_binds_arguments_once(self):
+        """Reuse the primary binding when invoking the selected built-in."""
+        overload_group = make_mul_builtin(
+            {"value": wp.vec2f, "factor": wp.float32},
+            wp.vec2f,
+            defaults={"factor": 2.0},
+        )
+
+        class CountingSignature:
+            def __init__(self, wrapped):
+                self.wrapped = wrapped
+                self.parameters = wrapped.parameters
+                self.bind_count = 0
+
+            def bind(self, *args, **kwargs):
+                self.bind_count += 1
+                return self.wrapped.bind(*args, **kwargs)
+
+        counting_signature = CountingSignature(overload_group.signature)
+        overload_group.signature = counting_signature
+
+        result = overload_group(value=wp.vec2f(1.0, 1.0))
+
+        np.testing.assert_allclose(result, (2.0, 2.0))
+        self.assertEqual(counting_signature.bind_count, 1)
+
     def test_builtin_fallback_does_not_retry_primary_shape(self):
         """Evaluate primary-shape overloads only once before falling back."""
         overload_group = make_mul_builtin({"a": wp.float32, "b": wp.float32}, wp.float32)
