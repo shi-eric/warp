@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import unittest
+from unittest import mock
 
 import numpy as np
 
@@ -150,6 +151,44 @@ def test_identity_builtins_match_kernel_scope(test, device):
 
 
 class TestBuiltinsResolution(unittest.TestCase):
+    def test_available_builtin_skips_export_validation(self):
+        """Resolve an available native symbol without revalidating its static export."""
+        get_builtin_call_desc.cache_clear()
+        self.addCleanup(get_builtin_call_desc.cache_clear)
+
+        with mock.patch.object(
+            wp._src.context,
+            "resolve_exported_function_sig",
+            side_effect=AssertionError("available symbols do not need export validation"),
+        ):
+            self.assertEqual(wp.sin(0.0), 0.0)
+
+    def test_missing_registered_builtin_symbol_is_reported(self):
+        """Report a missing native symbol for an otherwise valid registered export."""
+        overload = next(
+            overload for overload in wp.sin.overloads if tuple(overload.input_types.values()) == (wp.float32,)
+        )
+
+        get_builtin_call_desc.cache_clear()
+        self.addCleanup(get_builtin_call_desc.cache_clear)
+        with mock.patch.object(overload, "mangled_name", "wp_builtin_missing_sin_float32"):
+            with self.assertRaises(AttributeError):
+                wp.sin(0.0)
+
+    def test_existing_symbol_does_not_make_invalid_builtin_exportable(self):
+        """Reject an invalid built-in whose mangled name collides with an existing symbol."""
+        colliding_builtin = Function(
+            func=None,
+            key="sin",
+            namespace="wp::",
+            input_types={"value": wp.float32},
+            value_func=lambda arg_types, arg_values: wp._src.types.Reference(wp.float32),
+            export=True,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "Couldn't find a function 'sin' compatible"):
+            colliding_builtin(1.0)
+
     def test_builtin_fallback_does_not_retry_primary_shape(self):
         """Evaluate primary-shape overloads only once before falling back."""
         overload_group = make_mul_builtin({"a": wp.float32, "b": wp.float32}, wp.float32)

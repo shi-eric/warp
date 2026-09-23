@@ -307,6 +307,11 @@ class Function:
         self.is_differentiable = is_differentiable  # whether a corresponding adjoint exists for this builtin in Warp
         self.generic = generic
         self.mangled_name: str | None = None
+        # ``add_builtin()`` sets this for functions backed by the built-in registry. For these
+        # functions, finding the native symbol confirms that export validation succeeded when the
+        # wrapper was generated. An independently constructed Function cannot make that assumption
+        # because mangled names can collide.
+        self._is_registered_builtin = False
         # Parameter naming the scalar type to instantiate the native function with, for built-ins
         # whose exported signature carries no argument implying it. See
         # `get_template_scalar_param()`, and the scalar type it defaults to.
@@ -926,11 +931,21 @@ def get_builtin_call_desc(
         if scalar not in get_template_scalars(func):
             return None
 
-    exported_signature = resolve_exported_function_sig(func, scalar)
-    if exported_signature is None:
-        return None
-
-    func_args, value_type = exported_signature
+    if func._is_registered_builtin:
+        # Avoid repeating static export checks on each descriptor cache miss. The symbol lookup
+        # below confirms that this registered overload was exported.
+        if func.export_func is not None:
+            func_args = func.export_func(func.input_types)
+        else:
+            func_args = func.input_types
+        value_type = None
+    else:
+        # Native symbols are not unique to a Function object or its result type. Preserve full
+        # validation for standalone Functions that may happen to collide with a registered export.
+        exported_signature = resolve_exported_function_sig(func, scalar)
+        if exported_signature is None:
+            return None
+        func_args, value_type = exported_signature
 
     arg_types = []
     param_kinds = []
@@ -976,13 +991,25 @@ def get_builtin_call_desc(
         arg_types.append(arg_type)
         param_kinds.append(param_kind)
 
-    # Retrieve the built-in function from Warp's dll only after confirming that
-    # this overload is exported and compatible with the given parameters. A built-in that names
-    # the scalar type to instantiate with has one symbol per type, named after the scalar that
-    # `export_builtin()` instantiated it with rather than after the result type, which is free to
-    # be anything.
+    # A template scalar selects the symbol that ``export_builtin()`` generated for that scalar;
+    # the result type does not affect its name.
     symbol = func.mangled_name if func.template_scalar_param is None else func.mangle(scalar)
-    c_func = getattr(warp._src.context.runtime.core, symbol)
+    try:
+        c_func = getattr(warp._src.context.runtime.core, symbol)
+    except AttributeError:
+        # Unsupported overloads have no native symbol and should let resolution continue. Validate
+        # only this exceptional path so a genuinely missing symbol for a valid export remains visible.
+        if func._is_registered_builtin and resolve_exported_function_sig(func, scalar) is None:
+            return None
+        raise
+
+    if func._is_registered_builtin:
+        # Symbol existence replaces static export validation, but the descriptor still needs the
+        # overload's result type.
+        if scalar is None:
+            value_type = func.value_func(func_args, None)
+        else:
+            value_type = func.value_func({**func_args, func.template_scalar_param: scalar}, None)
 
     overload_defaults_by_index = tuple(
         (index, func.defaults[name]) for index, name in enumerate(func.signature.parameters) if name in func.defaults
@@ -2570,6 +2597,7 @@ def add_builtin(
         defaults=defaults,
         require_original_output_arg=require_original_output_arg,
     )
+    func._is_registered_builtin = True
 
     if key in builtin_functions:
         builtin_functions[key].add_overload(func)

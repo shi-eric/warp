@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import warp as wp
+from warp._src.context import get_builtin_call_desc
 
 mat = wp.mat44(*range(16))
 xform = wp.transform(*range(7))
@@ -41,3 +42,24 @@ class PythonBuiltins:
             wp.radians(coeff * value),
         )
         point = wp.quat_rotate(rot, point + pos)
+
+
+class PythonBuiltinsDescriptorCold:
+    """Measure built-in latency when the call descriptor is not cached.
+
+    ASV warmup populates the descriptor cache before ordinary timing samples,
+    so the warm-path benchmark above cannot detect regressions in descriptor
+    construction. Clearing the cache in ``setup()`` leaves cache invalidation
+    outside the timed region while making every measured call exercise the cold
+    path.
+    """
+
+    repeat = 64  # Calibrated sample count for detecting 5% changes.
+    number = 1  # Keep each cache-cold call as an independent raw sample.
+
+    def setup(self):
+        wp.init()
+        get_builtin_call_desc.cache_clear()
+
+    def time_call_builtin_transform_identity_fn(self):
+        wp.transform_identity()
