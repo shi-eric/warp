@@ -63,6 +63,24 @@ class TestModuleLoadCollection(unittest.TestCase):
         self.assertEqual(repeat.aggregate_ms, 150.0)
         self.assertEqual([record.module for record in summary.slowest_compiled], ["wp.top", "wp.sim", "wp.sim"])
 
+    def test_summary_serializes_read_errors(self):
+        from warp._src.test_runner.module_loads import ModuleLoadSummary
+
+        error = "worker-0.output.log: permission denied"
+        summary = ModuleLoadSummary(
+            files_inspected=1,
+            parsed_records=0,
+            complete=False,
+            no_shared_cache=False,
+            status_counts={},
+            hash_churn=(),
+            repeated_compilations=(),
+            slowest_compiled=(),
+            read_errors=(error,),
+        )
+
+        self.assertEqual(summary.to_dict().get("read_errors"), [error])
+
 
 class TestSuiteTimings(unittest.TestCase):
     @staticmethod

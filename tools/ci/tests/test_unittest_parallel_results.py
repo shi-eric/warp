@@ -30,6 +30,12 @@ class TestResultLifecycle(unittest.TestCase):
             with self.subTest(value=1):
                 self.fail("subtest failure")
 
+    class MultipleFailingSubTests(unittest.TestCase):
+        def test_subtest_failures(self):
+            for value in range(3):
+                with self.subTest(value=value):
+                    self.fail(f"subtest {value} failed")
+
     class DocumentedFailure(unittest.TestCase):
         def test_fails(self):
             """Worker docstring marker that should not appear in diagnostics."""
@@ -94,6 +100,21 @@ class TestResultLifecycle(unittest.TestCase):
         self.assertEqual(len(result.failures), 1)
         self.assertEqual(len(result.errors), 0)
         self.assertEqual(result.test_record[0][3], "FAIL")
+
+    def test_repeated_subtest_failures_emit_one_outcome_for_the_test(self):
+        from warp.tests.unittest_utils import ParallelJunitTestResult
+
+        suite = unittest.defaultTestLoader.loadTestsFromTestCase(self.MultipleFailingSubTests)
+        runner = unittest.TextTestRunner(
+            resultclass=ParallelJunitTestResult,
+            stream=io.StringIO(),
+            verbosity=0,
+        )
+        result = runner.run(suite)
+
+        outcomes = [event for event in self.queue.items if event.event.value == "test_outcome"]
+        self.assertEqual(len(outcomes), 1)
+        self.assertEqual(len(result.test_record), 3)
 
     def test_manager_emits_suite_and_test_lifecycles(self):
         from warp._src.test_runner.worker import ParallelTestManager

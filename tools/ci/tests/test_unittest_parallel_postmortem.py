@@ -43,6 +43,12 @@ class TestPostmortemDiagnostics(unittest.TestCase):
             self.assertEqual(evidence["fault"]["state"], "empty")
             self.assertIs(evidence["fault"]["fatal_traceback_evidence"], False)
 
+            # Worker sinks open before WORKER_STARTED is emitted, so the PID
+            # must still recover artifacts when no worker index was recorded.
+            evidence = diagnostics._artifact_evidence(run_dir, None, 8123)
+            self.assertEqual(evidence["fault"]["path"], str(fault_path))
+            self.assertEqual(evidence["fault"]["state"], "empty")
+
             fault_path.unlink()
             evidence = diagnostics._artifact_evidence(run_dir, 2, 8123)
             self.assertEqual(evidence["fault"]["state"], "missing")

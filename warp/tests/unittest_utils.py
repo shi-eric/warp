@@ -741,6 +741,7 @@ class ParallelJunitTestResult(unittest.TextTestResult):
         self._active_test = None
         self.start_time = None
         self._diagnostic_started_ns = None
+        self._outcome_emitted = False
         super().__init__(stream, descriptions, verbosity)
 
     def startTest(self, test):
@@ -750,6 +751,7 @@ class ParallelJunitTestResult(unittest.TextTestResult):
         self._active_test = test
         self.start_time = start_time
         self._diagnostic_started_ns = diagnostic_started_ns
+        self._outcome_emitted = False
 
     def stopTest(self, test):
         try:
@@ -765,6 +767,7 @@ class ParallelJunitTestResult(unittest.TextTestResult):
             self._active_test = None
             self.start_time = None
             self._diagnostic_started_ns = None
+            self._outcome_emitted = False
 
     def _record_test(self, test, duration, code, message=None, details=None, identifier=None):
         classname, name = _junit_record_identity(test, identifier)
@@ -773,6 +776,13 @@ class ParallelJunitTestResult(unittest.TextTestResult):
     def _record_outcome(self, test, code, message=None, details=None):
         if self._active_test is test and self.start_time is not None and self._diagnostic_started_ns is not None:
             duration = round((time.perf_counter_ns() - self.start_time) * 1e-9, 3)  # [s]
+            if self._outcome_emitted:
+                # A failing subtest decides the parent's verdict before the test
+                # method returns. Keep later JUnit rows without counting the
+                # same test repeatedly in per-suite outcome totals.
+                self._record_test(test, duration, code, message, details)
+                return
+            self._outcome_emitted = True
             emit_test_outcome(test, code, self._diagnostic_started_ns)
             self._record_test(test, duration, code, message, details)
             return
