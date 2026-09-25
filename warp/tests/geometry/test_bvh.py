@@ -1,12 +1,39 @@
 # SPDX-FileCopyrightText: Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+import ctypes
 import unittest
 
 import numpy as np
 
 import warp as wp
 from warp.tests.unittest_utils import *
+
+
+class _HostBvhHeader(ctypes.Structure):
+    _fields_ = [
+        ("node_lowers", ctypes.c_void_p),
+        ("node_uppers", ctypes.c_void_p),
+        ("node_parents", ctypes.POINTER(ctypes.c_int)),
+        ("node_counts", ctypes.c_void_p),
+        ("primitive_indices", ctypes.c_void_p),
+        ("max_depth", ctypes.c_int),
+        ("max_nodes", ctypes.c_int),
+        ("num_nodes", ctypes.c_int),
+    ]
+
+
+def _host_bvh_depth(bvh):
+    header = ctypes.cast(bvh.id, ctypes.POINTER(_HostBvhHeader)).contents
+    deepest = 0
+    for node in range(header.num_nodes):
+        depth = 0
+        parent = header.node_parents[node]
+        while parent != -1:
+            depth += 1
+            parent = header.node_parents[parent]
+        deepest = max(deepest, depth)
+    return deepest, header.max_depth
 
 
 @wp.kernel
@@ -1053,6 +1080,46 @@ cuda_devices_with_mempool = get_cuda_test_devices_with_mempool()
 
 
 class TestBvh(unittest.TestCase):
+    def test_sah_depth_fits_query_stack(self):
+        # Skewed bounds make SAH repeatedly split off a small outer group.
+        count = 300
+        x = np.exp(np.linspace(-70.0, 0.0, count)).astype(np.float32)
+        lowers = np.zeros((count, 3), dtype=np.float32)
+        uppers = np.ones((count, 3), dtype=np.float32)
+        lowers[:, 0] = x
+        uppers[:, 0] = x * np.float32(1.001)
+
+        for grouped in (False, True):
+            with self.subTest(grouped=grouped):
+                if grouped:
+                    mesh_lowers = np.vstack((lowers, np.array([[-1.0, 0.0, 0.0]], dtype=np.float32)))
+                    mesh_uppers = np.vstack((uppers, np.array([[-0.5, 1.0, 1.0]], dtype=np.float32)))
+                    groups = wp.array(np.array([0] * count + [1], dtype=np.int32), dtype=int, device="cpu")
+                else:
+                    mesh_lowers = lowers
+                    mesh_uppers = uppers
+                    groups = None
+
+                bvh = wp.Bvh(
+                    wp.array(mesh_lowers, dtype=wp.vec3, device="cpu"),
+                    wp.array(mesh_uppers, dtype=wp.vec3, device="cpu"),
+                    groups=groups,
+                    constructor="sah",
+                    leaf_size=1,
+                )
+                depth, recorded_depth = _host_bvh_depth(bvh)
+                self.assertLessEqual(depth, 31)
+                self.assertEqual(recorded_depth, depth)
+
+                hits = wp.zeros(len(mesh_lowers), dtype=int, device="cpu")
+                wp.launch(
+                    bvh_query_aabb,
+                    dim=1,
+                    inputs=[bvh.id, wp.vec3(-2.0, -1.0, -1.0), wp.vec3(2.0, 2.0, 2.0), hits],
+                    device="cpu",
+                )
+                np.testing.assert_array_equal(hits.numpy(), np.ones(len(mesh_lowers), dtype=np.int32))
+
     def test_bvh_codegen_adjoints_with_select(self):
         def kernel_fn(bvh: wp.uint64):
             v = wp.vec3(0.0, 0.0, 0.0)
