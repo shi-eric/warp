@@ -1081,6 +1081,7 @@ cuda_devices_with_mempool = get_cuda_test_devices_with_mempool()
 
 class TestBvh(unittest.TestCase):
     def test_sah_depth_fits_query_stack(self):
+        """Verify grouped and ungrouped SAH trees fit the query stack."""
         # Skewed bounds make SAH repeatedly split off a small outer group.
         count = 300
         x = np.exp(np.linspace(-70.0, 0.0, count)).astype(np.float32)
