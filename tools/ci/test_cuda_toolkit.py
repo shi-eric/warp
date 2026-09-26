@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import os
+import shlex
 import stat
 import sys
 import tarfile
@@ -88,13 +89,13 @@ def zip_archive(root: str, entries: dict[str, bytes]) -> bytes:
     return output.getvalue()
 
 
-def make_toolkit(root: Path, platform: str, exit_code: int = 0) -> Path:
+def make_toolkit(root: Path, platform: str) -> Path:
     executable = "nvcc.exe" if platform.startswith("windows-") else "nvcc"
     toolkit = root / "toolkit"
     (toolkit / "include").mkdir(parents=True)
     (toolkit / "bin").mkdir()
     nvcc = toolkit / "bin" / executable
-    nvcc.write_text(f"#!/bin/sh\nexit {exit_code}\n", encoding="utf-8")
+    nvcc.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     nvcc.chmod(nvcc.stat().st_mode | stat.S_IXUSR)
     return toolkit
 
@@ -524,6 +525,32 @@ class InstallTests(ToolkitTestCase):
 
 
 class PackageTests(ToolkitTestCase):
+    def test_unpack_does_not_execute_nvcc(self) -> None:
+        """Restore a Toolkit without running its packaged compiler."""
+        bundle = ctk.Bundle(
+            "13.0.2",
+            "linux-x86_64",
+            (archive_record(b"locked"),),
+        )
+        marker = self.directory / "nvcc-ran"
+        package = self.directory / "cuda-toolkit.tar.xz"
+        package.write_bytes(
+            tar_archive(
+                ctk.PACKAGE_ROOT,
+                {
+                    ctk.PACKAGE_METADATA_NAME: json.dumps(ctk._package_metadata(bundle)).encode(),
+                    "include/cuda.h": b"header",
+                    "bin/nvcc": f"#!/bin/sh\nprintf executed > {shlex.quote(str(marker))}\n".encode(),
+                },
+            )
+        )
+        destination = self.directory / "destination"
+
+        ctk.unpack_toolkit(bundle, package, destination)
+
+        self.assertTrue((destination / "bin/nvcc").is_file())
+        self.assertFalse(marker.exists())
+
     def test_unpack_prior_bundle_digest_schema(self) -> None:
         """Unpack a Toolkit package created before cache schema version 2."""
         bundle = ctk.Bundle(
@@ -647,12 +674,18 @@ class ActivationTests(ToolkitTestCase):
         with self.assertRaisesRegex(ctk.ToolkitConfigError, "nvcc"):
             ctk.activate_toolkit(toolkit, "linux-x86_64")
 
-    def test_reject_nonfunctional_nvcc(self) -> None:
-        """Reject a Toolkit with a failing compiler."""
-        toolkit = make_toolkit(self.directory, "linux-x86_64", exit_code=1)
+    def test_activate_does_not_execute_nvcc(self) -> None:
+        """Publish a Toolkit without running its compiler."""
+        toolkit = make_toolkit(self.directory, "linux-x86_64")
+        marker = self.directory / "nvcc-ran"
+        (toolkit / "bin/nvcc").write_text(
+            f"#!/bin/sh\nprintf executed > {shlex.quote(str(marker))}\n",
+            encoding="utf-8",
+        )
 
-        with self.assertRaisesRegex(ctk.ToolkitConfigError, "status 1"):
-            ctk.activate_toolkit(toolkit, "linux-x86_64")
+        ctk.activate_toolkit(toolkit, "linux-x86_64")
+
+        self.assertFalse(marker.exists())
 
 
 if __name__ == "__main__":
