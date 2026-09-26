@@ -553,6 +553,29 @@ def test_tile_scan_max_inclusive(test, device):
         np.testing.assert_allclose(scan_wp[i], scan_np, rtol=1e-5, atol=1e-6)
 
 
+@wp.kernel
+def tile_scan_max_uint32(input: wp.array[wp.uint32], output: wp.array[wp.uint32]):
+    # 67 elements cross a CUDA warp (32 GPU threads) and need a second 64-thread scan pass.
+    tile = wp.tile_load(input, shape=67)
+    wp.tile_store(output, wp.tile_scan_max_inclusive(tile))
+
+
+def test_tile_scan_max_uint32(test, device):
+    """Check ``uint32`` prefix maxima above ``INT32_MAX`` across scan passes."""
+    input_np = np.arange(67, dtype=np.uint32)
+    # Values above INT32_MAX expose accidental signed comparisons.
+    input_np[1] = 0x80000000
+    # UINT32_MAX in the second CUDA warp tests another prefix transition.
+    input_np[33] = 0xFFFFFFFF
+
+    input_wp = wp.array(input_np, device=device)
+    output_wp = wp.zeros_like(input_wp)
+
+    wp.launch_tiled(tile_scan_max_uint32, dim=[1], inputs=[input_wp, output_wp], block_dim=TILE_DIM, device=device)
+
+    np.testing.assert_array_equal(output_wp.numpy(), np.maximum.accumulate(input_np))
+
+
 def create_tile_scan_min_inclusive_kernel(tile_dim: int):
     @wp.kernel(module="unique")
     def tile_scan_min_inclusive_kernel(input: wp.array2d[float], output: wp.array2d[float]):
@@ -588,6 +611,31 @@ def test_tile_scan_min_inclusive(test, device):
     for i in range(batch_count):
         scan_np = np.minimum.accumulate(input[i])
         np.testing.assert_allclose(scan_wp[i], scan_np, rtol=1e-5, atol=1e-6)
+
+
+@wp.kernel
+def tile_scan_min_uint32(input: wp.array[wp.uint32], output: wp.array[wp.uint32]):
+    # 67 elements cross a CUDA warp (32 GPU threads) and need a second 64-thread scan pass.
+    tile = wp.tile_load(input, shape=67)
+    wp.tile_store(output, wp.tile_scan_min_inclusive(tile))
+
+
+def test_tile_scan_min_uint32(test, device):
+    """Check ``uint32`` prefix minima from ``UINT32_MAX`` through zero."""
+    # Start at UINT32_MAX to exercise the unsigned minimum identity.
+    input_np = np.full(67, 0xFFFFFFFF, dtype=np.uint32)
+    # Decrease within the unsigned high range, including in the second CUDA warp.
+    input_np[1] = 0xFFFFFFFE
+    input_np[33] = 0x80000000
+    # Reach zero after the 64-thread block's first scan pass.
+    input_np[65] = 0
+
+    input_wp = wp.array(input_np, device=device)
+    output_wp = wp.zeros_like(input_wp)
+
+    wp.launch_tiled(tile_scan_min_uint32, dim=[1], inputs=[input_wp, output_wp], block_dim=TILE_DIM, device=device)
+
+    np.testing.assert_array_equal(output_wp.numpy(), np.minimum.accumulate(input_np))
 
 
 @wp.kernel
@@ -1356,7 +1404,23 @@ add_function_test(
 add_function_test(TestTileReduce, "test_tile_scan_inclusive", test_tile_scan_inclusive, devices=devices)
 add_function_test(TestTileReduce, "test_tile_scan_exclusive", test_tile_scan_exclusive, devices=devices)
 add_function_test(TestTileReduce, "test_tile_scan_max_inclusive", test_tile_scan_max_inclusive, devices=devices)
+add_function_test(TestTileReduce, "test_tile_scan_max_uint32", test_tile_scan_max_uint32, devices=devices)
 add_function_test(TestTileReduce, "test_tile_scan_min_inclusive", test_tile_scan_min_inclusive, devices=devices)
+add_function_test(TestTileReduce, "test_tile_scan_min_uint32", test_tile_scan_min_uint32, devices=devices)
+add_function_test(
+    TestTileReduce,
+    "test_tile_scan_max_uint32_cpu_blocks",
+    test_tile_scan_max_uint32,
+    devices=cpu_devices,
+    enable_cpu_blocks=True,
+)
+add_function_test(
+    TestTileReduce,
+    "test_tile_scan_min_uint32_cpu_blocks",
+    test_tile_scan_min_uint32,
+    devices=cpu_devices,
+    enable_cpu_blocks=True,
+)
 add_function_test(
     TestTileReduce,
     "test_tile_scan_partial_block",

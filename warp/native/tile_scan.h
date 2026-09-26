@@ -31,6 +31,8 @@ template <> inline CUDA_CALLABLE int OpMax<int>::identity() const
     return -2147483648;  // INT_MIN
 }
 
+template <> inline CUDA_CALLABLE unsigned int OpMax<unsigned int>::identity() const { return 0u; }
+
 template <> inline CUDA_CALLABLE float OpMax<float>::identity() const { return -1e38f; }
 
 template <> inline CUDA_CALLABLE double OpMax<double>::identity() const { return -1e308; }
@@ -45,6 +47,8 @@ template <> inline CUDA_CALLABLE int OpMin<int>::identity() const
 {
     return 2147483647;  // INT_MAX
 }
+
+template <> inline CUDA_CALLABLE unsigned int OpMin<unsigned int>::identity() const { return UINT_MAX; }
 
 template <> inline CUDA_CALLABLE float OpMin<float>::identity() const { return 1e38f; }
 
