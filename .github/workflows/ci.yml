@@ -707,6 +707,7 @@ jobs:
       gcs:
         image: fsouza/fake-gcs-server:v1.56.1
         env:
+          FAKE_GCS_BACKEND: memory
           FAKE_GCS_SCHEME: http
           FAKE_GCS_EXTERNAL_URL: http://127.0.0.1:4443
         ports:

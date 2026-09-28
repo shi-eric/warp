@@ -560,7 +560,7 @@ linux-x86_64 remote-cache-gcs test:
   services:
     - name: fsouza/fake-gcs-server:v1.56.1
       alias: gcs
-      command: ["-scheme", "http", "-external-url", "http://gcs:4443"]
+      command: ["-backend", "memory", "-scheme", "http", "-external-url", "http://gcs:4443"]
   variables:
     IPP_RUNNER_EXECUTION_DURATION: "900"
     STORAGE_EMULATOR_HOST: "http://gcs:4443"
