@@ -220,7 +220,9 @@ or invalid downloads, and create-only uploads on both sides of the SDK's resumab
 threshold. Two producers using the same remote key must leave one object that a third
 consumer can restore. The emulator uses `STORAGE_EMULATOR_HOST` and requires no production
 credentials. It does not enforce read preconditions after object replacement, so the read
-test checks the SDK arguments rather than the server's response.
+test checks the SDK arguments rather than the server's response. If someone with GCS access
+is available, ask them to repeat the conditional-upload race check against a disposable
+prefix and report the result. This is useful external validation, not a release gate.
 
 Development checkouts cannot satisfy the final-version gate. Tests may patch the private
 eligibility predicate while leaving Warp's version string unchanged; production code has no
