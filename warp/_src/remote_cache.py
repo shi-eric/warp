@@ -298,17 +298,34 @@ def _tar_info(name: str, size: int) -> tarfile.TarInfo:
     return info
 
 
+def _archive_member_names(entry: RemoteCacheEntry) -> dict[str, str]:
+    """Map local basenames to short ASCII tar names without extension headers."""
+    reserved = set(entry.artifact_names) | {"manifest.json"}
+    names = {}
+    for index, name in enumerate(entry.artifact_names):
+        if name.isascii() and len(name) <= 100:
+            names[name] = name
+            continue
+        alias = f"__warp_artifact_{index}__"
+        while alias in reserved:
+            alias += "_"
+        reserved.add(alias)
+        names[name] = alias
+    return names
+
+
 def write_archive(stream: BinaryIO, entry: RemoteCacheEntry, source_paths: Mapping[str, Path]) -> None:
     """Write a complete entry as one deterministic archive."""
     if set(source_paths) != set(entry.artifact_names):
         raise RemoteCacheValidationError("Remote cache artifact set does not match entry")
 
     artifacts: dict[str, dict[str, int | str]] = {}
+    member_names = _archive_member_names(entry)
     total = 0
     counted = _CountingWriter(stream)
     try:
         with gzip.GzipFile(filename="", mode="wb", fileobj=counted, compresslevel=1, mtime=0) as zipped:
-            with tarfile.open(mode="w|", fileobj=zipped) as archive:
+            with tarfile.open(mode="w|", fileobj=zipped, format=tarfile.USTAR_FORMAT) as archive:
                 for name in entry.artifact_names:
                     path = Path(source_paths[name])
                     size = path.stat().st_size
@@ -317,7 +334,7 @@ def write_archive(stream: BinaryIO, entry: RemoteCacheEntry, source_paths: Mappi
                         raise RemoteCacheValidationError("Remote cache artifact exceeds size limit")
                     with path.open("rb") as source:
                         digesting = _DigestingReader(source)
-                        archive.addfile(_tar_info(name, size), digesting)
+                        archive.addfile(_tar_info(member_names[name], size), digesting)
                     if digesting.count != size:
                         raise RemoteCacheValidationError("Remote cache artifact changed during archive creation")
                     artifacts[name] = {"size": size, "sha256": digesting.digest.hexdigest()}
@@ -342,7 +359,9 @@ def write_archive(stream: BinaryIO, entry: RemoteCacheEntry, source_paths: Mappi
 
 def read_archive(stream: BinaryIO, entry: RemoteCacheEntry, staging_dir: Path) -> None:
     """Validate an archive and place its known members in private staging."""
-    expected = set(entry.artifact_names)
+    member_names = _archive_member_names(entry)
+    logical_names = {archive_name: name for name, archive_name in member_names.items()}
+    expected = set(logical_names)
     observed: dict[str, dict[str, int | str]] = {}
     created: list[Path] = []
     total = 0
@@ -366,7 +385,8 @@ def read_archive(stream: BinaryIO, entry: RemoteCacheEntry, staging_dir: Path) -
                     if info.name == "manifest.json":
                         manifest = json.loads(member.read(limit + 1))
                         continue
-                    path = Path(staging_dir) / info.name
+                    logical_name = logical_names[info.name]
+                    path = Path(staging_dir) / logical_name
                     digest = hashlib.sha256()
                     written = 0
                     with path.open("xb") as output:
@@ -379,14 +399,14 @@ def read_archive(stream: BinaryIO, entry: RemoteCacheEntry, staging_dir: Path) -
                             digest.update(chunk)
                     if written != info.size:
                         raise RemoteCacheValidationError("Remote cache archive member is truncated")
-                    observed[info.name] = {"size": written, "sha256": digest.hexdigest()}
+                    observed[logical_name] = {"size": written, "sha256": digest.hexdigest()}
             trailing_size = 0
             while chunk := unzipped.read(_CHUNK_BYTES):
                 trailing_size += len(chunk)
                 if trailing_size > _MAX_TRAILING_TAR_BYTES or any(chunk):
                     raise RemoteCacheValidationError("Remote cache archive contains trailing data")
 
-        if set(observed) != expected or not isinstance(manifest, dict):
+        if set(observed) != set(entry.artifact_names) or not isinstance(manifest, dict):
             raise RemoteCacheValidationError("Remote cache archive is incomplete")
         if manifest != {
             "archive_format_version": ARCHIVE_FORMAT_VERSION,

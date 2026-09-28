@@ -133,6 +133,25 @@ class TestRemoteCache(unittest.TestCase):
                 for name in names:
                     self.assertEqual((restored / name).read_bytes(), sources[name].read_bytes())
 
+    def test_archive_round_trip_for_long_and_unicode_filenames(self):
+        for name in ("a" * 101 + ".o", "é.o"):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source = root / name
+                source.write_bytes(b"loadable binary")
+                entry = RemoteCacheEntry("kernel", "module", {"x": 1}, (name,))
+                stream = io.BytesIO()
+                write_archive(stream, entry, {name: source})
+                with tarfile.open(fileobj=io.BytesIO(stream.getvalue()), mode="r:gz") as archive:
+                    members = archive.getmembers()
+                    self.assertEqual(len(members), 2)
+                    self.assertTrue(all(member.type in (tarfile.REGTYPE, tarfile.AREGTYPE) for member in members))
+                    self.assertTrue(all(member.name.isascii() and len(member.name) <= 100 for member in members))
+                staging = root / "staging"
+                staging.mkdir()
+                read_archive(io.BytesIO(stream.getvalue()), entry, staging)
+                self.assertEqual((staging / name).read_bytes(), source.read_bytes())
+
     def test_archive_rejects_unsafe_or_incomplete_members(self):
         entry = RemoteCacheEntry("kernel", "module", {"x": 1}, ("binary.o", "binary.meta"))
         payload = {"binary.o": b"binary", "binary.meta": b"metadata"}
