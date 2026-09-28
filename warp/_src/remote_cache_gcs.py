@@ -30,7 +30,13 @@ class GCSRemoteStore:
         blob = storage.Blob.from_uri(uri, client=self.client)
         try:
             blob.reload(timeout=_REQUEST_TIMEOUT, retry=_RETRY)
-            with blob.open("rb", chunk_size=_READ_CHUNK_BYTES, timeout=_REQUEST_TIMEOUT, retry=_RETRY) as stream:
+            with blob.open(
+                "rb",
+                chunk_size=_READ_CHUNK_BYTES,
+                if_generation_match=blob.generation,
+                timeout=_REQUEST_TIMEOUT,
+                retry=_RETRY,
+            ) as stream:
                 yield stream
         except NotFound as exc:
             raise FileNotFoundError(uri) from exc

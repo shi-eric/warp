@@ -553,6 +553,28 @@ linux-aarch64 cu13 test dgx spark:
     - arch/arm
     - gpu/GB10
 
+linux-x86_64 remote-cache-gcs test:
+  stage: test
+  image: $UV_TRIXIE_IMAGE
+  needs: [linux-x86_64 cu13 build]
+  services:
+    - name: fsouza/fake-gcs-server:v1.56.1
+      alias: gcs
+      command: ["-scheme", "http", "-external-url", "http://gcs:4443"]
+  variables:
+    IPP_RUNNER_EXECUTION_DURATION: "900"
+    STORAGE_EMULATOR_HOST: "http://gcs:4443"
+    WARP_CACHE_PATH: "$CI_PROJECT_DIR/.cache/warp-remote-gcs"
+  extends:
+    - .ipp_lnx_x86_64_cpu_medium
+    - .basic_test_changes_rules
+  before_script:
+    - !reference [.snippets, move-linux-x86_64-binaries]
+  script:
+    - for attempt in $(seq 1 30); do if curl --silent --fail "$STORAGE_EMULATOR_HOST/storage/v1/b" >/dev/null; then break; fi; sleep 1; done
+    - curl --silent --fail "$STORAGE_EMULATOR_HOST/storage/v1/b" >/dev/null
+    - uv run --extra remote-cache-gcs warp/tests/test_remote_cache_gcs.py
+
 linux-x86_64 cu12 test:
   needs: [linux-x86_64 cu12 build]
   image: $UV_TRIXIE_IMAGE

@@ -697,6 +697,55 @@ jobs:
           show: "fail"
         if: always()
 
+  test-remote-cache-gcs:
+    if: github.event_name != 'schedule' || github.repository == 'NVIDIA/warp'
+    runs-on: ubuntu-24.04
+    needs: build-warp
+    permissions:
+      contents: read
+    services:
+      gcs:
+        image: fsouza/fake-gcs-server:v1.56.1
+        env:
+          FAKE_GCS_SCHEME: http
+          FAKE_GCS_EXTERNAL_URL: http://127.0.0.1:4443
+        ports:
+          - 4443:4443
+    env:
+      STORAGE_EMULATOR_HOST: http://127.0.0.1:4443
+      WARP_CACHE_PATH: ${{ runner.temp }}/warp-remote-cache-gcs
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+          lfs: true
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d  # v10.0.1
+        with:
+          version: "0.12.7"
+
+      - name: Set up Python
+        run: uv python install
+
+      - name: Download Warp build artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: build-artifact-ubuntu-x86_64-cuda13
+          path: .
+
+      - name: Test GCS remote cache
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail "$STORAGE_EMULATOR_HOST/storage/v1/b" >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          curl --silent --fail "$STORAGE_EMULATOR_HOST/storage/v1/b" >/dev/null
+          uv run --extra remote-cache-gcs warp/tests/test_remote_cache_gcs.py
+
   test-warp-debug:
     if: github.event_name != 'schedule' || github.repository == 'NVIDIA/warp'
     runs-on: ubuntu-24.04
