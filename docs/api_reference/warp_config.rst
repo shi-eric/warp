@@ -46,6 +46,9 @@ API
    optimization_level
    print_launches
    ptx_target_arch
+   remote_cache_dir
+   remote_cache_min_compile_time
+   remote_cache_read_only
    track_memory
    use_precompiled_headers
    verbose_warnings

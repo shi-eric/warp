@@ -31,6 +31,51 @@ See :ref:`benchmarking-cold-start-compilation` for a cold-start benchmarking
 workflow and compile-time tracing when the total module-load time does not show
 where the delay occurs.
 
+Share compiled artifacts through Google Cloud Storage
+-----------------------------------------------------
+
+Jobs without persistent local storage can share compiled kernel and MathDx LTO
+artifacts through an optional Google Cloud Storage cache. Install the extra and
+set the remote root before :func:`wp.init() <warp.init>`:
+
+.. code-block:: bash
+
+    pip install "warp-lang[remote-cache-gcs]"
+
+.. code-block:: python
+
+    import warp as wp
+
+    wp.config.remote_cache_dir = "gs://my-bucket/warp-cache"
+    wp.config.remote_cache_read_only = False
+    wp.config.remote_cache_min_compile_time = 1.0
+    wp.init()
+
+Warp checks its local cache first. On a local miss, it tries the matching remote
+entry. A missing, invalid, or unavailable remote entry falls back to local
+compilation. By default, Warp publishes a successful compilation only when it
+takes at least one second. Set :attr:`warp.config.remote_cache_read_only` to
+``True`` for jobs that should read but not publish. Set
+:attr:`warp.config.remote_cache_min_compile_time` to ``0.0`` to publish all
+successful compilations, including quick ones.
+
+Remote caching works only with final, three-component numeric Warp versions,
+such as ``1.19.0``. Share a bucket prefix only among jobs running the same
+published Warp build. Development and release-candidate builds use only the
+local cache. A local path supplied through ``WARP_CACHE_PATH`` or
+:attr:`warp.config.kernel_cache_dir` still selects local storage; neither setting
+accepts a ``gs://`` path.
+
+The Google Cloud Storage client uses Application Default Credentials for both
+readers and writers. Read-only mode still needs authenticated access. Grant
+write access only to jobs whose compiled code you trust: cached binaries are
+executable artifacts. Warp creates remote objects without replacing existing
+ones. It does not repair or remove bad remote objects; manage retention and
+removal with bucket lifecycle rules and operator tools. The
+:func:`wp.clear_kernel_cache() <warp.clear_kernel_cache>` and
+:func:`wp.clear_lto_cache() <warp.clear_lto_cache>` functions clear only local
+files.
+
 Reduce compilation work
 -----------------------
 
