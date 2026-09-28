@@ -4804,7 +4804,8 @@ class Module:
         # failing kernel and continuing would leave the module claiming
         # kernels its binary does not contain.
         try:
-            source_str, source_code_ext, meta, ltoir_values, fatbin_values = self._run_codegen(options, is_cpu)
+            with warp._src.build._remote_lto_scope(remote_entry is not None):
+                source_str, source_code_ext, meta, ltoir_values, fatbin_values = self._run_codegen(options, is_cpu)
         except Exception as e:
             self._record_build_failure(device, is_cpu, active_block_dim, e)
             raise

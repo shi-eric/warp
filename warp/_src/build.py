@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import builtins
+import contextvars
 import ctypes
 import errno
 import hashlib
@@ -11,6 +12,7 @@ import os
 import shutil
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import warp._src.remote_cache
@@ -33,6 +35,17 @@ LTO_CACHE_KEY_LENGTH = 16
 # Warp can feed it back into this function without treating arbitrary
 # version-named base directories as already resolved.
 _resolved_kernel_cache_dir: str | None = None
+_remote_lto_allowed = contextvars.ContextVar("warp_remote_lto_allowed", default=True)
+
+
+@contextmanager
+def _remote_lto_scope(allowed: bool):
+    """Keep non-cache module codegen from consulting the shared LTO cache."""
+    token = _remote_lto_allowed.set(allowed)
+    try:
+        yield
+    finally:
+        _remote_lto_allowed.reset(token)
 
 
 def _get_extra_include_dirs(extra_include_dirs) -> list[str]:
@@ -478,7 +491,7 @@ def _build_lto_base(lto_symbol, compile_func, builder, extra_files=None, *, arch
 
     remote_entry = None
     remote_hit = False
-    if arch is not None and warp._src.remote_cache.is_enabled():
+    if arch is not None and _remote_lto_allowed.get() and warp._src.remote_cache.is_enabled():
         remote_entry = _get_lto_remote_cache_entry(lto_symbol, arch, file_paths)
         lookup_started = time.perf_counter()
         remote_hit = warp._src.remote_cache.download_entry(remote_entry, Path(build_dir))

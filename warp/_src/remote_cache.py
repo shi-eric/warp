@@ -27,6 +27,7 @@ _MAX_COMPRESSED_BYTES = 1 << 30
 _MAX_EXTRACTED_BYTES = 4 << 30
 _MAX_ARTIFACT_BYTES = 2 << 30
 _MAX_MANIFEST_BYTES = 1 << 20
+_MAX_TRAILING_TAR_BYTES = 1 << 20
 _CHUNK_BYTES = 1 << 20
 
 JSONValue: TypeAlias = "str | int | float | bool | list[JSONValue] | dict[str, JSONValue] | None"
@@ -276,6 +277,15 @@ class _DigestingReader:
         return data
 
 
+class _StrictTarInfo(tarfile.TarInfo):
+    """Reject extension headers before tarfile hides them from iteration."""
+
+    def _proc_member(self, archive: tarfile.TarFile) -> tarfile.TarInfo:
+        if self.type not in (tarfile.REGTYPE, tarfile.AREGTYPE):
+            raise RemoteCacheValidationError("Remote cache archive contains a non-regular member")
+        return super()._proc_member(archive)
+
+
 def _tar_info(name: str, size: int) -> tarfile.TarInfo:
     info = tarfile.TarInfo(name)
     info.size = size
@@ -340,7 +350,7 @@ def read_archive(stream: BinaryIO, entry: RemoteCacheEntry, staging_dir: Path) -
     counted = _CountingReader(stream)
     try:
         with gzip.GzipFile(fileobj=counted, mode="rb") as unzipped:
-            with tarfile.open(fileobj=unzipped, mode="r|") as archive:
+            with tarfile.open(fileobj=unzipped, mode="r|", tarinfo=_StrictTarInfo) as archive:
                 for info in archive:
                     if not info.isfile() or info.name not in expected | {"manifest.json"}:
                         raise RemoteCacheValidationError("Remote cache archive contains an unexpected member")
@@ -370,7 +380,11 @@ def read_archive(stream: BinaryIO, entry: RemoteCacheEntry, staging_dir: Path) -
                     if written != info.size:
                         raise RemoteCacheValidationError("Remote cache archive member is truncated")
                     observed[info.name] = {"size": written, "sha256": digest.hexdigest()}
-            unzipped.read(1)  # Finish the gzip stream, including checksum and trailer.
+            trailing_size = 0
+            while chunk := unzipped.read(_CHUNK_BYTES):
+                trailing_size += len(chunk)
+                if trailing_size > _MAX_TRAILING_TAR_BYTES or any(chunk):
+                    raise RemoteCacheValidationError("Remote cache archive contains trailing data")
 
         if set(observed) != expected or not isinstance(manifest, dict):
             raise RemoteCacheValidationError("Remote cache archive is incomplete")

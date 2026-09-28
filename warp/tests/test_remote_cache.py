@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import copy
+import gzip
 import hashlib
 import io
 import json
@@ -217,6 +218,45 @@ class TestRemoteCache(unittest.TestCase):
                 self.assertRaises(remote_cache.RemoteCacheValidationError),
             ):
                 remote_cache.read_archive(io.BytesIO(stream.getvalue()), entry, staging)
+
+    def test_archive_rejects_corrupt_gzip_trailer_after_tar_padding(self):
+        entry = RemoteCacheEntry("kernel", "module", {"x": 1}, ("binary.o",))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "binary.o"
+            source.write_bytes(b"binary")
+            stream = io.BytesIO()
+            write_archive(stream, entry, {"binary.o": source})
+            damaged = bytearray(gzip.compress(gzip.decompress(stream.getvalue()) + b"\0" * (64 << 10), mtime=0))
+            damaged[-1] ^= 1
+            staging = root / "staging"
+            staging.mkdir()
+            with self.assertRaises(RemoteCacheValidationError):
+                read_archive(io.BytesIO(damaged), entry, staging)
+
+    def test_archive_rejects_hidden_gnu_longname_header(self):
+        entry = RemoteCacheEntry("kernel", "module", {"x": 1}, ("binary.o",))
+        payload = b"binary"
+        manifest = {
+            "archive_format_version": 1,
+            "canonical_identity": json.loads(entry.canonical_identity()),
+            "artifacts": {"binary.o": {"size": len(payload), "sha256": hashlib.sha256(payload).hexdigest()}},
+        }
+        stream = io.BytesIO()
+        with tarfile.open(fileobj=stream, mode="w:gz", format=tarfile.GNU_FORMAT) as archive:
+            longname = tarfile.TarInfo("././@LongLink")
+            longname.type = tarfile.GNUTYPE_LONGNAME
+            longname.size = len(b"binary.o\0")
+            archive.addfile(longname, io.BytesIO(b"binary.o\0"))
+            binary = tarfile.TarInfo("placeholder")
+            binary.size = len(payload)
+            archive.addfile(binary, io.BytesIO(payload))
+            encoded_manifest = json.dumps(manifest).encode()
+            meta = tarfile.TarInfo("manifest.json")
+            meta.size = len(encoded_manifest)
+            archive.addfile(meta, io.BytesIO(encoded_manifest))
+        with tempfile.TemporaryDirectory() as tmp, self.assertRaises(RemoteCacheValidationError):
+            read_archive(io.BytesIO(stream.getvalue()), entry, Path(tmp))
 
     def test_final_release_eligibility(self):
         self.assertTrue(remote_cache._is_final_release_version("1.19.0"))
@@ -544,6 +584,40 @@ class TestRemoteCache(unittest.TestCase):
                 remote_cache.init_remote_cache()
                 module._compile(device=wp.get_device("cpu"))
             download.assert_not_called()
+
+    def test_custom_kernel_output_disables_lto_remote_lookup(self):
+        wp.init()
+        module = wp.get_module(__name__)
+        original_cache_dir = wp.config.kernel_cache_dir
+        self.addCleanup(setattr, wp.config, "kernel_cache_dir", original_cache_dir)
+        self.addCleanup(remote_cache.init_remote_cache)
+        with (
+            tempfile.TemporaryDirectory() as local_root,
+            tempfile.TemporaryDirectory() as custom_output,
+            patch.object(warp.config, "remote_cache_dir", "gs://bucket/cache"),
+            patch.object(remote_cache, "_is_final_release_version", return_value=True),
+            patch.object(remote_cache, "_create_store", return_value=MemoryRemoteStore()),
+        ):
+            wp.config.kernel_cache_dir = local_root
+            remote_cache.init_remote_cache()
+
+            def codegen_with_lto(*_):
+                def compile_lto(paths):
+                    Path(paths[".lto"]).write_bytes(b"local")
+                    return True, {".lto": b"local"}
+
+                build._build_lto_base("custom_output_lto", compile_lto, Mock(), arch=90)
+                raise RuntimeError("stop before native compilation")
+
+            with (
+                patch.object(module, "_run_codegen", side_effect=codegen_with_lto),
+                patch.object(remote_cache, "download_entry") as download,
+                patch.object(remote_cache, "publish_entry") as publish,
+                self.assertRaisesRegex(RuntimeError, "stop before native compilation"),
+            ):
+                module._compile(device=wp.get_device("cpu"), output_dir=custom_output)
+            download.assert_not_called()
+            publish.assert_not_called()
 
     def test_kernel_remote_commit_into_empty_destination(self):
         with tempfile.TemporaryDirectory() as tmp:
