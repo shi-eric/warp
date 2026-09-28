@@ -2945,6 +2945,33 @@ def _get_host_cpu_name() -> str:
     return name_ptr.decode("utf-8") if name_ptr else "unknown"
 
 
+def _get_cpu_remote_target_identity(resolved_flags: str) -> dict:
+    """Describe the effective CPU target used for a remote cache key."""
+    identity = {
+        "llvm_version": _get_cpu_toolchain_version(),
+        "target_triple": runtime.get_llvm_target_triple(),
+        "compiler_flags": resolved_flags,
+    }
+    if _uses_march_native(resolved_flags):
+        identity["cpu_name"] = _get_host_cpu_name()
+        identity["cpu_features"] = sorted(_get_cpu_feature_set())
+    return identity
+
+
+def _get_cuda_remote_target_identity(output_arch: int, arch_suffix: str, use_ptx: bool, llvm_cuda: bool) -> dict:
+    """Describe the effective CUDA target used for a remote cache key."""
+    compiler = "llvm-cuda" if llvm_cuda else "nvrtc"
+    version = runtime.get_llvm_version() if llvm_cuda else runtime.get_nvrtc_version()
+    return {
+        "output_format": "ptx" if use_ptx else "cubin",
+        "sm": output_arch,
+        "arch_suffix": arch_suffix,
+        "compiler": compiler,
+        "compiler_version": list(version) if isinstance(version, tuple) else version,
+        "cuda_toolkit_version": list(runtime.toolkit_version) if runtime.toolkit_version is not None else None,
+    }
+
+
 def _verify_library_version(lib, library_name: str, version_symbol: str, expected: str) -> None:
     """Verify a loaded native library's version matches the expected Warp version.
 
@@ -6534,6 +6561,9 @@ class Runtime:
             self.llvm.wp_llvm_version.argtypes = []
             self.llvm.wp_llvm_version.restype = ctypes.c_char_p
 
+            self.llvm.wp_llvm_target_triple.argtypes = []
+            self.llvm.wp_llvm_target_triple.restype = ctypes.c_char_p
+
             self.llvm.wp_get_host_cpu_name.argtypes = []
             self.llvm.wp_get_host_cpu_name.restype = ctypes.c_char_p
 
@@ -8630,6 +8660,12 @@ class Runtime:
             return "unknown"
 
         return self.llvm.wp_llvm_version().decode("utf-8")
+
+    def get_llvm_target_triple(self) -> str:
+        """Get the target triple used by Warp's CPU compiler."""
+        if self.llvm is None:
+            return "unknown"
+        return self.llvm.wp_llvm_target_triple().decode("utf-8")
 
     def get_nanovdb_version(self) -> str:
         """Get the NanoVDB version bundled with Warp.

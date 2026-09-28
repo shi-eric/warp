@@ -11,10 +11,11 @@ import threading
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
+import warp as wp
 import warp.config
-from warp._src import remote_cache
+from warp._src import context, remote_cache
 from warp._src.remote_cache import RemoteCacheEntry, RemoteCacheValidationError, read_archive, write_archive
 
 
@@ -339,6 +340,56 @@ class TestRemoteCache(unittest.TestCase):
                     remote_cache.publish_entry(entry, {"binary.o": source}, 2.0)
                 self.assertEqual(source.read_bytes(), b"local")
                 self.assertEqual(warn.call_count, 2)
+
+    def test_cpu_target_identity_dimensions(self):
+        runtime = Mock()
+        runtime.get_llvm_target_triple.return_value = "x86_64-pc-linux-gnu"
+        with (
+            patch.object(context, "runtime", runtime),
+            patch.object(context, "_get_cpu_toolchain_version", return_value="22.1"),
+            patch.object(context, "_get_host_cpu_name", return_value="znver5"),
+            patch.object(context, "_get_cpu_feature_set", return_value=frozenset({"avx2", "sse2"})),
+        ):
+            baseline = context._get_cpu_remote_target_identity("-O2 -march=native")
+            self.assertEqual(baseline["target_triple"], "x86_64-pc-linux-gnu")
+            self.assertEqual(baseline["cpu_features"], ["avx2", "sse2"])
+            self.assertNotEqual(baseline, context._get_cpu_remote_target_identity("-O3 -march=native"))
+            runtime.get_llvm_target_triple.return_value = "aarch64-unknown-linux-gnu"
+            self.assertNotEqual(baseline, context._get_cpu_remote_target_identity("-O2 -march=native"))
+            runtime.get_llvm_target_triple.return_value = "x86_64-pc-linux-gnu"
+            with patch.object(context, "_get_cpu_toolchain_version", return_value="23.0"):
+                self.assertNotEqual(baseline, context._get_cpu_remote_target_identity("-O2 -march=native"))
+            with patch.object(context, "_get_host_cpu_name", return_value="skylake"):
+                self.assertNotEqual(baseline, context._get_cpu_remote_target_identity("-O2 -march=native"))
+            with patch.object(context, "_get_cpu_feature_set", return_value=frozenset({"avx2"})):
+                self.assertNotEqual(baseline, context._get_cpu_remote_target_identity("-O2 -march=native"))
+            portable = context._get_cpu_remote_target_identity("-O2 -march=x86-64")
+            with patch.object(context, "_get_host_cpu_name", return_value="skylake"):
+                self.assertEqual(portable, context._get_cpu_remote_target_identity("-O2 -march=x86-64"))
+
+    def test_cuda_target_identity_dimensions(self):
+        runtime = Mock()
+        runtime.toolkit_version = (13, 4)
+        runtime.get_nvrtc_version.return_value = (13, 4)
+        runtime.get_llvm_version.return_value = "22.1"
+        with patch.object(context, "runtime", runtime):
+            baseline = context._get_cuda_remote_target_identity(90, "a", False, False)
+            self.assertEqual(baseline["compiler"], "nvrtc")
+            self.assertNotIn("driver", repr(baseline))
+            for args in ((90, "a", True, False), (89, "a", False, False), (90, "", False, False)):
+                self.assertNotEqual(baseline, context._get_cuda_remote_target_identity(*args))
+            self.assertNotEqual(baseline, context._get_cuda_remote_target_identity(90, "a", False, True))
+            runtime.get_nvrtc_version.return_value = (13, 5)
+            self.assertNotEqual(baseline, context._get_cuda_remote_target_identity(90, "a", False, False))
+            runtime.get_nvrtc_version.return_value = (13, 4)
+            runtime.toolkit_version = (13, 5)
+            self.assertNotEqual(baseline, context._get_cuda_remote_target_identity(90, "a", False, False))
+
+    def test_cpu_target_triple_comes_from_native_compiler(self):
+        wp.init()
+        triple = context.runtime.get_llvm_target_triple()
+        self.assertIsInstance(triple, str)
+        self.assertIn("-", triple)
 
 
 if __name__ == "__main__":
