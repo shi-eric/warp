@@ -16,7 +16,7 @@ from unittest.mock import Mock, patch
 
 import warp as wp
 import warp.config
-from warp._src import context, remote_cache
+from warp._src import build, context, remote_cache
 from warp._src.remote_cache import RemoteCacheEntry, RemoteCacheValidationError, read_archive, write_archive
 
 
@@ -593,6 +593,169 @@ class TestRemoteCache(unittest.TestCase):
             winner = (destination / "binary.o").read_text().removeprefix("binary-")
             self.assertIn(winner, {"0", "1"})
             self.assertEqual((destination / "binary.meta").read_text(), f"meta-{winner}")
+
+    def test_lto_remote_round_trip_with_sidecars(self):
+        wp.init()
+        store = MemoryRemoteStore()
+        original_cache_dir = wp.config.kernel_cache_dir
+        self.addCleanup(setattr, wp.config, "kernel_cache_dir", original_cache_dir)
+        self.addCleanup(remote_cache.init_remote_cache)
+        cases = (
+            ({}, (b"lto",)),
+            ({"_fatbin.lto": build.get_cached_lto}, (b"lto", b"fatbin")),
+            ({".meta": lambda path: build.get_cached_lto_meta(path, "fft_symbol")}, (b"lto", 42)),
+        )
+        with (
+            tempfile.TemporaryDirectory() as producer,
+            tempfile.TemporaryDirectory() as consumer,
+            patch.object(warp.config, "remote_cache_dir", "gs://bucket/cache"),
+            patch.object(warp.config, "remote_cache_min_compile_time", 0.0),
+            patch.object(remote_cache, "_is_final_release_version", return_value=True),
+            patch.object(remote_cache, "_create_store", return_value=store),
+        ):
+            remote_cache.init_remote_cache()
+            for index, (extra_files, expected) in enumerate(cases):
+                symbol = "fft_symbol" if ".meta" in extra_files else f"lto_symbol_{index}"
+
+                def compile_callback(paths, symbol=symbol):
+                    Path(paths[".lto"]).write_bytes(b"lto")
+                    outputs = {".lto": b"lto"}
+                    if "_fatbin.lto" in paths:
+                        Path(paths["_fatbin.lto"]).write_bytes(b"fatbin")
+                        outputs["_fatbin.lto"] = b"fatbin"
+                    if ".meta" in paths:
+                        Path(paths[".meta"]).write_text(json.dumps({symbol: 42}))
+                        outputs[".meta"] = 42
+                    return True, outputs
+
+                with self.subTest(symbol=symbol):
+                    wp.config.kernel_cache_dir = producer
+                    self.assertEqual(
+                        build._build_lto_base(symbol, compile_callback, Mock(), extra_files, arch=90),
+                        (True, *expected),
+                    )
+                    writes_after_producer = store.writes
+                    with patch.object(store, "open_reader", side_effect=AssertionError("local LTO hit read remote")):
+                        self.assertEqual(
+                            build._build_lto_base(symbol, compile_callback, Mock(), extra_files, arch=90),
+                            (True, *expected),
+                        )
+                    wp.config.kernel_cache_dir = consumer
+                    self.assertEqual(
+                        build._build_lto_base(
+                            symbol,
+                            lambda _: self.fail("remote LTO hit compiled"),
+                            Mock(),
+                            extra_files,
+                            arch=90,
+                        ),
+                        (True, *expected),
+                    )
+                    self.assertEqual(store.writes, writes_after_producer)
+                    if ".meta" in extra_files:
+                        meta_path = (
+                            Path(build.get_lto_cache_dir())
+                            / f"{build.hash_symbol(symbol)[: build.LTO_CACHE_KEY_LENGTH]}.meta"
+                        )
+                        meta_path.write_text("invalid JSON")
+                        self.assertEqual(
+                            build._build_lto_base(
+                                symbol,
+                                lambda _: self.fail("invalid sidecar should restore remotely"),
+                                Mock(),
+                                extra_files,
+                                arch=90,
+                            ),
+                            (True, *expected),
+                        )
+                        self.assertEqual(build.get_cached_lto_meta(meta_path, symbol), 42)
+
+    def test_lto_remote_key_covers_toolchain_and_artifact_set(self):
+        wp.init()
+        paths = {".lto": "/tmp/123.lto", ".meta": "/tmp/123.meta"}
+        baseline = build._get_lto_remote_cache_entry("full_symbol", 90, paths)
+        self.assertNotEqual(baseline.digest(), build._get_lto_remote_cache_entry("other_symbol", 90, paths).digest())
+        self.assertNotEqual(baseline.digest(), build._get_lto_remote_cache_entry("full_symbol", 100, paths).digest())
+        self.assertNotEqual(
+            baseline.digest(), build._get_lto_remote_cache_entry("full_symbol", 90, {".lto": paths[".lto"]}).digest()
+        )
+        with patch.object(context.runtime, "get_libmathdx_version", return_value="other"):
+            self.assertNotEqual(baseline.digest(), build._get_lto_remote_cache_entry("full_symbol", 90, paths).digest())
+        with patch.object(context.runtime, "toolkit_version", (99, 0)):
+            self.assertNotEqual(baseline.digest(), build._get_lto_remote_cache_entry("full_symbol", 90, paths).digest())
+
+    def test_lto_remote_corruption_falls_back_and_read_only_skips_upload(self):
+        wp.init()
+        store = MemoryRemoteStore()
+        original_cache_dir = wp.config.kernel_cache_dir
+        self.addCleanup(setattr, wp.config, "kernel_cache_dir", original_cache_dir)
+        self.addCleanup(remote_cache.init_remote_cache)
+        symbol = "lto_corrupt_symbol"
+        short_hash = build.hash_symbol(symbol)[: build.LTO_CACHE_KEY_LENGTH]
+        entry = build._get_lto_remote_cache_entry(symbol, 90, {".lto": f"{short_hash}.lto"})
+        uri = entry.object_uri("gs://bucket/cache")
+        store.objects[uri] = b"invalid archive"
+
+        def compile_callback(paths):
+            Path(paths[".lto"]).write_bytes(b"compiled locally")
+            return True, {".lto": b"compiled locally"}
+
+        with (
+            tempfile.TemporaryDirectory() as local_root,
+            patch.object(warp.config, "remote_cache_dir", "gs://bucket/cache"),
+            patch.object(warp.config, "remote_cache_read_only", True),
+            patch.object(warp.config, "remote_cache_min_compile_time", 0.0),
+            patch.object(remote_cache, "_is_final_release_version", return_value=True),
+            patch.object(remote_cache, "_create_store", return_value=store),
+        ):
+            wp.config.kernel_cache_dir = local_root
+            remote_cache.init_remote_cache()
+            self.assertEqual(
+                build._build_lto_base(symbol, compile_callback, Mock(), arch=90),
+                (True, b"compiled locally"),
+            )
+            self.assertEqual(store.objects[uri], b"invalid archive")
+            self.assertEqual(store.writes, 0)
+            self.assertEqual((Path(build.get_lto_cache_dir()) / f"{short_hash}.lto").read_bytes(), b"compiled locally")
+
+    def test_lto_remote_create_race_preserves_one_complete_entry(self):
+        wp.init()
+        store = MemoryRemoteStore()
+        original_cache_dir = wp.config.kernel_cache_dir
+        self.addCleanup(setattr, wp.config, "kernel_cache_dir", original_cache_dir)
+        self.addCleanup(remote_cache.init_remote_cache)
+        symbol = "lto_race_symbol"
+        gate = threading.Barrier(2)
+        with (
+            tempfile.TemporaryDirectory() as producer,
+            tempfile.TemporaryDirectory() as consumer,
+            patch.object(warp.config, "remote_cache_dir", "gs://bucket/cache"),
+            patch.object(warp.config, "remote_cache_min_compile_time", 0.0),
+            patch.object(remote_cache, "_is_final_release_version", return_value=True),
+            patch.object(remote_cache, "_create_store", return_value=store),
+        ):
+            wp.config.kernel_cache_dir = producer
+            remote_cache.init_remote_cache()
+
+            def produce(index):
+                def compile_callback(paths):
+                    payload = f"producer-{index}".encode()
+                    Path(paths[".lto"]).write_bytes(payload)
+                    gate.wait(timeout=5)
+                    return True, {".lto": payload}
+
+                return build._build_lto_base(symbol, compile_callback, Mock(), arch=90)
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = [executor.submit(produce, index) for index in range(2)]
+                results = [future.result(timeout=10) for future in futures]
+            self.assertTrue(all(result[0] for result in results))
+            self.assertEqual(store.writes, 1)
+            wp.config.kernel_cache_dir = consumer
+            restored = build._build_lto_base(
+                symbol, lambda _: self.fail("racing LTO entry should restore"), Mock(), arch=90
+            )
+            self.assertIn(restored, ((True, b"producer-0"), (True, b"producer-1")))
 
     def test_kernel_remote_commit_does_not_publish_meta_after_binary_failure(self):
         with tempfile.TemporaryDirectory() as tmp:

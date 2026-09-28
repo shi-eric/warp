@@ -13,8 +13,9 @@ import threading
 import time
 from pathlib import Path
 
+import warp._src.remote_cache
 import warp.config
-from warp._src.logger import LOG_DEBUG, log_warning
+from warp._src.logger import LOG_DEBUG, log_debug, log_warning
 from warp._src.thirdparty import appdirs
 from warp._src.types import *
 
@@ -382,7 +383,24 @@ def get_cached_lto_meta(path, symbol):
     return value
 
 
-def _build_lto_base(lto_symbol, compile_func, builder, extra_files=None):
+def _get_lto_remote_cache_entry(lto_symbol: str, arch: int, file_paths: dict[str, str]):
+    """Describe the complete MathDx LTO artifact set and compiler target."""
+    runtime = warp._src.context.runtime
+    return warp._src.remote_cache.RemoteCacheEntry(
+        kind="lto",
+        namespace="lto",
+        identity={
+            "symbol": lto_symbol,
+            "sm": arch,
+            "libmathdx_version": runtime.get_libmathdx_version(),
+            "cuda_toolkit_version": list(runtime.toolkit_version) if runtime.toolkit_version is not None else None,
+            "artifact_names": [os.path.basename(path) for path in file_paths.values()],
+        },
+        artifact_names=tuple(os.path.basename(path) for path in file_paths.values()),
+    )
+
+
+def _build_lto_base(lto_symbol, compile_func, builder, extra_files=None, *, arch: int | None = None):
     """Generic LTO build function that handles caching, file operations and process management.
 
     Args:
@@ -393,6 +411,8 @@ def _build_lto_base(lto_symbol, compile_func, builder, extra_files=None):
         extra_files: Dictionary of additional file types to handle (e.g.,
             {".meta": None, ".fatbin": None}). Values are the functions to get
             the cached file data.
+        arch: Normalized MathDx target architecture. Older direct callers may
+            omit it, in which case remote caching is disabled.
 
     Returns:
         Tuple where the first element is a success flag (``bool``). The second
@@ -456,8 +476,33 @@ def _build_lto_base(lto_symbol, compile_func, builder, extra_files=None):
     for ext, path in file_paths.items():
         temp_file_paths[ext] = os.path.join(build_dir, os.path.basename(path))
 
-    # Compile LTO with the specialized function
-    result, outputs = compile_func(temp_file_paths)
+    remote_entry = None
+    remote_hit = False
+    if arch is not None and warp._src.remote_cache.is_enabled():
+        remote_entry = _get_lto_remote_cache_entry(lto_symbol, arch, file_paths)
+        lookup_started = time.perf_counter()
+        remote_hit = warp._src.remote_cache.download_entry(remote_entry, Path(build_dir))
+        log_debug(f"MathDx remote cache lookup took {time.perf_counter() - lookup_started:.3f} seconds")
+
+    if remote_hit:
+        lto_data = get_cached_lto(temp_file_paths[".lto"])
+        restored = {".lto": lto_data}
+        for ext, getter in extra_files.items():
+            restored[ext] = getter(temp_file_paths[ext]) if getter is not None else None
+        if lto_data is None or any(restored[ext] is None for ext in extra_files):
+            remote_hit = False
+            for path in temp_file_paths.values():
+                Path(path).unlink(missing_ok=True)
+        else:
+            result, outputs = True, restored
+
+    if not remote_hit:
+        # A rejected archive may already have written some private build files.
+        for path in temp_file_paths.values():
+            Path(path).unlink(missing_ok=True)
+        # Compile LTO with the specialized function.
+        compile_started = time.perf_counter()
+        result, outputs = compile_func(temp_file_paths)
 
     if not result:
         # Clean up and fail
@@ -493,6 +538,11 @@ def _build_lto_base(lto_symbol, compile_func, builder, extra_files=None):
     # Clean up the temporary build directory
     if build_dir:
         shutil.rmtree(build_dir, ignore_errors=True)
+
+    if result and not remote_hit and remote_entry is not None:
+        committed = {os.path.basename(path): Path(path) for path in file_paths.values()}
+        if all(path.is_file() for path in committed.values()):
+            warp._src.remote_cache.publish_entry(remote_entry, committed, time.perf_counter() - compile_started)
 
     if not extra_files:
         return (result, outputs[".lto"])
@@ -746,7 +796,9 @@ def build_lto_dot(
 
         # a rejected aligned variant is expected and handled below, so its compile does not report errors
         has_fallback = al != (0, 0, 0)
-        (result, lto_code_data) = _build_lto_base(symbol, make_compile_func(symbol, al, has_fallback), builder, {})
+        (result, lto_code_data) = _build_lto_base(
+            symbol, make_compile_func(symbol, al, has_fallback), builder, {}, arch=arch
+        )
         if result:
             if rejected_symbol is not None:
                 # remember the rejection only once the fallback is known to work, so a transient
@@ -838,7 +890,7 @@ def build_lto_solver(
         lto_code_data = builder.ltoirs[lto_symbol]
     else:
         (result, lto_code_data, universal_fatbin_code_data) = _build_lto_base(
-            lto_symbol, compile_lto_solver, builder, {"_fatbin.lto": get_cached_lto}
+            lto_symbol, compile_lto_solver, builder, {"_fatbin.lto": get_cached_lto}, arch=arch
         )
 
         if not result:
@@ -929,7 +981,11 @@ def build_lto_fft(arch, size, ept, direction, dir, precision, builder):
         shared_memory_bytes = builder.shared_memory_bytes[lto_symbol]
     else:
         (result, lto_code_data, shared_memory_bytes) = _build_lto_base(
-            lto_symbol, compile_lto_fft, builder, {".meta": lambda path: get_cached_lto_meta(path, lto_symbol)}
+            lto_symbol,
+            compile_lto_fft,
+            builder,
+            {".meta": lambda path: get_cached_lto_meta(path, lto_symbol)},
+            arch=arch,
         )
 
         if not result:
