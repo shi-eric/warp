@@ -8,13 +8,19 @@ import hashlib
 import io
 import json
 import math
+import os
+import re
 import tarfile
+import tempfile
 from collections.abc import Mapping
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import BinaryIO, Literal, TypeAlias
+from typing import BinaryIO, Literal, Protocol, TypeAlias
+from urllib.parse import urlsplit
 
 import warp.config
+from warp._src.logger import log_debug, log_warning
 
 ARCHIVE_FORMAT_VERSION = 1
 _MAX_COMPRESSED_BYTES = 1 << 30
@@ -105,6 +111,123 @@ class RemoteCacheEntry:
 
 class RemoteCacheValidationError(Exception):
     """A remote archive does not match its expected compilation identity."""
+
+
+class RemoteEntryExists(Exception):
+    """A concurrent producer has already published this remote entry."""
+
+
+class RemoteStore(Protocol):
+    def open_reader(self, uri: str) -> AbstractContextManager[BinaryIO]: ...
+
+    def put_create(self, uri: str, archive_path: Path) -> None: ...
+
+
+_remote_root: str | None = None
+_remote_read_only = False
+_remote_min_compile_time = 1.0
+_store: RemoteStore | None = None
+_store_pid: int | None = None
+_warned: set[str] = set()
+
+
+def _is_final_release_version(version: str) -> bool:
+    return re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version) is not None
+
+
+def _normalize_root(uri: str) -> str:
+    parsed = urlsplit(uri)
+    if (
+        parsed.scheme != "gs"
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.port is not None
+        or parsed.query
+        or parsed.fragment
+        or "//" in parsed.path
+    ):
+        raise ValueError("Remote cache root must be a gs://bucket/prefix URI")
+    return f"gs://{parsed.netloc}{parsed.path.rstrip('/')}"
+
+
+def _warn_once(category: str, message: str) -> None:
+    if category not in _warned:
+        _warned.add(category)
+        log_warning(message)
+
+
+def init_remote_cache() -> None:
+    """Snapshot remote settings without opening a network client."""
+    global _remote_root, _remote_read_only, _remote_min_compile_time, _store, _store_pid
+    _remote_root = None
+    _store = None
+    _store_pid = None
+    _warned.clear()
+    if warp.config.remote_cache_dir is None:
+        return
+    if not _is_final_release_version(warp.config.version):
+        log_debug("Remote cache disabled for non-final Warp version")
+        return
+    try:
+        _remote_root = _normalize_root(warp.config.remote_cache_dir)
+    except (TypeError, ValueError) as exc:
+        _warn_once("configuration", f"Remote cache disabled: {exc}")
+        return
+    _remote_read_only = warp.config.remote_cache_read_only
+    _remote_min_compile_time = warp.config.remote_cache_min_compile_time
+
+
+def _create_store() -> RemoteStore:
+    from warp._src.remote_cache_gcs import GCSRemoteStore  # noqa: PLC0415
+
+    return GCSRemoteStore()
+
+
+def _get_store() -> RemoteStore:
+    global _store, _store_pid
+    pid = os.getpid()
+    if _store is None or _store_pid != pid:
+        _store = _create_store()
+        _store_pid = pid
+    return _store
+
+
+def download_entry(entry: RemoteCacheEntry, staging_dir: Path) -> bool:
+    """Best-effort restore into a caller-owned private staging directory."""
+    if _remote_root is None:
+        return False
+    uri = entry.object_uri(_remote_root)
+    try:
+        with _get_store().open_reader(uri) as stream:
+            read_archive(stream, entry, staging_dir)
+        log_debug(f"Restored remote cache entry {uri}")
+        return True
+    except FileNotFoundError:
+        return False
+    except RemoteCacheValidationError as exc:
+        _warn_once("validation", f"Invalid remote cache entry {uri}: {exc}")
+    except Exception as exc:
+        _warn_once("download", f"Could not read remote cache entry {uri}: {exc}")
+    return False
+
+
+def publish_entry(entry: RemoteCacheEntry, source_paths: Mapping[str, Path], compile_seconds: float) -> None:
+    """Best-effort create-only publication from committed local files."""
+    if _remote_root is None or _remote_read_only or compile_seconds < _remote_min_compile_time:
+        return
+    uri = entry.object_uri(_remote_root)
+    try:
+        with tempfile.TemporaryDirectory(prefix="warp-remote-cache-") as tmp:
+            archive_path = Path(tmp) / "entry.tar.gz"
+            with archive_path.open("wb") as stream:
+                write_archive(stream, entry, source_paths)
+            _get_store().put_create(uri, archive_path)
+        log_debug(f"Published remote cache entry {uri}")
+    except RemoteEntryExists:
+        return
+    except Exception as exc:
+        _warn_once("upload", f"Could not publish remote cache entry {uri}: {exc}")
 
 
 class _CountingWriter:

@@ -7,13 +7,39 @@ import io
 import json
 import tarfile
 import tempfile
+import threading
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
 import warp.config
 from warp._src import remote_cache
 from warp._src.remote_cache import RemoteCacheEntry, RemoteCacheValidationError, read_archive, write_archive
+
+
+class MemoryRemoteStore:
+    def __init__(self):
+        self.objects = {}
+        self.lock = threading.Lock()
+        self.writes = 0
+        self.reads = 0
+
+    @contextmanager
+    def open_reader(self, uri):
+        self.reads += 1
+        with self.lock:
+            data = self.objects.get(uri)
+        if data is None:
+            raise FileNotFoundError(uri)
+        yield io.BytesIO(data)
+
+    def put_create(self, uri, archive_path):
+        with self.lock:
+            if uri in self.objects:
+                raise remote_cache.RemoteEntryExists(uri)
+            self.objects[uri] = Path(archive_path).read_bytes()
+            self.writes += 1
 
 
 class TestRemoteCache(unittest.TestCase):
@@ -183,6 +209,136 @@ class TestRemoteCache(unittest.TestCase):
                 self.assertRaises(remote_cache.RemoteCacheValidationError),
             ):
                 remote_cache.read_archive(io.BytesIO(stream.getvalue()), entry, staging)
+
+    def test_final_release_eligibility(self):
+        self.assertTrue(remote_cache._is_final_release_version("1.19.0"))
+        self.assertTrue(remote_cache._is_final_release_version("12.3.456"))
+        for version in ("1.19", "1.19.0.dev0", "1.19.0rc1", "1.19.0.post1", "1.19.0+local", "bad"):
+            with self.subTest(version=version):
+                self.assertFalse(remote_cache._is_final_release_version(version))
+
+    def test_disabled_and_invalid_policy_never_constructs_store(self):
+        self.addCleanup(remote_cache.init_remote_cache)
+        with patch.object(remote_cache, "_create_store") as create_store:
+            remote_cache.init_remote_cache()
+            self.assertFalse(
+                remote_cache.download_entry(RemoteCacheEntry("kernel", "m", {"x": 1}, ("x.o",)), Path("."))
+            )
+            create_store.assert_not_called()
+        with patch.object(warp.config, "remote_cache_dir", "file:///tmp/bad"):
+            remote_cache.init_remote_cache()
+            with patch.object(remote_cache, "_create_store") as create_store:
+                self.assertFalse(
+                    remote_cache.download_entry(RemoteCacheEntry("kernel", "m", {"x": 1}, ("x.o",)), Path("."))
+                )
+                create_store.assert_not_called()
+        with patch.object(warp.config, "remote_cache_dir", "gs://bucket/cache"):
+            remote_cache.init_remote_cache()
+            with patch.object(remote_cache, "_create_store") as create_store:
+                self.assertFalse(
+                    remote_cache.download_entry(RemoteCacheEntry("kernel", "m", {"x": 1}, ("x.o",)), Path("."))
+                )
+                create_store.assert_not_called()
+
+    def test_policy_publish_restore_threshold_and_read_only(self):
+        self.addCleanup(remote_cache.init_remote_cache)
+        store = MemoryRemoteStore()
+        entry = RemoteCacheEntry("kernel", "module", {"x": 1}, ("binary.o", "binary.meta"))
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sources = {name: root / name for name in entry.artifact_names}
+            for name, path in sources.items():
+                path.write_bytes(name.encode())
+            with (
+                patch.object(warp.config, "remote_cache_dir", "gs://bucket/cache"),
+                patch.object(remote_cache, "_is_final_release_version", return_value=True),
+                patch.object(remote_cache, "_create_store", return_value=store),
+            ):
+                remote_cache.init_remote_cache()
+                remote_cache.publish_entry(entry, sources, 0.99)
+                self.assertEqual(store.writes, 0)
+                remote_cache.publish_entry(entry, sources, 1.0)
+                self.assertEqual(store.writes, 1)
+                with tempfile.TemporaryDirectory() as staging:
+                    self.assertTrue(remote_cache.download_entry(entry, Path(staging)))
+                    for name, source in sources.items():
+                        self.assertEqual((Path(staging) / name).read_bytes(), source.read_bytes())
+                self.assertEqual(store.reads, 1)
+            with (
+                patch.object(warp.config, "remote_cache_dir", "gs://bucket/cache"),
+                patch.object(warp.config, "remote_cache_read_only", True),
+                patch.object(remote_cache, "_is_final_release_version", return_value=True),
+                patch.object(remote_cache, "_create_store", return_value=store),
+            ):
+                remote_cache.init_remote_cache()
+                remote_cache.publish_entry(RemoteCacheEntry("kernel", "other", {"x": 2}, ("binary.o",)), sources, 10.0)
+                self.assertEqual(store.writes, 1)
+                with tempfile.TemporaryDirectory() as staging:
+                    self.assertTrue(remote_cache.download_entry(entry, Path(staging)))
+
+    def test_policy_corrupt_or_failed_archive_keeps_local_files(self):
+        self.addCleanup(remote_cache.init_remote_cache)
+        store = MemoryRemoteStore()
+        entry = RemoteCacheEntry("kernel", "module", {"x": 1}, ("binary.o",))
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "binary.o"
+            source.write_bytes(b"local")
+            uri = entry.object_uri("gs://bucket/cache")
+            store.objects[uri] = b"bad archive"
+            with (
+                patch.object(warp.config, "remote_cache_dir", "gs://bucket/cache"),
+                patch.object(remote_cache, "_is_final_release_version", return_value=True),
+                patch.object(remote_cache, "_create_store", return_value=store),
+            ):
+                remote_cache.init_remote_cache()
+                staging = Path(tmp) / "staging"
+                staging.mkdir()
+                self.assertFalse(remote_cache.download_entry(entry, staging))
+                self.assertEqual(store.objects[uri], b"bad archive")
+                remote_cache.publish_entry(entry, {"binary.o": Path(tmp) / "missing"}, 2.0)
+                self.assertEqual(store.writes, 0)
+                self.assertEqual(source.read_bytes(), b"local")
+
+    def test_policy_store_is_process_local(self):
+        self.addCleanup(remote_cache.init_remote_cache)
+        with (
+            patch.object(warp.config, "remote_cache_dir", "gs://bucket/cache"),
+            patch.object(remote_cache, "_is_final_release_version", return_value=True),
+            patch.object(
+                remote_cache, "_create_store", side_effect=[MemoryRemoteStore(), MemoryRemoteStore()]
+            ) as factory,
+            patch.object(remote_cache.os, "getpid", side_effect=[101, 101, 102]),
+        ):
+            remote_cache.init_remote_cache()
+            first = remote_cache._get_store()
+            self.assertIs(first, remote_cache._get_store())
+            self.assertIsNot(first, remote_cache._get_store())
+            self.assertEqual(factory.call_count, 2)
+
+    def test_policy_missing_and_transfer_failures_fall_back(self):
+        self.addCleanup(remote_cache.init_remote_cache)
+        store = MemoryRemoteStore()
+        entry = RemoteCacheEntry("kernel", "module", {"x": 1}, ("binary.o",))
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "binary.o"
+            source.write_bytes(b"local")
+            with (
+                patch.object(warp.config, "remote_cache_dir", "gs://bucket/cache"),
+                patch.object(remote_cache, "_is_final_release_version", return_value=True),
+                patch.object(remote_cache, "_create_store", return_value=store),
+                patch.object(remote_cache, "log_warning") as warn,
+            ):
+                remote_cache.init_remote_cache()
+                self.assertFalse(remote_cache.download_entry(entry, Path(tmp)))
+                warn.assert_not_called()
+                with patch.object(store, "open_reader", side_effect=TimeoutError("network down")):
+                    self.assertFalse(remote_cache.download_entry(entry, Path(tmp)))
+                    self.assertFalse(remote_cache.download_entry(entry, Path(tmp)))
+                self.assertEqual(warn.call_count, 1)
+                with patch.object(store, "put_create", side_effect=TimeoutError("network down")):
+                    remote_cache.publish_entry(entry, {"binary.o": source}, 2.0)
+                self.assertEqual(source.read_bytes(), b"local")
+                self.assertEqual(warn.call_count, 2)
 
 
 if __name__ == "__main__":
