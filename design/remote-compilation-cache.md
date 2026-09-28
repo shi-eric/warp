@@ -215,11 +215,12 @@ entry without invoking compilation. Test local publication races with barriers a
 artifact assertions rather than timing expectations.
 
 Run GCS adapter tests against a pinned `fake-gcs-server` container in both GitHub and GitLab
-CI. Cover missing objects, generation-pinned reads, interrupted or invalid downloads, and
-create-only uploads on both sides of the SDK's resumable-upload threshold. Two producers
-using the same remote key must leave one object that a third consumer can restore. The
-emulator uses `STORAGE_EMULATOR_HOST` and requires no production credentials. Before release,
-repeat the conditional-upload race check against a disposable real GCS prefix.
+CI. Cover missing objects, generation preconditions passed to each read chunk, interrupted
+or invalid downloads, and create-only uploads on both sides of the SDK's resumable-upload
+threshold. Two producers using the same remote key must leave one object that a third
+consumer can restore. The emulator uses `STORAGE_EMULATOR_HOST` and requires no production
+credentials. It does not enforce read preconditions after object replacement, so the read
+test checks the SDK arguments rather than the server's response.
 
 Development checkouts cannot satisfy the final-version gate. Tests may patch the private
 eligibility predicate while leaving Warp's version string unchanged; production code has no
