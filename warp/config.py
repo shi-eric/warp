@@ -188,6 +188,19 @@ base path to prevent cache collisions between different Warp versions.
 Note: Subdirectories prefixed with ``wp_`` will be created in this location.
 """
 
+remote_cache_dir: str | None = None
+"""Google Cloud Storage root for the optional remote compilation cache.
+
+Set this to a ``gs://bucket/prefix`` URI before :func:`warp.init`.
+The local kernel cache remains in :data:`kernel_cache_dir`.
+"""
+
+remote_cache_read_only: bool = False
+"""Read remote compilation entries without publishing new entries."""
+
+remote_cache_min_compile_time: float = 1.0
+"""Minimum compilation time in seconds before publishing a remote entry."""
+
 cuda_output: str | None = None
 """Preferred CUDA output format for kernel compilation.
 
