@@ -25,6 +25,7 @@ import sys
 import tempfile
 import textwrap
 import threading
+import time
 import types
 import weakref
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -69,6 +70,7 @@ import warp
 import warp._src.build
 import warp._src.codegen
 import warp._src.module_registry
+import warp._src.remote_cache
 import warp.config
 from warp._src.codegen import WarpCodegenError, WarpCodegenTypeError, _codegen_lock, synchronized
 from warp._src.logger import get_logger, log_debug, log_error, log_info, log_warning
@@ -2972,6 +2974,23 @@ def _get_cuda_remote_target_identity(output_arch: int, arch_suffix: str, use_ptx
     }
 
 
+def _commit_remote_kernel_entry(staging_dir: Path, output_dir: Path, binary_name: str, meta_name: str) -> None:
+    """Publish a validated remote pair with Warp's local binary-first ordering."""
+    warp._src.build.safe_rename(staging_dir, output_dir)
+    binary_path = output_dir / binary_name
+    meta_path = output_dir / meta_name
+    if not binary_path.exists():
+        try:
+            os.replace(staging_dir / binary_name, binary_path)
+        except OSError:
+            return
+    if not meta_path.exists():
+        try:
+            os.replace(staging_dir / meta_name, meta_path)
+        except OSError:
+            pass
+
+
 def _verify_library_version(lib, library_name: str, version_symbol: str, expected: str) -> None:
     """Verify a loaded native library's version matches the expected Warp version.
 
@@ -4563,6 +4582,40 @@ class Module:
         """
         return f"{self.get_module_identifier(block_dim=block_dim)}.meta"
 
+    def _get_remote_cache_entry(
+        self,
+        device: Device | None,
+        output_arch: int | None,
+        arch_suffix: str,
+        output_name: str,
+        active_block_dim: int,
+        options: dict,
+    ) -> warp._src.remote_cache.RemoteCacheEntry:
+        """Describe the exact compiled binary and metadata pair."""
+        meta_name = self._get_meta_name(block_dim=active_block_dim)
+        if output_arch is None:
+            flags = _resolve_cpu_compiler_flags(options["cpu_compiler_flags"], warp.config.cpu_compiler_flags)
+            target = _get_cpu_remote_target_identity(flags)
+        else:
+            target = _get_cuda_remote_target_identity(
+                output_arch,
+                arch_suffix,
+                output_name.endswith(".ptx"),
+                options["llvm_cuda"],
+            )
+        return warp._src.remote_cache.RemoteCacheEntry(
+            kind="kernel",
+            namespace=self.get_module_identifier(block_dim=active_block_dim),
+            identity={
+                "module_hash": self.get_module_hash(active_block_dim).hex(),
+                "block_dim": active_block_dim,
+                "output_name": output_name,
+                "meta_name": meta_name,
+                "target": target,
+            },
+            artifact_names=(output_name, meta_name),
+        )
+
     @staticmethod
     def _write_meta(output_meta_path: str | os.PathLike, meta: dict) -> None:
         """Write deterministic module metadata."""
@@ -4699,15 +4752,46 @@ class Module:
         else:
             output_dir = os.fspath(output_dir)
 
+        meta_name = self._get_meta_name(block_dim=active_block_dim)
+        meta_path = os.path.join(output_dir, meta_name)
+
         # Skip compilation if the binary and metadata are already cached
         # (forced rebuild when verifying autograd array access)
         if (
             warp.config.cache_kernels
             and not options.get("verify_autograd_array_access", False)
             and os.path.exists(os.path.join(output_dir, output_name))
-            and os.path.exists(os.path.join(output_dir, self._get_meta_name(block_dim=active_block_dim)))
+            and os.path.exists(meta_path)
         ):
             return False
+
+        remote_entry = None
+        normal_cache_dir = (
+            os.path.join(warp.config.kernel_cache_dir, module_name_short)
+            if warp.config.kernel_cache_dir is not None
+            else None
+        )
+        if (
+            warp.config.cache_kernels
+            and not options.get("verify_autograd_array_access", False)
+            and not self.options["strip_hash"]
+            and normal_cache_dir is not None
+            and os.path.normcase(os.path.abspath(output_dir)) == os.path.normcase(os.path.abspath(normal_cache_dir))
+            and warp._src.remote_cache.is_enabled()
+        ):
+            remote_entry = self._get_remote_cache_entry(
+                device, output_arch, arch_suffix, output_name, active_block_dim, options
+            )
+            with tempfile.TemporaryDirectory(prefix="remote-kernel-", dir=warp.config.kernel_cache_dir) as staging:
+                if warp._src.remote_cache.download_entry(remote_entry, Path(staging)):
+                    try:
+                        _commit_remote_kernel_entry(Path(staging), Path(output_dir), output_name, meta_name)
+                    except OSError as exc:
+                        log_warning(f"Could not publish restored kernel entry locally: {exc}", once=True)
+                    if os.path.exists(os.path.join(output_dir, output_name)) and os.path.exists(meta_path):
+                        return False
+
+        compile_started = time.perf_counter()
 
         # Python codegen window -- runs serialised under ``_codegen_lock``
         # inside ``_run_codegen``. Snapshots all builder state needed by
@@ -4724,8 +4808,6 @@ class Module:
         except Exception as e:
             self._record_build_failure(device, is_cpu, active_block_dim, e)
             raise
-
-        meta_path = os.path.join(output_dir, self._get_meta_name(block_dim=active_block_dim))
 
         build_dir = os.path.normpath(output_dir) + f"_p{os.getpid()}_t{threading.get_ident()}"
 
@@ -4881,6 +4963,16 @@ class Module:
 
             # clean up build_dir used for this process regardless
             shutil.rmtree(build_dir, ignore_errors=True)
+
+        if remote_entry is not None:
+            binary_path = Path(output_dir) / output_name
+            committed_meta_path = Path(meta_path)
+            if binary_path.is_file() and committed_meta_path.is_file():
+                warp._src.remote_cache.publish_entry(
+                    remote_entry,
+                    {output_name: binary_path, meta_name: committed_meta_path},
+                    time.perf_counter() - compile_started,
+                )
 
         return True
 
@@ -8452,6 +8544,7 @@ class Runtime:
 
         # initialize kernel cache
         warp._src.build.init_kernel_cache(warp.config.kernel_cache_dir)
+        warp._src.remote_cache.init_remote_cache()
 
         # global tape
         self.tape = None

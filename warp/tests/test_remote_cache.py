@@ -9,6 +9,7 @@ import tarfile
 import tempfile
 import threading
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -17,6 +18,12 @@ import warp as wp
 import warp.config
 from warp._src import context, remote_cache
 from warp._src.remote_cache import RemoteCacheEntry, RemoteCacheValidationError, read_archive, write_archive
+
+
+@wp.kernel
+def _remote_cache_kernel(values: wp.array[int]):
+    i = wp.tid()
+    values[i] += 1
 
 
 class MemoryRemoteStore:
@@ -390,6 +397,216 @@ class TestRemoteCache(unittest.TestCase):
         triple = context.runtime.get_llvm_target_triple()
         self.assertIsInstance(triple, str)
         self.assertIn("-", triple)
+
+    def test_kernel_remote_round_trip_skips_compilation(self):
+        wp.init()
+        module = wp.get_module(__name__)
+        store = MemoryRemoteStore()
+        original_cache_dir = wp.config.kernel_cache_dir
+        self.addCleanup(setattr, wp.config, "kernel_cache_dir", original_cache_dir)
+        self.addCleanup(remote_cache.init_remote_cache)
+        with (
+            tempfile.TemporaryDirectory() as producer,
+            tempfile.TemporaryDirectory() as consumer,
+            patch.object(warp.config, "remote_cache_dir", "gs://bucket/cache"),
+            patch.object(warp.config, "remote_cache_min_compile_time", 0.0),
+            patch.object(remote_cache, "_is_final_release_version", return_value=True),
+            patch.object(remote_cache, "_create_store", return_value=store),
+        ):
+            remote_cache.init_remote_cache()
+            wp.config.kernel_cache_dir = producer
+            self.assertTrue(module._compile(device=wp.get_device("cpu")))
+            self.assertEqual(store.writes, 1)
+            reads_after_producer = store.reads
+            with patch.object(store, "open_reader", side_effect=AssertionError("local hit reached remote")):
+                self.assertFalse(module._compile(device=wp.get_device("cpu")))
+            self.assertEqual(store.reads, reads_after_producer)
+            wp.config.kernel_cache_dir = consumer
+            with patch.object(module, "_run_codegen", side_effect=AssertionError("remote hit compiled")):
+                self.assertFalse(module._compile(device=wp.get_device("cpu")))
+            self.assertEqual(store.reads, reads_after_producer + 1)
+            binary_name = module._get_compile_output_name(wp.get_device("cpu"))
+            module_dir = Path(consumer) / module.get_module_identifier()
+            self.assertTrue((module_dir / binary_name).is_file())
+            self.assertTrue((module_dir / module._get_meta_name()).is_file())
+
+    def test_kernel_remote_corruption_compiles_without_replacing_object(self):
+        wp.init()
+        module = wp.get_module(__name__)
+        store = MemoryRemoteStore()
+        original_cache_dir = wp.config.kernel_cache_dir
+        self.addCleanup(setattr, wp.config, "kernel_cache_dir", original_cache_dir)
+        self.addCleanup(remote_cache.init_remote_cache)
+        with (
+            tempfile.TemporaryDirectory() as consumer,
+            patch.object(warp.config, "remote_cache_dir", "gs://bucket/cache"),
+            patch.object(warp.config, "remote_cache_min_compile_time", 0.0),
+            patch.object(remote_cache, "_is_final_release_version", return_value=True),
+            patch.object(remote_cache, "_create_store", return_value=store),
+        ):
+            remote_cache.init_remote_cache()
+            wp.config.kernel_cache_dir = consumer
+            entry = module._get_remote_cache_entry(
+                wp.get_device("cpu"),
+                None,
+                "",
+                module._get_compile_output_name(wp.get_device("cpu")),
+                module.options["block_dim"],
+                module.resolve_options(warp.config),
+            )
+            uri = entry.object_uri("gs://bucket/cache")
+            store.objects[uri] = b"corrupt object"
+            self.assertTrue(module._compile(device=wp.get_device("cpu")))
+            self.assertEqual(store.objects[uri], b"corrupt object")
+            self.assertEqual(store.writes, 0)
+
+    def test_cuda_kernel_remote_restores_ptx_and_cubin(self):
+        wp.init()
+        if not wp.is_cuda_available():
+            self.skipTest("CUDA device required")
+        device = wp.get_device("cuda:0")
+        module = wp.get_module(__name__)
+        store = MemoryRemoteStore()
+        original_cache_dir = wp.config.kernel_cache_dir
+        self.addCleanup(setattr, wp.config, "kernel_cache_dir", original_cache_dir)
+        self.addCleanup(remote_cache.init_remote_cache)
+        with (
+            tempfile.TemporaryDirectory() as producer,
+            tempfile.TemporaryDirectory() as consumer,
+            patch.object(warp.config, "remote_cache_dir", "gs://bucket/cache"),
+            patch.object(warp.config, "remote_cache_min_compile_time", 0.0),
+            patch.object(remote_cache, "_is_final_release_version", return_value=True),
+            patch.object(remote_cache, "_create_store", return_value=store),
+        ):
+            remote_cache.init_remote_cache()
+            for use_ptx in (True, False):
+                with self.subTest(use_ptx=use_ptx):
+                    wp.config.kernel_cache_dir = producer
+                    self.assertTrue(module._compile(device=device, use_ptx=use_ptx))
+                    wp.config.kernel_cache_dir = consumer
+                    with patch.object(module, "_run_codegen", side_effect=AssertionError("remote hit compiled")):
+                        self.assertFalse(module._compile(device=device, use_ptx=use_ptx))
+                    binary_name = module._get_compile_output_name(device, use_ptx=use_ptx)
+                    self.assertTrue((Path(consumer) / module.get_module_identifier() / binary_name).is_file())
+
+    def test_kernel_remote_is_skipped_for_nonstandard_builds(self):
+        wp.init()
+        module = wp.get_module(__name__)
+        original_cache_dir = wp.config.kernel_cache_dir
+        self.addCleanup(setattr, wp.config, "kernel_cache_dir", original_cache_dir)
+        self.addCleanup(remote_cache.init_remote_cache)
+        with (
+            tempfile.TemporaryDirectory() as local_root,
+            tempfile.TemporaryDirectory() as custom_root,
+            patch.object(warp.config, "remote_cache_dir", "gs://bucket/cache"),
+            patch.object(remote_cache, "_is_final_release_version", return_value=True),
+            patch.object(remote_cache, "_create_store", return_value=MemoryRemoteStore()),
+        ):
+            remote_cache.init_remote_cache()
+            wp.config.kernel_cache_dir = local_root
+            cases = (
+                {"output_dir": custom_root},
+                {"options": module.resolve_options(warp.config) | {"verify_autograd_array_access": True}},
+            )
+            for kwargs in cases:
+                with (
+                    self.subTest(kwargs=kwargs),
+                    patch.object(remote_cache, "download_entry") as download,
+                    patch.object(remote_cache, "publish_entry") as publish,
+                    patch.object(module, "_run_codegen", side_effect=RuntimeError("expected compile")),
+                    self.assertRaisesRegex(RuntimeError, "expected compile"),
+                ):
+                    module._compile(device=wp.get_device("cpu"), **kwargs)
+                download.assert_not_called()
+                publish.assert_not_called()
+            with (
+                patch.object(warp.config, "cache_kernels", False),
+                patch.object(remote_cache, "download_entry") as download,
+                patch.object(module, "_run_codegen", side_effect=RuntimeError("expected compile")),
+                self.assertRaisesRegex(RuntimeError, "expected compile"),
+            ):
+                module._compile(device=wp.get_device("cpu"))
+            download.assert_not_called()
+            with (
+                patch.dict(module.options, {"strip_hash": True}),
+                patch.object(remote_cache, "download_entry") as download,
+                patch.object(module, "_run_codegen", side_effect=RuntimeError("expected compile")),
+                self.assertRaisesRegex(RuntimeError, "expected compile"),
+            ):
+                module._compile(device=wp.get_device("cpu"))
+            download.assert_not_called()
+            with (
+                patch.object(remote_cache, "_is_final_release_version", return_value=False),
+                patch.object(remote_cache, "download_entry") as download,
+                patch.object(module, "_run_codegen", side_effect=RuntimeError("expected compile")),
+                self.assertRaisesRegex(RuntimeError, "expected compile"),
+            ):
+                remote_cache.init_remote_cache()
+                module._compile(device=wp.get_device("cpu"))
+            download.assert_not_called()
+
+    def test_kernel_remote_commit_into_empty_destination(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            staging = root / "staging"
+            staging.mkdir()
+            (staging / "binary.o").write_bytes(b"binary")
+            (staging / "binary.meta").write_bytes(b"meta")
+            destination = root / "module"
+            context._commit_remote_kernel_entry(staging, destination, "binary.o", "binary.meta")
+            self.assertEqual((destination / "binary.o").read_bytes(), b"binary")
+            self.assertEqual((destination / "binary.meta").read_bytes(), b"meta")
+
+    def test_kernel_remote_commit_preserves_complete_race_winner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            staging = root / "staging"
+            staging.mkdir()
+            (staging / "binary.o").write_bytes(b"remote binary")
+            (staging / "binary.meta").write_bytes(b"remote meta")
+            destination = root / "module"
+            destination.mkdir()
+            (destination / "binary.o").write_bytes(b"local binary")
+            (destination / "binary.meta").write_bytes(b"local meta")
+            context._commit_remote_kernel_entry(staging, destination, "binary.o", "binary.meta")
+            self.assertEqual((destination / "binary.o").read_bytes(), b"local binary")
+            self.assertEqual((destination / "binary.meta").read_bytes(), b"local meta")
+
+    def test_two_downloaders_commit_one_complete_pair(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            destination = root / "module"
+            gate = threading.Barrier(2)
+
+            def commit(index):
+                staging = root / f"staging-{index}"
+                staging.mkdir()
+                (staging / "binary.o").write_bytes(f"binary-{index}".encode())
+                (staging / "binary.meta").write_bytes(f"meta-{index}".encode())
+                gate.wait(timeout=5)
+                context._commit_remote_kernel_entry(staging, destination, "binary.o", "binary.meta")
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = [executor.submit(commit, index) for index in range(2)]
+                for future in futures:
+                    future.result(timeout=10)
+            winner = (destination / "binary.o").read_text().removeprefix("binary-")
+            self.assertIn(winner, {"0", "1"})
+            self.assertEqual((destination / "binary.meta").read_text(), f"meta-{winner}")
+
+    def test_kernel_remote_commit_does_not_publish_meta_after_binary_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            staging = root / "staging"
+            staging.mkdir()
+            (staging / "binary.o").write_bytes(b"remote binary")
+            (staging / "binary.meta").write_bytes(b"remote meta")
+            destination = root / "module"
+            destination.mkdir()
+            (destination / "placeholder").write_bytes(b"keep")
+            with patch.object(context.os, "replace", side_effect=OSError("move failed")):
+                context._commit_remote_kernel_entry(staging, destination, "binary.o", "binary.meta")
+            self.assertFalse((destination / "binary.meta").exists())
 
 
 if __name__ == "__main__":

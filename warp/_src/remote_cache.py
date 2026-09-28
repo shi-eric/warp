@@ -178,6 +178,11 @@ def init_remote_cache() -> None:
     _remote_min_compile_time = warp.config.remote_cache_min_compile_time
 
 
+def is_enabled() -> bool:
+    """Whether a valid, eligible remote cache root was configured at initialization."""
+    return _remote_root is not None
+
+
 def _create_store() -> RemoteStore:
     from warp._src.remote_cache_gcs import GCSRemoteStore  # noqa: PLC0415
 
