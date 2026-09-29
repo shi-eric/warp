@@ -927,9 +927,10 @@ add_builtin(
     doc="""Return an approximate inverse of a matrix.
 
     On GPU, this function may be faster than :func:`warp.inverse`, but its
-    result and gradients may be less accurate. Use :func:`warp.inverse` when
-    higher numerical accuracy is required. On CPU, both functions currently
-    use the same inversion method.
+    result and gradients may be less accurate. For double-precision matrices,
+    even well-conditioned inputs can yield roughly single-precision accuracy.
+    Use :func:`warp.inverse` when double-precision accuracy matters. On CPU,
+    both functions currently use the same inversion method.
 
     Nearly singular inputs can amplify rounding errors and produce large
     gradients. Use a well-conditioned matrix for differentiation, and check
