@@ -1973,8 +1973,8 @@ add_builtin(
     Returns:
         A tuple ``(Q, d)`` such that
         ``A = Q * wp.diag(d) * wp.transpose(Q)`` up to numerical error.
-        The columns of the orthogonal matrix ``Q`` are eigenvectors paired
-        with the corresponding eigenvalues in ``d``.
+        The columns of ``Q`` form a right-handed orthonormal eigenvector
+        basis, paired with the corresponding eigenvalues in ``d``.
 
     Example:
 
