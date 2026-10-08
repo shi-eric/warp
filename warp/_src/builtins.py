@@ -13211,10 +13211,11 @@ add_builtin(
 
     Returns:
         The sampled value of the specified ``dtype``. The backends normalize unsigned 8- and 16-bit
-        integer data to ``[0, 1]`` and signed 8- and 16-bit integer data to ``[-1, 1]``. Sampling an
-        ``int32`` or ``uint32`` texture causes kernel execution to fail; use an 8- or 16-bit integer
-        or floating-point texture. Floating-point texture data is returned as ``float32`` channel
-        values without normalization.
+        integer data to ``[0, 1]`` and signed 8- and 16-bit integer data to ``[-1, 1]``.
+        Signed and unsigned 32-bit integer data is converted numerically to ``float32`` without
+        normalization and requires closest filtering within and between mip levels. Integers
+        outside ``[-2**24, 2**24]`` may round during conversion. Floating-point texture data is
+        returned as ``float32`` channel values without normalization.
 
     The filtering mode (:class:`warp.TextureFilterMode`) and the addressing of out-of-range
     coordinates (:class:`warp.TextureAddressMode`) are those set when the texture was created; see
@@ -13308,10 +13309,11 @@ add_builtin(
 
     Returns:
         The sampled value of the specified ``dtype``. The backends normalize unsigned 8- and 16-bit
-        integer data to ``[0, 1]`` and signed 8- and 16-bit integer data to ``[-1, 1]``. Sampling an
-        ``int32`` or ``uint32`` texture causes kernel execution to fail; use an 8- or 16-bit integer
-        or floating-point texture. Floating-point texture data is returned as ``float32`` channel
-        values without normalization.
+        integer data to ``[0, 1]`` and signed 8- and 16-bit integer data to ``[-1, 1]``.
+        Signed and unsigned 32-bit integer data is converted numerically to ``float32`` without
+        normalization and requires closest filtering within and between mip levels. Integers
+        outside ``[-2**24, 2**24]`` may round during conversion. Floating-point texture data is
+        returned as ``float32`` channel values without normalization.
 
     The filtering mode (:class:`warp.TextureFilterMode`) and the addressing of out-of-range
     coordinates (:class:`warp.TextureAddressMode`) are those set when the texture was created; see
@@ -13360,10 +13362,11 @@ add_builtin(
 
     Returns:
         The sampled value of the specified ``dtype``. The backends normalize unsigned 8- and 16-bit
-        integer data to ``[0, 1]`` and signed 8- and 16-bit integer data to ``[-1, 1]``. Sampling an
-        ``int32`` or ``uint32`` texture causes kernel execution to fail; use an 8- or 16-bit integer
-        or floating-point texture. Floating-point texture data is returned as ``float32`` channel
-        values without normalization.
+        integer data to ``[0, 1]`` and signed 8- and 16-bit integer data to ``[-1, 1]``.
+        Signed and unsigned 32-bit integer data is converted numerically to ``float32`` without
+        normalization and requires closest filtering within and between mip levels. Integers
+        outside ``[-2**24, 2**24]`` may round during conversion. Floating-point texture data is
+        returned as ``float32`` channel values without normalization.
 
     The filtering mode (:class:`warp.TextureFilterMode`) and the addressing of out-of-range
     coordinates (:class:`warp.TextureAddressMode`) are those set when the texture was created; see
@@ -13429,10 +13432,11 @@ add_builtin(
 
     Returns:
         The sampled value of the specified ``dtype``. The backends normalize unsigned 8- and 16-bit
-        integer data to ``[0, 1]`` and signed 8- and 16-bit integer data to ``[-1, 1]``. Sampling an
-        ``int32`` or ``uint32`` texture causes kernel execution to fail; use an 8- or 16-bit integer
-        or floating-point texture. Floating-point texture data is returned as ``float32`` channel
-        values without normalization.
+        integer data to ``[0, 1]`` and signed 8- and 16-bit integer data to ``[-1, 1]``.
+        Signed and unsigned 32-bit integer data is converted numerically to ``float32`` without
+        normalization and requires closest filtering within and between mip levels. Integers
+        outside ``[-2**24, 2**24]`` may round during conversion. Floating-point texture data is
+        returned as ``float32`` channel values without normalization.
 
     The filtering mode (:class:`warp.TextureFilterMode`) and the addressing of out-of-range
     coordinates (:class:`warp.TextureAddressMode`) are those set when the texture was created; see
@@ -13484,10 +13488,11 @@ add_builtin(
 
     Returns:
         The sampled value of the specified ``dtype``. The backends normalize unsigned 8- and 16-bit
-        integer data to ``[0, 1]`` and signed 8- and 16-bit integer data to ``[-1, 1]``. Sampling an
-        ``int32`` or ``uint32`` texture causes kernel execution to fail; use an 8- or 16-bit integer
-        or floating-point texture. Floating-point texture data is returned as ``float32`` channel
-        values without normalization.
+        integer data to ``[0, 1]`` and signed 8- and 16-bit integer data to ``[-1, 1]``.
+        Signed and unsigned 32-bit integer data is converted numerically to ``float32`` without
+        normalization and requires closest filtering within and between mip levels. Integers
+        outside ``[-2**24, 2**24]`` may round during conversion. Floating-point texture data is
+        returned as ``float32`` channel values without normalization.
 
     The filtering mode (:class:`warp.TextureFilterMode`) and the addressing of out-of-range
     coordinates (:class:`warp.TextureAddressMode`) are those set when the texture was created; see

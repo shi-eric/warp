@@ -157,7 +157,7 @@ struct texture1d_t {
     uint64 tex;  // CUtexObject handle (GPU) or Texture* (CPU)
     int32 width;
     int32 num_channels;
-    int32 dtype;  // WP_TEXTURE_DTYPE_*, needed to reject non-sampleable formats
+    int32 dtype;  // WP_TEXTURE_DTYPE_*, selects the CUDA fetch type
 
     CUDA_CALLABLE inline texture1d_t()
         : tex(0)
@@ -181,7 +181,7 @@ struct texture2d_t {
     int32 width;
     int32 height;
     int32 num_channels;
-    int32 dtype;  // WP_TEXTURE_DTYPE_*, needed to reject non-sampleable formats
+    int32 dtype;  // WP_TEXTURE_DTYPE_*, selects the CUDA fetch type
 
     CUDA_CALLABLE inline texture2d_t()
         : tex(0)
@@ -208,7 +208,7 @@ struct texture3d_t {
     int32 height;
     int32 depth;
     int32 num_channels;
-    int32 dtype;  // WP_TEXTURE_DTYPE_*, needed to reject non-sampleable formats
+    int32 dtype;  // WP_TEXTURE_DTYPE_*, selects the CUDA fetch type
 
     CUDA_CALLABLE inline texture3d_t()
         : tex(0)
@@ -366,9 +366,8 @@ inline float cpu_half_to_float(uint16_t h)
     return conv.f;
 }
 
-// Decode a raw texel at ``idx`` into a normalized float.
-// Unsigned integers are normalized to [0, 1], signed integers to [-1, 1],
-// float types are returned as-is.
+// Decode a raw texel at ``idx`` into a float. Normalize 8- and 16-bit integers;
+// convert 32-bit integers numerically and return float types as-is.
 inline float cpu_decode_texel(const void* level_data, int dtype, int idx)
 {
     switch (dtype) {
@@ -377,7 +376,7 @@ inline float cpu_decode_texel(const void* level_data, int dtype, int idx)
     case WP_TEXTURE_DTYPE_UINT16:
         return ((const uint16_t*)level_data)[idx] / 65535.0f;
     case WP_TEXTURE_DTYPE_UINT32:
-        return ((const uint32_t*)level_data)[idx] / 4294967295.0f;
+        return float(((const uint32_t*)level_data)[idx]);
     case WP_TEXTURE_DTYPE_INT8: {
         float v = ((const int8_t*)level_data)[idx] / 127.0f;
         return v < -1.0f ? -1.0f : v;
@@ -386,10 +385,8 @@ inline float cpu_decode_texel(const void* level_data, int dtype, int idx)
         float v = ((const int16_t*)level_data)[idx] / 32767.0f;
         return v < -1.0f ? -1.0f : v;
     }
-    case WP_TEXTURE_DTYPE_INT32: {
-        float v = ((const int32_t*)level_data)[idx] / 2147483647.0f;
-        return v < -1.0f ? -1.0f : v;
-    }
+    case WP_TEXTURE_DTYPE_INT32:
+        return float(((const int32_t*)level_data)[idx]);
     case WP_TEXTURE_DTYPE_FLOAT16:
         return cpu_half_to_float(((const uint16_t*)level_data)[idx]);
     case WP_TEXTURE_DTYPE_FLOAT32:
@@ -694,58 +691,6 @@ template <typename T> __device__ T tex3DLod(unsigned long long texObj, float x, 
 // Any nonnegative ``lod`` value routes through the mipmap-aware path (``tex1DLod`` / ...).
 template <typename T> struct texture_sample_helper;
 
-template <> struct texture_sample_helper<float> {
-    static CUDA_CALLABLE float sample_1d(const texture1d_t& tex, float u, float lod)
-    {
-#if defined(__CUDA_ARCH__)
-        if (lod < 0.0f)
-            return tex1D<float>(tex.tex, u);
-        return tex1DLod<float>(tex.tex, u, lod);
-#else
-        if (tex.tex == 0)
-            return 0.0f;
-        const Texture* cpu_tex = (const Texture*)tex.tex;
-        if (lod < 0.0f)
-            return cpu_sample_1d_channel_at_level(cpu_tex, 0, u, 0);
-        return cpu_sample_1d_channel(cpu_tex, u, 0, lod);
-#endif
-    }
-
-    static CUDA_CALLABLE float sample_2d(const texture2d_t& tex, float u, float v, float lod)
-    {
-#if defined(__CUDA_ARCH__)
-        if (lod < 0.0f)
-            return tex2D<float>(tex.tex, u, v);
-        return tex2DLod<float>(tex.tex, u, v, lod);
-#else
-        if (tex.tex == 0)
-            return 0.0f;
-        const Texture* cpu_tex = (const Texture*)tex.tex;
-        if (lod < 0.0f)
-            return cpu_sample_2d_channel_at_level(cpu_tex, 0, u, v, 0);
-        return cpu_sample_2d_channel(cpu_tex, u, v, 0, lod);
-#endif
-    }
-
-    static CUDA_CALLABLE float sample_3d(const texture3d_t& tex, float u, float v, float w, float lod)
-    {
-#if defined(__CUDA_ARCH__)
-        if (lod < 0.0f)
-            return tex3D<float>(tex.tex, u, v, w);
-        return tex3DLod<float>(tex.tex, u, v, w, lod);
-#else
-        if (tex.tex == 0)
-            return 0.0f;
-        const Texture* cpu_tex = (const Texture*)tex.tex;
-        if (lod < 0.0f)
-            return cpu_sample_3d_channel_at_level(cpu_tex, 0, u, v, w, 0);
-        return cpu_sample_3d_channel(cpu_tex, u, v, w, 0, lod);
-#endif
-    }
-
-    static CUDA_CALLABLE float zero() { return 0.0f; }
-};
-
 // NVCC and NVRTC versions before CUDA 13.1 can miscompile base-level vector
 // texture sampling when functions mix texture return widths on sm_89 and older
 // targets. Keep the compiler and architecture checks in this header so both
@@ -760,33 +705,165 @@ constexpr bool use_cuda_texture_mixed_width_workaround = false;
 #endif
 #endif
 
-template <> struct texture_sample_helper<vec2f> {
 #if defined(__CUDA_ARCH__)
-    static CUDA_CALLABLE_DEVICE __noinline__ float2 sample_base_1d(const texture1d_t& tex, float u)
+// Match CUDA's unpromoted 32-bit integer reads before converting channel values
+// to Warp's floating-point return types. Other formats retain CUDA's float reads.
+template <typename T> struct texture_cuda_sample_types;
+
+template <> struct texture_cuda_sample_types<float> {
+    using float_type = float;
+    using int_type = int;
+    using uint_type = unsigned int;
+
+    template <typename NativeType> static CUDA_CALLABLE_DEVICE float convert(NativeType value) { return float(value); }
+};
+
+template <> struct texture_cuda_sample_types<vec2f> {
+    using float_type = float2;
+    using int_type = int2;
+    using uint_type = uint2;
+
+    template <typename NativeType> static CUDA_CALLABLE_DEVICE vec2f convert(NativeType value)
     {
-        return tex1D<float2>(tex.tex, u);
+        return vec2f(float(value.x), float(value.y));
+    }
+};
+
+template <> struct texture_cuda_sample_types<vec4f> {
+    using float_type = float4;
+    using int_type = int4;
+    using uint_type = uint4;
+
+    template <typename NativeType> static CUDA_CALLABLE_DEVICE vec4f convert(NativeType value)
+    {
+        return vec4f(float(value.x), float(value.y), float(value.z), float(value.w));
+    }
+};
+
+template <typename NativeType> struct texture_cuda_fetch {
+    static CUDA_CALLABLE_DEVICE __noinline__ NativeType sample_base(const texture1d_t& tex, float u)
+    {
+        return tex1D<NativeType>(tex.tex, u);
     }
 
-    static CUDA_CALLABLE_DEVICE __noinline__ float2 sample_base_2d(const texture2d_t& tex, float u, float v)
+    static CUDA_CALLABLE_DEVICE __noinline__ NativeType sample_base(const texture2d_t& tex, float u, float v)
     {
-        return tex2D<float2>(tex.tex, u, v);
+        return tex2D<NativeType>(tex.tex, u, v);
     }
 
-    static CUDA_CALLABLE_DEVICE __noinline__ float2 sample_base_3d(const texture3d_t& tex, float u, float v, float w)
+    static CUDA_CALLABLE_DEVICE __noinline__ NativeType sample_base(const texture3d_t& tex, float u, float v, float w)
     {
-        return tex3D<float2>(tex.tex, u, v, w);
+        return tex3D<NativeType>(tex.tex, u, v, w);
     }
+
+    static CUDA_CALLABLE_DEVICE NativeType sample(const texture1d_t& tex, float lod, float u)
+    {
+        if constexpr (use_cuda_texture_mixed_width_workaround && sizeof(NativeType) > sizeof(float))
+            return (lod < 0.0f) ? sample_base(tex, u) : tex1DLod<NativeType>(tex.tex, u, lod);
+        else
+            return (lod < 0.0f) ? tex1D<NativeType>(tex.tex, u) : tex1DLod<NativeType>(tex.tex, u, lod);
+    }
+
+    static CUDA_CALLABLE_DEVICE NativeType sample(const texture2d_t& tex, float lod, float u, float v)
+    {
+        if constexpr (use_cuda_texture_mixed_width_workaround && sizeof(NativeType) > sizeof(float))
+            return (lod < 0.0f) ? sample_base(tex, u, v) : tex2DLod<NativeType>(tex.tex, u, v, lod);
+        else
+            return (lod < 0.0f) ? tex2D<NativeType>(tex.tex, u, v) : tex2DLod<NativeType>(tex.tex, u, v, lod);
+    }
+
+    static CUDA_CALLABLE_DEVICE NativeType sample(const texture3d_t& tex, float lod, float u, float v, float w)
+    {
+        if constexpr (use_cuda_texture_mixed_width_workaround && sizeof(NativeType) > sizeof(float))
+            return (lod < 0.0f) ? sample_base(tex, u, v, w) : tex3DLod<NativeType>(tex.tex, u, v, w, lod);
+        else
+            return (lod < 0.0f) ? tex3D<NativeType>(tex.tex, u, v, w) : tex3DLod<NativeType>(tex.tex, u, v, w, lod);
+    }
+};
+
+template <typename T> struct texture_cuda_sample_helper {
+    using types = texture_cuda_sample_types<T>;
+
+    template <typename TextureType, typename... Coordinates>
+    static CUDA_CALLABLE_DEVICE T sample(const TextureType& tex, float lod, Coordinates... coords)
+    {
+        // Keep the common float fetch first and merge the fetched bits before
+        // conversion so CUDA can reuse registers across the format branches.
+        // Each conversion reads the active union member.
+        const bool integer = tex.dtype == WP_TEXTURE_DTYPE_INT32 || tex.dtype == WP_TEXTURE_DTYPE_UINT32;
+        union {
+            typename types::float_type f;
+            typename types::int_type i;
+            typename types::uint_type u;
+        } value;
+        if (!integer)
+            value.f = texture_cuda_fetch<typename types::float_type>::sample(tex, lod, coords...);
+        else if (tex.dtype == WP_TEXTURE_DTYPE_INT32)
+            value.i = texture_cuda_fetch<typename types::int_type>::sample(tex, lod, coords...);
+        else
+            value.u = texture_cuda_fetch<typename types::uint_type>::sample(tex, lod, coords...);
+
+        if (!integer)
+            return types::convert(value.f);
+        if (tex.dtype == WP_TEXTURE_DTYPE_INT32)
+            return types::convert(value.i);
+        return types::convert(value.u);
+    }
+};
 #endif
+
+template <> struct texture_sample_helper<float> {
+    static CUDA_CALLABLE float sample_1d(const texture1d_t& tex, float u, float lod)
+    {
+#if defined(__CUDA_ARCH__)
+        return texture_cuda_sample_helper<float>::sample(tex, lod, u);
+#else
+        if (tex.tex == 0)
+            return 0.0f;
+        const Texture* cpu_tex = (const Texture*)tex.tex;
+        if (lod < 0.0f)
+            return cpu_sample_1d_channel_at_level(cpu_tex, 0, u, 0);
+        return cpu_sample_1d_channel(cpu_tex, u, 0, lod);
+#endif
+    }
+
+    static CUDA_CALLABLE float sample_2d(const texture2d_t& tex, float u, float v, float lod)
+    {
+#if defined(__CUDA_ARCH__)
+        return texture_cuda_sample_helper<float>::sample(tex, lod, u, v);
+#else
+        if (tex.tex == 0)
+            return 0.0f;
+        const Texture* cpu_tex = (const Texture*)tex.tex;
+        if (lod < 0.0f)
+            return cpu_sample_2d_channel_at_level(cpu_tex, 0, u, v, 0);
+        return cpu_sample_2d_channel(cpu_tex, u, v, 0, lod);
+#endif
+    }
+
+    static CUDA_CALLABLE float sample_3d(const texture3d_t& tex, float u, float v, float w, float lod)
+    {
+#if defined(__CUDA_ARCH__)
+        return texture_cuda_sample_helper<float>::sample(tex, lod, u, v, w);
+#else
+        if (tex.tex == 0)
+            return 0.0f;
+        const Texture* cpu_tex = (const Texture*)tex.tex;
+        if (lod < 0.0f)
+            return cpu_sample_3d_channel_at_level(cpu_tex, 0, u, v, w, 0);
+        return cpu_sample_3d_channel(cpu_tex, u, v, w, 0, lod);
+#endif
+    }
+
+    static CUDA_CALLABLE float zero() { return 0.0f; }
+};
+
+template <> struct texture_sample_helper<vec2f> {
 
     static CUDA_CALLABLE vec2f sample_1d(const texture1d_t& tex, float u, float lod)
     {
 #if defined(__CUDA_ARCH__)
-        float2 val;
-        if constexpr (use_cuda_texture_mixed_width_workaround)
-            val = (lod < 0.0f) ? sample_base_1d(tex, u) : tex1DLod<float2>(tex.tex, u, lod);
-        else
-            val = (lod < 0.0f) ? tex1D<float2>(tex.tex, u) : tex1DLod<float2>(tex.tex, u, lod);
-        return vec2f(val.x, val.y);
+        return texture_cuda_sample_helper<vec2f>::sample(tex, lod, u);
 #else
         if (tex.tex == 0)
             return vec2f(0.0f, 0.0f);
@@ -802,12 +879,7 @@ template <> struct texture_sample_helper<vec2f> {
     static CUDA_CALLABLE vec2f sample_2d(const texture2d_t& tex, float u, float v, float lod)
     {
 #if defined(__CUDA_ARCH__)
-        float2 val;
-        if constexpr (use_cuda_texture_mixed_width_workaround)
-            val = (lod < 0.0f) ? sample_base_2d(tex, u, v) : tex2DLod<float2>(tex.tex, u, v, lod);
-        else
-            val = (lod < 0.0f) ? tex2D<float2>(tex.tex, u, v) : tex2DLod<float2>(tex.tex, u, v, lod);
-        return vec2f(val.x, val.y);
+        return texture_cuda_sample_helper<vec2f>::sample(tex, lod, u, v);
 #else
         if (tex.tex == 0)
             return vec2f(0.0f, 0.0f);
@@ -823,12 +895,7 @@ template <> struct texture_sample_helper<vec2f> {
     static CUDA_CALLABLE vec2f sample_3d(const texture3d_t& tex, float u, float v, float w, float lod)
     {
 #if defined(__CUDA_ARCH__)
-        float2 val;
-        if constexpr (use_cuda_texture_mixed_width_workaround)
-            val = (lod < 0.0f) ? sample_base_3d(tex, u, v, w) : tex3DLod<float2>(tex.tex, u, v, w, lod);
-        else
-            val = (lod < 0.0f) ? tex3D<float2>(tex.tex, u, v, w) : tex3DLod<float2>(tex.tex, u, v, w, lod);
-        return vec2f(val.x, val.y);
+        return texture_cuda_sample_helper<vec2f>::sample(tex, lod, u, v, w);
 #else
         if (tex.tex == 0)
             return vec2f(0.0f, 0.0f);
@@ -846,32 +913,11 @@ template <> struct texture_sample_helper<vec2f> {
 };
 
 template <> struct texture_sample_helper<vec4f> {
-#if defined(__CUDA_ARCH__)
-    static CUDA_CALLABLE_DEVICE __noinline__ float4 sample_base_1d(const texture1d_t& tex, float u)
-    {
-        return tex1D<float4>(tex.tex, u);
-    }
-
-    static CUDA_CALLABLE_DEVICE __noinline__ float4 sample_base_2d(const texture2d_t& tex, float u, float v)
-    {
-        return tex2D<float4>(tex.tex, u, v);
-    }
-
-    static CUDA_CALLABLE_DEVICE __noinline__ float4 sample_base_3d(const texture3d_t& tex, float u, float v, float w)
-    {
-        return tex3D<float4>(tex.tex, u, v, w);
-    }
-#endif
 
     static CUDA_CALLABLE vec4f sample_1d(const texture1d_t& tex, float u, float lod)
     {
 #if defined(__CUDA_ARCH__)
-        float4 val;
-        if constexpr (use_cuda_texture_mixed_width_workaround)
-            val = (lod < 0.0f) ? sample_base_1d(tex, u) : tex1DLod<float4>(tex.tex, u, lod);
-        else
-            val = (lod < 0.0f) ? tex1D<float4>(tex.tex, u) : tex1DLod<float4>(tex.tex, u, lod);
-        return vec4f(val.x, val.y, val.z, val.w);
+        return texture_cuda_sample_helper<vec4f>::sample(tex, lod, u);
 #else
         if (tex.tex == 0)
             return vec4f(0.0f, 0.0f, 0.0f, 0.0f);
@@ -891,12 +937,7 @@ template <> struct texture_sample_helper<vec4f> {
     static CUDA_CALLABLE vec4f sample_2d(const texture2d_t& tex, float u, float v, float lod)
     {
 #if defined(__CUDA_ARCH__)
-        float4 val;
-        if constexpr (use_cuda_texture_mixed_width_workaround)
-            val = (lod < 0.0f) ? sample_base_2d(tex, u, v) : tex2DLod<float4>(tex.tex, u, v, lod);
-        else
-            val = (lod < 0.0f) ? tex2D<float4>(tex.tex, u, v) : tex2DLod<float4>(tex.tex, u, v, lod);
-        return vec4f(val.x, val.y, val.z, val.w);
+        return texture_cuda_sample_helper<vec4f>::sample(tex, lod, u, v);
 #else
         if (tex.tex == 0)
             return vec4f(0.0f, 0.0f, 0.0f, 0.0f);
@@ -917,12 +958,7 @@ template <> struct texture_sample_helper<vec4f> {
     static CUDA_CALLABLE vec4f sample_3d(const texture3d_t& tex, float u, float v, float w, float lod)
     {
 #if defined(__CUDA_ARCH__)
-        float4 val;
-        if constexpr (use_cuda_texture_mixed_width_workaround)
-            val = (lod < 0.0f) ? sample_base_3d(tex, u, v, w) : tex3DLod<float4>(tex.tex, u, v, w, lod);
-        else
-            val = (lod < 0.0f) ? tex3D<float4>(tex.tex, u, v, w) : tex3DLod<float4>(tex.tex, u, v, w, lod);
-        return vec4f(val.x, val.y, val.z, val.w);
+        return texture_cuda_sample_helper<vec4f>::sample(tex, lod, u, v, w);
 #else
         if (tex.tex == 0)
             return vec4f(0.0f, 0.0f, 0.0f, 0.0f);
@@ -943,29 +979,6 @@ template <> struct texture_sample_helper<vec4f> {
 
     static CUDA_CALLABLE vec4f zero() { return vec4f(0.0f, 0.0f, 0.0f, 0.0f); }
 };
-
-// 32-bit integer formats cannot be sampled. CUDA's texture units promote 8- and 16-bit integer
-// formats to normalized floats but leave 32-bit ones alone, so sampling one returns the stored
-// word reinterpreted as a float on CUDA and a normalized value on the CPU. Reject these formats
-// at the sample site while preserving their use for storage, copies, and interop.
-CUDA_CALLABLE inline bool texture_dtype_is_sampleable(int32 dtype)
-{
-    return dtype != WP_TEXTURE_DTYPE_UINT32 && dtype != WP_TEXTURE_DTYPE_INT32;
-}
-
-CUDA_CALLABLE inline void texture_assert_sampleable(int32 dtype)
-{
-    if (texture_dtype_is_sampleable(dtype)) {
-        return;
-    }
-
-#if defined(__CUDA_ARCH__)
-    printf("texture_sample() does not support 32-bit integer textures\n");
-    __trap();
-#else
-    _wp_assert("texture_sample() does not support 32-bit integer textures", __FILE__, unsigned(__LINE__));
-#endif
-}
 
 #if defined(WP_WORKAROUND_CUDA_TEXTURE_CUBIN)
 // CUDA 12 can miscompile optimized CUBIN texture sampling on sm_101 and the
@@ -997,14 +1010,12 @@ texture_sample_divergent(const texture3d_t& tex, float u, float v, float w, floa
 // 1D texture sampling with scalar coordinate
 template <typename T> CUDA_CALLABLE T texture_sample(const texture1d_t& tex, float u, float lod)
 {
-    texture_assert_sampleable(tex.dtype);
     return texture_sample_helper<T>::sample_1d(tex, u, lod);
 }
 
 // 2D texture sampling with vec2 coordinates
 template <typename T> CUDA_CALLABLE T texture_sample(const texture2d_t& tex, const vec2f& uv, float lod)
 {
-    texture_assert_sampleable(tex.dtype);
 #if defined(WP_WORKAROUND_CUDA_TEXTURE_CUBIN)
     if (!texture_handle_is_uniform(tex.tex))
         return texture_sample_divergent<T>(tex, uv[0], uv[1], lod);
@@ -1015,7 +1026,6 @@ template <typename T> CUDA_CALLABLE T texture_sample(const texture2d_t& tex, con
 // 2D texture sampling with separate u, v coordinates
 template <typename T> CUDA_CALLABLE T texture_sample(const texture2d_t& tex, float u, float v, float lod)
 {
-    texture_assert_sampleable(tex.dtype);
 #if defined(WP_WORKAROUND_CUDA_TEXTURE_CUBIN)
     if (!texture_handle_is_uniform(tex.tex))
         return texture_sample_divergent<T>(tex, u, v, lod);
@@ -1026,7 +1036,6 @@ template <typename T> CUDA_CALLABLE T texture_sample(const texture2d_t& tex, flo
 // 3D texture sampling with vec3 coordinates
 template <typename T> CUDA_CALLABLE T texture_sample(const texture3d_t& tex, const vec3f& uvw, float lod)
 {
-    texture_assert_sampleable(tex.dtype);
 #if defined(WP_WORKAROUND_CUDA_TEXTURE_CUBIN)
     if (!texture_handle_is_uniform(tex.tex))
         return texture_sample_divergent<T>(tex, uvw[0], uvw[1], uvw[2], lod);
@@ -1037,7 +1046,6 @@ template <typename T> CUDA_CALLABLE T texture_sample(const texture3d_t& tex, con
 // 3D texture sampling with separate u, v, w coordinates
 template <typename T> CUDA_CALLABLE T texture_sample(const texture3d_t& tex, float u, float v, float w, float lod)
 {
-    texture_assert_sampleable(tex.dtype);
 #if defined(WP_WORKAROUND_CUDA_TEXTURE_CUBIN)
     if (!texture_handle_is_uniform(tex.tex))
         return texture_sample_divergent<T>(tex, u, v, w, lod);

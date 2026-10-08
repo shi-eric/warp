@@ -80,8 +80,24 @@ extern const __device__ __blockDim_t blockDim;
 extern const __device__ __gridDim_t gridDim;
 
 // CUDA vector types
+struct alignas(8) int2 {
+    int x, y;
+};
+
+struct alignas(8) uint2 {
+    unsigned int x, y;
+};
+
 struct alignas(8) float2 {
     float x, y;
+};
+
+struct alignas(16) int4 {
+    int x, y, z, w;
+};
+
+struct alignas(16) uint4 {
+    unsigned int x, y, z, w;
 };
 
 struct alignas(16) float4 {

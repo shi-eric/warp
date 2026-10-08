@@ -436,3 +436,84 @@ class Texture3DArray:
     def time_cuda(self, handle_pattern):
         self.cmd.launch()
         wp.synchronize_device(self.device)
+
+
+def _make_point_sampling_kernel(return_dtype):
+    @wp.kernel(enable_backward=False, module="unique")
+    def sample(
+        textures: wp.array[wp.Texture2D],
+        lane_varying: bool,
+        num_samples: int,
+        output: wp.array[return_dtype],
+    ):
+        tid = wp.tid()
+        if lane_varying:
+            texture_id = tid % 32
+        else:
+            texture_id = (tid // 32) % 32
+        tex = textures[texture_id]
+        value = return_dtype(0.0)
+        for i in range(num_samples):
+            value += wp.texture_sample(tex, query_2d(tid + i * 13), dtype=return_dtype)
+        output[tid] = value
+
+    return sample
+
+
+_POINT_SAMPLING_DTYPES = {1: float, 2: wp.vec2f, 4: wp.vec4f}
+_POINT_SAMPLING_KERNELS = {
+    num_channels: _make_point_sampling_kernel(dtype) for num_channels, dtype in _POINT_SAMPLING_DTYPES.items()
+}
+
+
+class TexturePointSampling:
+    """Track format dispatch and conversion with uniform or divergent texture handles."""
+
+    params = [["float32", "int32", "uint32", "mixed"], [1, 2, 4], ["warp_uniform", "lane_varying"]]
+    param_names = ["format", "num_channels", "handle_pattern"]
+    # Blackwell MIG calibration with asv_runner 0.3.0 and two ASV rounds
+    # kept full 99% CI widths below 2.5% for a 5% regression threshold.
+    # Eight-call averages reduce jitter; fifteen repeats tolerate slow
+    # tail samples without paying for additional process setup.
+    number = 8
+    repeat = 15
+
+    @setup_once
+    def setup(self, format, num_channels, handle_pattern):
+        wp.init()
+        self.device = wp.get_device("cuda:0")
+        return_dtype = _POINT_SAMPLING_DTYPES[num_channels]
+        shape = (TEXTURE_2D_HEIGHT, TEXTURE_2D_WIDTH)
+        if num_channels > 1:
+            shape += (num_channels,)
+        data = np.random.default_rng(42).integers(0, 1024, shape, dtype=np.int32)
+        formats = {
+            "float32": (np.float32,),
+            "int32": (np.int32,),
+            "uint32": (np.uint32,),
+            "mixed": (np.float32, np.int32, np.uint32),
+        }[format]
+        self.textures = [
+            wp.Texture2D(
+                data.astype(formats[i % len(formats)]),
+                filter_mode=wp.TextureFilterMode.CLOSEST,
+                device=self.device,
+            )
+            for i in range(32)
+        ]
+        self.texture_array = wp.array(self.textures, dtype=wp.Texture2D, device=self.device)
+        self.output = wp.empty(NUM_QUERIES, dtype=return_dtype, device=self.device)
+        self.cmd = wp.launch(
+            _POINT_SAMPLING_KERNELS[num_channels],
+            dim=NUM_QUERIES,
+            inputs=[self.texture_array, handle_pattern == "lane_varying", 16],
+            outputs=[self.output],
+            device=self.device,
+            record_cmd=True,
+        )
+        self.cmd.launch()
+        wp.synchronize_device(self.device)
+
+    def time_cuda(self, format, num_channels, handle_pattern):
+        self.cmd.launch()
+        wp.synchronize_device(self.device)

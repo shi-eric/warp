@@ -330,16 +330,6 @@ WIDTH_CASES = (
 )
 
 
-def make_constant_scalar_texture(texture_cls, shape, device):
-    return texture_cls(
-        np.full(shape, 0.1, dtype=np.float32),
-        filter_mode=wp.TextureFilterMode.CLOSEST,
-        address_mode=wp.TextureAddressMode.CLAMP,
-        normalized_coords=False,
-        device=device,
-    )
-
-
 def test_mixed_width_texture_sampling(
     test,
     device,
@@ -347,60 +337,71 @@ def test_mixed_width_texture_sampling(
     texture_cls,
     data_cls,
     shape,
+    vector_channels,
 ):
-    texture = make_constant_scalar_texture(texture_cls, shape, device)
-    data = data_cls()
-    data.texture = texture
-    data.kind = 0
-    data.component = 0
-    table = wp.array([data], dtype=data_cls, device=device)
-    out_value = wp.empty(1, dtype=float, device=device)
+    for np_dtype, value in ((np.float32, 0.1), (np.int32, -1000), (np.uint32, 1000)):
+        for kind, channels in ((0, 1), (1, vector_channels)):
+            with test.subTest(dtype=np_dtype, channels=channels):
+                data_shape = shape + ((channels,) if channels > 1 else ())
+                texture = texture_cls(
+                    np.full(data_shape, value, dtype=np_dtype),
+                    filter_mode=wp.TextureFilterMode.CLOSEST,
+                    address_mode=wp.TextureAddressMode.CLAMP,
+                    normalized_coords=False,
+                    device=device,
+                )
+                data = data_cls()
+                data.texture = texture
+                data.kind = kind
+                data.component = channels - 1
+                table = wp.array([data], dtype=data_cls, device=device)
+                out_value = wp.empty(1, dtype=float, device=device)
 
-    wp.launch(
-        kernel,
-        dim=1,
-        inputs=[wp.vec3f(1.0), table],
-        outputs=[out_value],
-        device=device,
-    )
+                wp.launch(
+                    kernel,
+                    dim=1,
+                    inputs=[wp.vec3f(1.0), table],
+                    outputs=[out_value],
+                    device=device,
+                )
 
-    # The sampled first component is 0.1. Clamping local x from 1.0 to 0.6
-    # contributes the remaining distance of 0.4.
-    np.testing.assert_allclose(
-        out_value.numpy(),
-        np.array([0.5], dtype=np.float32),
-        rtol=0.0,
-        atol=1.0e-6,
-    )
+                # Clamping local x from 1.0 to 0.6 adds a distance of 0.4.
+                np.testing.assert_allclose(
+                    out_value.numpy(),
+                    np.array([value + 0.4], dtype=np.float32),
+                    rtol=0.0,
+                    atol=1.0e-6,
+                )
 
 
 def test_all_widths_texture_sampling(test, device, kernel):
-    texture = wp.Texture1D(
-        np.full((2, 4), 0.1, dtype=np.float32),
-        filter_mode=wp.TextureFilterMode.CLOSEST,
-        address_mode=wp.TextureAddressMode.CLAMP,
-        normalized_coords=False,
-        device=device,
-    )
-    textures = wp.array([texture], dtype=wp.Texture1D, device=device)
-    out_value = wp.empty(1, dtype=float, device=device)
+    for np_dtype, value in ((np.float32, 0.1), (np.int32, -1000), (np.uint32, 1000)):
+        with test.subTest(dtype=np_dtype):
+            texture = wp.Texture1D(
+                np.full((2, 4), value, dtype=np_dtype),
+                filter_mode=wp.TextureFilterMode.CLOSEST,
+                address_mode=wp.TextureAddressMode.CLAMP,
+                normalized_coords=False,
+                device=device,
+            )
+            textures = wp.array([texture], dtype=wp.Texture1D, device=device)
+            out_value = wp.empty(1, dtype=float, device=device)
 
-    wp.launch(
-        kernel,
-        dim=1,
-        inputs=[textures],
-        outputs=[out_value],
-        device=device,
-    )
+            wp.launch(
+                kernel,
+                dim=1,
+                inputs=[textures],
+                outputs=[out_value],
+                device=device,
+            )
 
-    # A width of two selects component two of the vec4 branch. Each of the two
-    # samples contributes 0.1.
-    np.testing.assert_allclose(
-        out_value.numpy(),
-        np.array([0.2], dtype=np.float32),
-        rtol=0.0,
-        atol=1.0e-6,
-    )
+            # A width of two selects component two of the vec4 branch.
+            np.testing.assert_allclose(
+                out_value.numpy(),
+                np.array([2.0 * value], dtype=np.float32),
+                rtol=0.0,
+                atol=1.0e-6,
+            )
 
 
 class TestTextureCompiler(unittest.TestCase):
@@ -421,6 +422,7 @@ for cuda_output, optimization_level in COMPILER_CONFIGS:
                 texture_cls=texture_cls,
                 data_cls=data_cls,
                 shape=shape,
+                vector_channels=2 if width_pair == "scalar_vec2" else 4,
             )
 
     kernel = TEXTURE_COMPILER_KERNELS[(cuda_output, optimization_level, "all_widths", "1d")]
