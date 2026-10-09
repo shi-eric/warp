@@ -411,6 +411,7 @@ Operators
 
    add
    bit_and
+   bit_count
    bit_or
    bit_xor
    div
