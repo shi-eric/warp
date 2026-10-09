@@ -1,0 +1,16 @@
+[
+  {
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 106.39,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\probe_renderer_fixture.py",
+      "--fixture",
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/renderer-fixture",
+      "--gpu-transforms",
+      "--release-products"
+    ]
+  }
+]

@@ -1,0 +1,27 @@
+[
+  {
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 35.375,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/IsaacLab/.venv/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\probe_renderer_capture.py",
+      "--cameras",
+      "8192",
+      "--objects",
+      "1",
+      "--rounds",
+      "10",
+      "--kernel-first",
+      "--gpu-map",
+      "--hierarchy",
+      "GPU_INCREMENTAL",
+      "--release-products",
+      "--shading-mode",
+      "3",
+      "--torch",
+      "--gpu-transforms"
+    ]
+  }
+]

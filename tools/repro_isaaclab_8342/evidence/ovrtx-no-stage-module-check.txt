@@ -1,0 +1,13 @@
+OVStage/Torch native modules: []
+C:\Users\horde\AppData\Local\Temp\warp-8342\renderer-no-stage\Lib\site-packages\warp\bin\warp.dll
+C:\Users\horde\AppData\Local\Temp\warp-8342\renderer-no-stage\Lib\site-packages\warp\bin\warp-clang.dll
+C:\Windows\System32\nvcuda.dll
+C:\Windows\System32\DriverStore\FileRepository\nv_dispi.inf_amd64_e980fd2c7c4fce8e\nvcuda64.dll
+C:\Users\horde\AppData\Local\Temp\warp-8342\renderer-no-stage\Lib\site-packages\ovrtx\bin\ovrtx-dynamic.dll
+C:\Users\horde\AppData\Local\Temp\warp-8342\renderer-no-stage\Lib\site-packages\ovrtx\bin\plugins\rtx\ovrtx.dylib.dll
+C:\Users\horde\AppData\Local\Temp\warp-8342\renderer-no-stage\Lib\site-packages\ovrtx\bin\plugins\gpu.foundation\cudart64_12.dll
+c:\Users\horde\AppData\Local\Temp\warp-8342\renderer-no-stage\Lib\site-packages\ovrtx\bin\plugins\scenegraph\usdrt.scenegraph.plugin.dll
+c:\Users\horde\AppData\Local\Temp\warp-8342\renderer-no-stage\Lib\site-packages\ovrtx\bin\plugins\scenegraph\usdrt.xformcache.plugin.dll
+c:\Users\horde\AppData\Local\Temp\warp-8342\renderer-no-stage\Lib\site-packages\ovrtx\bin\plugins\usdrt\usdrt.hierarchy.plugin.dll
+c:\Users\horde\AppData\Local\Temp\warp-8342\renderer-no-stage\Lib\site-packages\ovrtx\bin\plugins\usdrt\usdrt.population.plugin.dll
+c:\Users\horde\AppData\Local\Temp\warp-8342\renderer-no-stage\Lib\site-packages\ovrtx\bin\plugins\usdrt\usdrt.hydra.fabric_scene_delegate.plugin.dll

@@ -1,0 +1,14 @@
+{
+  "outcome": "completed_script_checks",
+  "shell_exit_code": 1,
+  "final_message": "Passed",
+  "note": "The script completed capture, replay, fill/value verification and renderer destruction. The PowerShell redirect wrapped stderr as NativeCommandError; the child interpreter exit status was not independently recorded.",
+  "command": [
+    "uv",
+    "run",
+    "--cache-dir",
+    "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\uv-cache",
+    "--no-project",
+    "tools/repro_isaaclab_8342/minimal_ovrtx_alloc_capture.py"
+  ]
+}

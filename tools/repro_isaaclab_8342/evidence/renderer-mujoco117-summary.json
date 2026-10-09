@@ -1,0 +1,35 @@
+[
+  {
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 96.406,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\probe_renderer_capture.py",
+      "--mujoco"
+    ]
+  },
+  {
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 21.282,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\probe_renderer_capture.py",
+      "--mujoco"
+    ]
+  },
+  {
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 21.859,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\probe_renderer_capture.py",
+      "--mujoco"
+    ]
+  }
+]

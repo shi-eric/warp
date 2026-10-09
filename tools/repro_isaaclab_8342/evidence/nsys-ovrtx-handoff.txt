@@ -1,0 +1,61 @@
+Nsight Systems 2026.3.2; CUDA/Vulkan trace; 480-second collection.
+CUDA event tracing disabled; CPU sampling/context-switch tracing disabled.
+Relevant completed API counts:
+{'name': 'cudaMallocAsync_v11020', 'calls': 39}
+{'name': 'cudaFreeAsync_v11020', 'calls': 2}
+{'name': 'cudaMemcpy3DAsync_v3020', 'calls': 1}
+{'name': 'cudaStreamBeginCapture_v10000', 'calls': 1}
+{'name': 'cuStreamGetCaptureInfo_v2', 'calls': 3}
+{'name': 'cuLaunchKernel', 'calls': 2}
+{'name': 'cudaWaitExternalSemaphoresAsync_v11020', 'calls': 58}
+{'name': 'cudaLaunchKernel_v7000', 'calls': 2}
+{'name': 'cudaImportExternalMemory_v10000', 'calls': 8}
+{'name': 'cudaExternalMemoryGetMappedMipmappedArray_v10000', 'calls': 1}
+{'name': 'cudaExternalMemoryGetMappedBuffer_v10000', 'calls': 7}
+{'name': 'cudaImportExternalSemaphore_v10000', 'calls': 6}
+Last completed APIs (newest first):
+{'start': 167527947300, 'end': 167527948000, 'globalTid': 281753679825244, 'name': 'cuCtxGetCurrent'}
+{'start': 167527934800, 'end': 167527936700, 'globalTid': 281753679825244, 'name': 'cuCtxPushCurrent_v2'}
+{'start': 167527434100, 'end': 167527828100, 'globalTid': 281753679825244, 'name': 'cuLaunchKernel'}
+{'start': 167527430600, 'end': 167527431700, 'globalTid': 281753679825244, 'name': 'cuCtxGetCurrent'}
+{'start': 167527389200, 'end': 167527390700, 'globalTid': 281753679825244, 'name': 'cuStreamGetCaptureInfo_v2'}
+{'start': 167527374200, 'end': 167527382700, 'globalTid': 281753679825244, 'name': 'cudaStreamIsCapturing_v10000'}
+{'start': 167527007800, 'end': 167527008500, 'globalTid': 281753679825244, 'name': 'cuFuncSetAttribute'}
+{'start': 167526996400, 'end': 167527000100, 'globalTid': 281753679825244, 'name': 'cuFuncSetAttribute'}
+{'start': 167526810600, 'end': 167526956500, 'globalTid': 281753679825244, 'name': 'cuModuleGetFunction'}
+{'start': 167526808700, 'end': 167526809600, 'globalTid': 281753679825244, 'name': 'cuCtxGetCurrent'}
+{'start': 167526441100, 'end': 167526767500, 'globalTid': 281753679825244, 'name': 'cuModuleGetFunction'}
+{'start': 167526437100, 'end': 167526438400, 'globalTid': 281753679825244, 'name': 'cuCtxGetCurrent'}
+{'start': 167526059100, 'end': 167526060000, 'globalTid': 281753679825244, 'name': 'cuStreamGetCaptureInfo_v2'}
+{'start': 167526031200, 'end': 167526032800, 'globalTid': 281753679825244, 'name': 'cuStreamGetCaptureInfo_v2'}
+{'start': 167525928000, 'end': 167526026100, 'globalTid': 281753679825244, 'name': 'cudaStreamBeginCapture_v10000'}
+{'start': 167525921500, 'end': 167525923000, 'globalTid': 281753679825244, 'name': 'cuCtxGetCurrent'}
+{'start': 167525879500, 'end': 167525884900, 'globalTid': 281753679825244, 'name': 'cudaStreamIsCapturing_v10000'}
+{'start': 167525625400, 'end': 167525633300, 'globalTid': 281753679825244, 'name': 'cudaEventDestroy_v3020'}
+{'start': 167525619900, 'end': 167525621400, 'globalTid': 281753679825244, 'name': 'cudaGetDevice_v3020'}
+{'start': 167525516800, 'end': 167525519700, 'globalTid': 281753679825244, 'name': 'cudaEventDestroy_v3020'}
+{'start': 167525514900, 'end': 167525516200, 'globalTid': 281753679825244, 'name': 'cudaGetDevice_v3020'}
+{'start': 167525497500, 'end': 167525503600, 'globalTid': 281753679825244, 'name': 'cudaEventDestroy_v3020'}
+{'start': 167525494800, 'end': 167525496300, 'globalTid': 281753679825244, 'name': 'cudaGetDevice_v3020'}
+{'start': 167525477100, 'end': 167525493600, 'globalTid': 281753679825244, 'name': 'cudaFreeAsync_v11020'}
+{'start': 167525462600, 'end': 167525475400, 'globalTid': 281753679825244, 'name': 'cudaStreamWaitEvent_v3020'}
+{'start': 167525441400, 'end': 167525460000, 'globalTid': 281753679825244, 'name': 'cudaEventRecord_v3020'}
+{'start': 167525427500, 'end': 167525440100, 'globalTid': 281753679825244, 'name': 'cudaEventCreateWithFlags_v3020'}
+{'start': 167525421600, 'end': 167525426100, 'globalTid': 281753679825244, 'name': 'cudaGetDevice_v3020'}
+{'start': 167524994900, 'end': 167525231500, 'globalTid': 281753679825244, 'name': 'cudaMemcpyAsync_v3020'}
+{'start': 167524989800, 'end': 167524991300, 'globalTid': 281753679825244, 'name': 'cuCtxGetCurrent'}
+{'start': 167524870900, 'end': 167524880600, 'globalTid': 281753679825244, 'name': 'cuCtxPopCurrent_v2'}
+{'start': 167524816500, 'end': 167524830100, 'globalTid': 281753679825244, 'name': 'cudaStreamIsCapturing_v10000'}
+{'start': 167522130300, 'end': 167524808900, 'globalTid': 281753679825244, 'name': 'cudaMallocAsync_v11020'}
+{'start': 167522121500, 'end': 167522122500, 'globalTid': 281753679825244, 'name': 'cuCtxGetCurrent'}
+{'start': 167522103900, 'end': 167522108500, 'globalTid': 281753679825244, 'name': 'cuCtxPushCurrent_v2'}
+{'start': 167521219200, 'end': 167521229500, 'globalTid': 281753679825244, 'name': 'cudaStreamWaitEvent_v3020'}
+{'start': 167521202200, 'end': 167521217600, 'globalTid': 281753679825244, 'name': 'cudaEventRecord_v3020'}
+{'start': 167521187400, 'end': 167521200800, 'globalTid': 281753679825244, 'name': 'cudaEventCreateWithFlags_v3020'}
+{'start': 167521181900, 'end': 167521185900, 'globalTid': 281753679825244, 'name': 'cudaGetDevice_v3020'}
+{'start': 167520853500, 'end': 167521138900, 'globalTid': 281753679825244, 'name': 'cudaMemcpy3DAsync_v3020'}
+{'start': 167520826600, 'end': 167520851700, 'globalTid': 281753679825244, 'name': 'cudaStreamWaitEvent_v3020'}
+{'start': 167518441500, 'end': 167520820700, 'globalTid': 281753679825244, 'name': 'cudaMallocAsync_v11020'}
+{'start': 167518431400, 'end': 167518435300, 'globalTid': 281753679825244, 'name': 'cudaGetDevice_v3020'}
+{'start': 167518407400, 'end': 167518416100, 'globalTid': 281753679825244, 'name': 'cudaGetChannelDesc_v3020'}
+{'start': 167518375900, 'end': 167518403300, 'globalTid': 281753679825244, 'name': 'cudaGetMipmappedArrayLevel_v5000'}

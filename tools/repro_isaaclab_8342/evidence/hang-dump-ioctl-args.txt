@@ -1,0 +1,94 @@
+Blocked DeviceIoControl arguments decoded from saved minidumps of seven hung processes.
+Stock Isaac Lab task (capture15416, nonblocking1916), exported-scene replay (exported7392), and standalone OVRTX
+(ovrtx-no-prefix3604, minimal-ovrtx12884, hang15296). Every main thread is in IOCTL 0x22e008 (UVM-Lite release)
+with input {base, length=0x18_0000_0000 (96 GiB), status}. capture15416 was dumped twice, 154 s apart:
+its base advanced from 0x4c02e00000 to 0x4c0a200000 (58 steps of 2 MiB, ~2.7 s each).
+
+== capture15416.dmp
+ tid=5472 handle=0x1540 code=0x0022e008 (dev=0x22 fn=0x802 method=0 access=3) in=0x7ec9ded4d0/24 out=0x7ec9ded4e8/24 ret=KERNELBASE.dll+0x3a293
+   in+0x000: 02e00000 0000004c 00000000 00000018 00000000 00000000
+   out+0x000: 00000000 00000000 00000000 00000000 00000000 00000000
+== capture15416-second.dmp
+ tid=5472 handle=0x1540 code=0x0022e008 (dev=0x22 fn=0x802 method=0 access=3) in=0x7ec9ded4d0/24 out=0x7ec9ded4e8/24 ret=KERNELBASE.dll+0x3a293
+   in+0x000: 0a200000 0000004c 00000000 00000018 00000000 00000000
+   out+0x000: 0a200000 0000004c 00000000 00000018 00000000 00000000
+== nonblocking1916.dmp
+ tid=9312 handle=0x16d0 code=0x0022e008 (dev=0x22 fn=0x802 method=0 access=3) in=0xf3243ed680/24 out=0xf3243ed698/24 ret=KERNELBASE.dll+0x3a293
+   in+0x000: 03400000 0000004c 00000000 00000018 00000000 00000000
+   out+0x000: 03400000 0000004c 00000000 00000018 00000000 00000000
+== exported7392.dmp
+ tid=9692 handle=0x1454 code=0x0022e008 (dev=0x22 fn=0x802 method=0 access=3) in=0xc85a9ed9e0/24 out=0xc85a9ed9f8/24 ret=KERNELBASE.dll+0x3a293
+   in+0x000: 05c00000 0000004c 00000000 00000018 00000000 00000000
+   out+0x000: 05c00000 0000004c 00000000 00000018 00000000 00000000
+== ovrtx-no-prefix3604.dmp
+ tid=6316 handle=0x128c code=0x0022e008 (dev=0x22 fn=0x802 method=0 access=3) in=0x72f89edda0/24 out=0x72f89eddb8/24 ret=KERNELBASE.dll+0x3a293
+   in+0x000: 09400000 0000004c 00000000 00000018 00000000 00000000
+   out+0x000: 00000000 00000000 00000000 00000000 00000000 00000000
+== minimal-ovrtx12884.dmp
+ tid=17180 handle=0x354 code=0x0022e008 (dev=0x22 fn=0x802 method=0 access=3) in=0xcc8afedd10/24 out=0xcc8afedd28/24 ret=KERNELBASE.dll+0x3a293
+   in+0x000: 03c00000 0000004c 00000000 00000018 00000000 00000000
+   out+0x000: 03c00000 0000004c 00000000 00000018 00000000 00000000
+== hang15296.dmp
+ tid=2588 handle=0x12cc code=0x0022e008 (dev=0x22 fn=0x802 method=0 access=3) in=0xb40abeda30/24 out=0xb40abeda48/24 ret=KERNELBASE.dll+0x3a293
+   in+0x000: 04c00000 0000004c 00000000 00000018 00000000 00000000
+   out+0x000: 00000000 00000000 00000000 00000000 00000000 00000000
+
+Kernel/user CPU time of the busiest threads. Between the two capture15416 dumps (154 s apart), main thread 5472
+gained 150.25 s of kernel time and no user time: it spins in the driver rather than waiting.
+
+== capture15416.dmp
+  tid=5472 kernel=62.094s user=89.938s
+  tid=9588 kernel=19.453s user=36.250s
+  tid=6544 kernel=9.125s user=31.312s
+  tid=6708 kernel=0.781s user=15.453s
+  tid=15948 kernel=0.516s user=7.203s
+  tid=14208 kernel=0.906s user=5.625s
+== capture15416-second.dmp
+  tid=5472 kernel=212.344s user=89.938s
+  tid=9588 kernel=47.188s user=88.594s
+  tid=6544 kernel=9.125s user=31.312s
+  tid=6708 kernel=0.781s user=15.453s
+  tid=15948 kernel=0.531s user=7.438s
+  tid=14208 kernel=0.984s user=5.797s
+
+Live sample of hang15296 (GPU idle while the main thread, 2588, runs in kernel mode):
+--- sample 0 at 225.1s
+smi: 2026/10/08 18:34:46.562, 4103 MiB, 49140 MiB, 6 %, 2 %, P8, 210 MHz, 23.70 W
+threads:
+3556 priv=13.77s user=138.33s state=Wait wait=Unknown
+1432 priv=50.06s user=91.08s state=Running wait=
+2588 priv=51.36s user=11.44s state=Running wait=
+4532 priv=1.59s user=9.09s state=Wait wait=UserRequest
+5448 priv=1.22s user=8.78s state=Wait wait=UserRequest
+6108 priv=1.39s user=8.42s state=Wait wait=UserRequest
+\\<host>\gpu process memory(pid_15296_luid_0x00000000_0x0008b275_phys_0)\dedicated usage = 3,516,055,552.0
+\\<host>\gpu process memory(pid_15296_luid_0x00000000_0x0008b275_phys_0)\shared usage = 1,042,546,688.0
+\\<host>\gpu adapter memory(luid_0x00000000_0x0008b275_phys_0)\dedicated usage = 4,318,437,376.0
+\\<host>\gpu adapter memory(luid_0x00000000_0x0008b275_phys_0)\shared usage = 1,206,726,656.0
+--- sample 1 at 241.4s
+smi: 2026/10/08 18:35:02.930, 4103 MiB, 49140 MiB, 1 %, 0 %, P8, 210 MHz, 24.24 W
+threads:
+1432 priv=54.92s user=100.00s state=Wait wait=ExecutionDelay
+3556 priv=13.77s user=138.33s state=Wait wait=Unknown
+2588 priv=69.00s user=11.44s state=Running wait=
+4532 priv=1.59s user=9.09s state=Wait wait=UserRequest
+5448 priv=1.22s user=8.78s state=Wait wait=UserRequest
+6520 priv=1.70s user=8.11s state=Wait wait=UserRequest
+\\<host>\gpu process memory(pid_15296_luid_0x00000000_0x0008b275_phys_0)\dedicated usage = 3,516,055,552.0
+\\<host>\gpu process memory(pid_15296_luid_0x00000000_0x0008b275_phys_0)\shared usage = 1,042,546,688.0
+\\<host>\gpu adapter memory(luid_0x00000000_0x0008b275_phys_0)\dedicated usage = 4,318,457,856.0
+\\<host>\gpu adapter memory(luid_0x00000000_0x0008b275_phys_0)\shared usage = 1,206,968,320.0
+--- sample 2 at 256.1s
+smi: 2026/10/08 18:35:17.555, 4103 MiB, 49140 MiB, 1 %, 0 %, P8, 210 MHz, 23.77 W
+threads:
+1432 priv=58.61s user=107.36s state=Running wait=
+3556 priv=13.77s user=138.33s state=Wait wait=Unknown
+2588 priv=83.92s user=11.44s state=Running wait=
+4532 priv=1.59s user=9.09s state=Wait wait=UserRequest
+5448 priv=1.22s user=8.78s state=Wait wait=UserRequest
+6520 priv=1.70s user=8.11s state=Wait wait=UserRequest
+\\<host>\gpu process memory(pid_15296_luid_0x00000000_0x0008b275_phys_0)\dedicated usage = 3,516,055,552.0
+\\<host>\gpu process memory(pid_15296_luid_0x00000000_0x0008b275_phys_0)\shared usage = 1,042,546,688.0
+\\<host>\gpu adapter memory(luid_0x00000000_0x0008b275_phys_0)\dedicated usage = 4,318,482,432.0
+\\<host>\gpu adapter memory(luid_0x00000000_0x0008b275_phys_0)\shared usage = 1,206,091,776.0
+dump: runs\ovrtx-min-1\hang15296.dmp

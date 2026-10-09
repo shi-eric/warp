@@ -1,0 +1,53 @@
+[
+  {
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 30.828,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/cuda-only/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\probe_cuda_interop_capture.py",
+      "--backend",
+      "vulkan-image",
+      "--image-side",
+      "5824",
+      "--staging",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 30.609,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/cuda-only/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\probe_cuda_interop_capture.py",
+      "--backend",
+      "vulkan-image",
+      "--image-side",
+      "5824",
+      "--staging",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 29.532,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/cuda-only/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\probe_cuda_interop_capture.py",
+      "--backend",
+      "vulkan-image",
+      "--image-side",
+      "5824",
+      "--staging",
+      "--rounds",
+      "100"
+    ]
+  }
+]

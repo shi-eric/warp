@@ -1,0 +1,6 @@
+kernel_cache/
+results/
+renderer-native.log
+optix7cache.db*
+_output/
+benchmark_runtime_*.json

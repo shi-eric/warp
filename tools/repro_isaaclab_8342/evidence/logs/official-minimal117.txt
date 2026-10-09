@@ -1,0 +1,16 @@
+Creating renderer. The first run of the application will take some time as shaders are compiled and cached...
+[Warning] [carb] Source: carb_profiler_nvtx_plugin was already registered.
+I: Initializing Version 2.74.0-release.7316+gl.ec99a64b
+I: Client ID: 4QJZFEC4
+I: ThreadId(02) hub_client::client::Client::new Launching client mode=Shared with_cleaner=false cache_path=None cache_size=None
+I: ThreadId(03) launch self=Launcher { discovery_lock: RwLock { lock: RwLock { inner: File { handle: 0x7e0, path: "\\\\?\\C:\\Users\\horde\\AppData\\Local\\Temp\\hub-horde.lock" } } }, mode: Shared, with_cleaner: false, config_file: "C:\\Users\\horde\\AppData\\Local\\Temp\\hub-horde-24BE4D81.config.json" } cmd="hub.exe" "--mode=shared" "--write-config" "C:\\Users\\horde\\AppData\\Local\\Temp\\hub-horde-24BE4D81.config.json" "--"
+I: Not using Hub: Hub not found
+2026-10-07T23:40:03Z [6,551ms] [Warning] [carb.tasking.plugin] carb.tasking is likely stuck. All threads are busy with same tasks for more than 1 seconds with waiting tasks. Starting an emergency helper thread.
+Renderer created.
+Opening https://omniverse-content-production.s3.us-west-2.amazonaws.com/Samples/Robot-OVRTX/robot-ovrtx.usda...
+USD loaded.
+Stepping renderer...
+Stepped renderer.
+Fetching results...
+Saved to _output\render.png
+Fetched results.

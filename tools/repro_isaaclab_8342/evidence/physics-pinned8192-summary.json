@@ -1,0 +1,25 @@
+[
+  {
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 256.765,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/IsaacLab/.venv/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\run_camera.py",
+      "--task",
+      "Isaac-Lift-KukaAllegro",
+      "--num_envs",
+      "8192",
+      "--num_steps",
+      "3",
+      "--warmup_steps",
+      "3",
+      "--seed",
+      "42",
+      "--device",
+      "cuda:0",
+      "presets=newton_mjwarp"
+    ]
+  }
+]

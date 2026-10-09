@@ -1,0 +1,53 @@
+[
+  {
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 155.0,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/renderer-no-stage/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\probe_ovrtx_capture.py",
+      "--cameras",
+      "8192",
+      "--objects",
+      "32",
+      "--rounds",
+      "3",
+      "--inline-environments"
+    ]
+  },
+  {
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 267.156,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/renderer-no-stage/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\probe_ovrtx_capture.py",
+      "--cameras",
+      "8192",
+      "--objects",
+      "32",
+      "--rounds",
+      "3",
+      "--inline-environments"
+    ]
+  },
+  {
+    "outcome": "failed",
+    "exit_code": 1,
+    "seconds": 421.015,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/renderer-no-stage/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\probe_ovrtx_capture.py",
+      "--cameras",
+      "8192",
+      "--objects",
+      "32",
+      "--rounds",
+      "3",
+      "--inline-environments"
+    ]
+  }
+]

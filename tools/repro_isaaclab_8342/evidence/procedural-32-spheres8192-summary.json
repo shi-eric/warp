@@ -1,0 +1,27 @@
+[
+  {
+    "outcome": "timeout",
+    "exit_code": null,
+    "seconds": 360.031,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/IsaacLab/.venv/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\probe_renderer_capture.py",
+      "--cameras",
+      "8192",
+      "--objects",
+      "32",
+      "--rounds",
+      "10",
+      "--kernel-first",
+      "--gpu-map",
+      "--hierarchy",
+      "GPU_INCREMENTAL",
+      "--release-products",
+      "--shading-mode",
+      "3",
+      "--torch",
+      "--gpu-transforms"
+    ]
+  }
+]

@@ -1,0 +1,78 @@
+Warp 1.17.0 initialized:
+   CUDA Toolkit 12.9, Driver 13.2
+   Devices:
+     "cpu"      : "Intel64 Family 6 Model 134 Stepping 0, GenuineIntel"
+     "cuda:0"   : "NVIDIA A40" (48 GiB, sm_86, mempool enabled)
+   Kernel cache:
+     \\?\C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\kernel_cache\1.17.0
+Versions: {'warp-lang': '1.17.0', 'cuda-bindings': '12.9.5', 'numpy': '2.5.1'} Args: {'backend': 'vulkan', 'rounds': 20, 'image_mib': 16, 'image_side': None, 'buffers': 6, 'producer_flags': 1, 'producer_repeats': 1024, 'report_pending': True, 'staging': False, 'background': True, 'non_dedicated': True}
+OVRTX, OVStage, and Torch unavailable
+Module prefix_kernels a199671 load on device 'cpu' took 7.63 ms  (cached)
+Module prefix_kernels a199671 load on device 'cuda:0' took 6.27 ms  (cached)
+Vulkan device: NVIDIA A40
+Vulkan device: NVIDIA A40
+Vulkan device: NVIDIA A40
+Vulkan device: NVIDIA A40
+Vulkan device: NVIDIA A40
+Vulkan device: NVIDIA A40
+Round 1: producer pending=[True, True, True, True, True, True]
+Round 1: before captured allocation
+Round 1: after captured allocation
+Round 2: producer pending=[True, True, True, True, True, True]
+Round 2: before captured allocation
+Round 2: after captured allocation
+Round 3: producer pending=[True, True, True, True, True, True]
+Round 3: before captured allocation
+Round 3: after captured allocation
+Round 4: producer pending=[True, True, True, True, True, True]
+Round 4: before captured allocation
+Round 4: after captured allocation
+Round 5: producer pending=[True, True, True, True, True, True]
+Round 5: before captured allocation
+Round 5: after captured allocation
+Round 6: producer pending=[True, True, True, True, True, True]
+Round 6: before captured allocation
+Round 6: after captured allocation
+Round 7: producer pending=[True, True, True, True, True, True]
+Round 7: before captured allocation
+Round 7: after captured allocation
+Round 8: producer pending=[True, True, True, True, True, True]
+Round 8: before captured allocation
+Round 8: after captured allocation
+Round 9: producer pending=[True, True, True, True, True, True]
+Round 9: before captured allocation
+Round 9: after captured allocation
+Round 10: producer pending=[True, True, True, True, True, True]
+Round 10: before captured allocation
+Round 10: after captured allocation
+Round 11: producer pending=[True, True, True, True, True, True]
+Round 11: before captured allocation
+Round 11: after captured allocation
+Round 12: producer pending=[True, True, True, True, True, True]
+Round 12: before captured allocation
+Round 12: after captured allocation
+Round 13: producer pending=[True, True, True, True, True, True]
+Round 13: before captured allocation
+Round 13: after captured allocation
+Round 14: producer pending=[True, True, True, True, True, True]
+Round 14: before captured allocation
+Round 14: after captured allocation
+Round 15: producer pending=[True, True, True, True, True, True]
+Round 15: before captured allocation
+Round 15: after captured allocation
+Round 16: producer pending=[True, True, True, True, True, True]
+Round 16: before captured allocation
+Round 16: after captured allocation
+Round 17: producer pending=[True, True, True, True, True, True]
+Round 17: before captured allocation
+Round 17: after captured allocation
+Round 18: producer pending=[True, True, True, True, True, True]
+Round 18: before captured allocation
+Round 18: after captured allocation
+Round 19: producer pending=[True, True, True, True, True, True]
+Round 19: before captured allocation
+Round 19: after captured allocation
+Round 20: producer pending=[True, True, True, True, True, True]
+Round 20: before captured allocation
+Round 20: after captured allocation
+Passed: 20 vulkan/CUDA/Warp capture rounds

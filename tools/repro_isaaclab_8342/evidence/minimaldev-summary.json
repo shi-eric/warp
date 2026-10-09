@@ -1,0 +1,12 @@
+[
+  {
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.516,
+    "command": [
+      "C:/Users/horde/Code/warp/.venv/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\minimal_alloc_capture.py"
+    ]
+  }
+]

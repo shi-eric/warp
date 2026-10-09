@@ -1,0 +1,21 @@
+[
+  {
+    "outcome": "failed",
+    "exit_code": 1,
+    "seconds": 341.671,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/renderer-no-stage/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\trace_cuda_handoff.py",
+      "--dll",
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/trace_cuda_handoff.dll",
+      "--cupti",
+      "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v13.4/extras/CUPTI/lib/x64",
+      "--log",
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/params8192.txt",
+      "probe_ovrtx_capture.py",
+      "--rounds",
+      "3"
+    ]
+  }
+]

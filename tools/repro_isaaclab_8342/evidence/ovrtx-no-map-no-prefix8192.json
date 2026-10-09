@@ -1,0 +1,16 @@
+[
+  {
+    "outcome": "failed",
+    "exit_code": 1,
+    "seconds": 318.656,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/renderer-no-stage/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\probe_ovrtx_capture.py",
+      "--no-map",
+      "--no-prefix",
+      "--rounds",
+      "3"
+    ]
+  }
+]

@@ -1,0 +1,317 @@
+uv : Installed 3 packages in 2.52s
+At line:4 char:1
++ uv run --cache-dir C:/Users/horde/AppData/Local/Temp/warp-8342/uv-cac ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Installed 3 packages in 2.52s:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Warp 1.17.0 initialized:
+   CUDA Toolkit 12.9, Driver 13.2
+   Devices:
+     "cpu"      : "Intel64 Family 6 Model 134 Stepping 0, GenuineIntel"
+     "cuda:0"   : "NVIDIA A40" (48 GiB, sm_86, mempool enabled)
+   Kernel cache:
+     \\?\C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\kernel_cache\1.17.0
+[Warning] [carb] Source: carb_profiler_nvtx_plugin was already registered.
+I: Initializing Version 2.74.0-release.7316+gl.ec99a64b
+I: Client ID: 5XA93T6T
+Opening generated scene
+C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py:70: DeprecationWarning: 
+Renderer.open_usd_from_string has been deprecated since ovrtx 0.4. Use ovstage.population with an ovstage.Stage, 
+attach it with Renderer.attach_ovstage(), and render with Renderer.step(..., ordinal=...).
+  renderer.open_usd_from_string(scene)
+2026-10-08T10:01:36Z [0ms] [Warning] [omni.rtx] ovrtx_open_usd_from_string is deprecated; use ovstage_population_open_usd_from_string and render via ovrtx_attach_ovstage / ovrtx_step_with_stage.
+C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py:78: DeprecationWarning: 
+Renderer.write_attribute has been deprecated since ovrtx 0.4. Use ovstage.Stage.write_attribute() with an ordinal and 
+reusable query instead.
+  renderer.write_attribute(
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\bindings.py", line 1286 in wait_op
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 925 in _wait_operation
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\types.py", line 181 in wait
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 2872 in write_attribute
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\helpers.py", line 44 in wrapped
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 78 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\bindings.py", line 1286 in wait_op
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 925 in _wait_operation
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\types.py", line 181 in wait
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 2872 in write_attribute
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\helpers.py", line 44 in wrapped
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 78 in <module>
+Rendering
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\bindings.py", line 1286 in wait_op
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 925 in _wait_operation
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\types.py", line 181 in wait
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 1018 in step
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 87 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\bindings.py", line 1286 in wait_op
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 925 in _wait_operation
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\types.py", line 181 in wait
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 1018 in step
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 87 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\bindings.py", line 1286 in wait_op
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 925 in _wait_operation
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\types.py", line 181 in wait
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 1018 in step
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 87 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\bindings.py", line 1286 in wait_op
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 925 in _wait_operation
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\types.py", line 181 in wait
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 1018 in step
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 87 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\bindings.py", line 1286 in wait_op
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 925 in _wait_operation
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\types.py", line 181 in wait
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 1018 in step
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 87 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\bindings.py", line 1286 in wait_op
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 925 in _wait_operation
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\types.py", line 181 in wait
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 1018 in step
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 87 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\bindings.py", line 1286 in wait_op
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 925 in _wait_operation
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\types.py", line 181 in wait
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 1018 in step
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 87 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\bindings.py", line 1286 in wait_op
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 925 in _wait_operation
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\types.py", line 181 in wait
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 1018 in step
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 87 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\bindings.py", line 1286 in wait_op
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 925 in _wait_operation
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\types.py", line 181 in wait
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 1018 in step
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 87 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\bindings.py", line 1286 in wait_op
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 925 in _wait_operation
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\types.py", line 181 in wait
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 1018 in step
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 87 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\bindings.py", line 1286 in wait_op
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 925 in _wait_operation
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\types.py", line 181 in wait
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 1018 in step
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 87 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\bindings.py", line 1286 in wait_op
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 925 in _wait_operation
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\types.py", line 181 in wait
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 1018 in step
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 87 in <module>
+Before captured allocation
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 5044 in allocate
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3901 in _init_new
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3418 in __init__
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 9869 in empty
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 90 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 5044 in allocate
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3901 in _init_new
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3418 in __init__
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 9869 in empty
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 90 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 5044 in allocate
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3901 in _init_new
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3418 in __init__
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 9869 in empty
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 90 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 5044 in allocate
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3901 in _init_new
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3418 in __init__
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 9869 in empty
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 90 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 5044 in allocate
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3901 in _init_new
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3418 in __init__
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 9869 in empty
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 90 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 5044 in allocate
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3901 in _init_new
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3418 in __init__
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 9869 in empty
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 90 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 5044 in allocate
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3901 in _init_new
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3418 in __init__
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 9869 in empty
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 90 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 5044 in allocate
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3901 in _init_new
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3418 in __init__
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 9869 in empty
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 90 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 5044 in allocate
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3901 in _init_new
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3418 in __init__
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 9869 in empty
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 90 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 5044 in allocate
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3901 in _init_new
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3418 in __init__
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 9869 in empty
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 90 in <module>
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 5044 in allocate
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3901 in _init_new
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\types.py", line 3418 in __init__
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\warp\_src\context.py", line 9869 in empty
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 90 in <module>
+After captured allocation
+Timeout (0:01:00)!
+Thread 0x00001a2c (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\bindings.py", line 1196 in destroy_renderer
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\uv-cache\environments-v2\minimal-ovrtx-alloc-capture-30a3099b1a96fd
+a5\Lib\site-packages\ovrtx\_src\renderer.py", line 361 in destroy
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\minimal_ovrtx_alloc_capture.py", line 96 in <module>
+Passed

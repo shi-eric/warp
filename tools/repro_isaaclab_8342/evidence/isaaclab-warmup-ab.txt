@@ -1,0 +1,82 @@
+Warm-up A/B test on the stock Isaac Lab #8342 benchmark, 2026-10-08.
+Windows 11 26100, NVIDIA A40 (WDDM), driver 595.97, Isaac Lab 1d5a8fc, Warp 1.17.0, OVRTX 0.5.0.377615.
+Command: trace_uvm_ioctls.py --log <run>-uvm.txt run_isaaclab.py [--warmup-capture early|solver]
+  --task Isaac-Lift-KukaAllegro-Camera --num_envs 8192 --num_steps 3 --warmup_steps 3 --seed 42 --device cuda:0
+  presets=newton_mjwarp,ovrtx,single_camera,simple_shading_full_mdl64
+  with ISAAC_LAB_OVRTX_USE_OVSTAGE=1, OMNICLIENT_HUB_MODE=disabled, HEADLESS=1,
+  ISAAC_LAB_OVRTX_READ_GPU_TRANSFORMS=1 unless noted. Runs were interleaved in the order listed.
+
+Variants:
+  baseline: unmodified.
+  early:    one captured 4-byte wp.empty when gym.make is entered, before the environment exists.
+  solver:   one captured 4-byte wp.empty from NewtonManager._invalidate_graph, where Newton captured before #8058.
+  no-gpu-transforms: ISAAC_LAB_OVRTX_READ_GPU_TRANSFORMS unset. Isaac Lab defaults it to 1, so this equals baseline.
+  gpu-transforms-0: ISAAC_LAB_OVRTX_READ_GPU_TRANSFORMS=0.
+A run was classified hung-in-capture and terminated when Newton's graph capture had not returned 90 s after entry;
+healthy captures returned in 1.8-2.4 s. Times (t, markers) are seconds after the tracer started.
+graph_reserves/failed count 96 GiB UVM-Lite reserve/release IOCTLs, i.e. graph-window placements made while
+UVM-Lite was active, and base is the last attempted base.
+
+01-early               passed           capture=2.281  managed_t=100.393  graph_reserves=0   failed=0   release_s=0.0    base=None markers={'GYM_MAKE_ENTER': 13.4, 'GRAPH_WARMUP_CAPTURE': 16.9, 'GRAPH_CAPTURE_ENTER': 174.5}
+02-baseline            passed           capture=2.172  managed_t=102.104  graph_reserves=1   failed=0   release_s=0.0    base=0x5139400000 markers={'GYM_MAKE_ENTER': 10.6, 'GRAPH_CAPTURE_ENTER': 170.9}
+03-solver              passed           capture=2.141  managed_t=100.117  graph_reserves=1   failed=0   release_s=0.0    base=0x5300000000 markers={'GYM_MAKE_ENTER': 10.7, 'GRAPH_WARMUP_CAPTURE': 132.3, 'GRAPH_CAPTURE_ENTER': 163.6}
+04-early               passed           capture=2.0    managed_t=98.994   graph_reserves=0   failed=0   release_s=0.0    base=None markers={'GYM_MAKE_ENTER': 10.5, 'GRAPH_WARMUP_CAPTURE': 14.1, 'GRAPH_CAPTURE_ENTER': 178.0}
+05-baseline            hung-in-capture  capture=None   managed_t=104.965  graph_reserves=35  failed=34  release_s=91.0   base=0x4c04400000 markers={'GYM_MAKE_ENTER': 10.5, 'GRAPH_CAPTURE_ENTER': 182.7}
+06-solver              passed           capture=1.859  managed_t=101.267  graph_reserves=1   failed=0   release_s=0.0    base=0x4c00000000 markers={'GYM_MAKE_ENTER': 9.6, 'GRAPH_WARMUP_CAPTURE': 145.1, 'GRAPH_CAPTURE_ENTER': 176.0}
+07-early               passed           capture=2.157  managed_t=97.613   graph_reserves=0   failed=0   release_s=0.0    base=None markers={'GYM_MAKE_ENTER': 10.9, 'GRAPH_WARMUP_CAPTURE': 14.5, 'GRAPH_CAPTURE_ENTER': 167.4}
+08-baseline            hung-in-capture  capture=None   managed_t=106.343  graph_reserves=38  failed=37  release_s=90.8   base=0x4c04a00000 markers={'GYM_MAKE_ENTER': 9.9, 'GRAPH_CAPTURE_ENTER': 184.3}
+09-solver              passed           capture=1.922  managed_t=102.724  graph_reserves=1   failed=0   release_s=0.0    base=0x4c00000000 markers={'GYM_MAKE_ENTER': 10.8, 'GRAPH_WARMUP_CAPTURE': 142.7, 'GRAPH_CAPTURE_ENTER': 177.7}
+10-early               passed           capture=1.797  managed_t=101.214  graph_reserves=0   failed=0   release_s=0.0    base=None markers={'GYM_MAKE_ENTER': 9.9, 'GRAPH_WARMUP_CAPTURE': 13.5, 'GRAPH_CAPTURE_ENTER': 179.5}
+11-baseline            hung-in-capture  capture=None   managed_t=100.634  graph_reserves=39  failed=38  release_s=92.0   base=0x4c04c00000 markers={'GYM_MAKE_ENTER': 10.7, 'GRAPH_CAPTURE_ENTER': 173.0}
+12-solver              passed           capture=2.312  managed_t=101.088  graph_reserves=1   failed=0   release_s=0.0    base=0x4c00000000 markers={'GYM_MAKE_ENTER': 9.1, 'GRAPH_WARMUP_CAPTURE': 138.8, 'GRAPH_CAPTURE_ENTER': 171.0}
+13-early               passed           capture=2.375  managed_t=98.831   graph_reserves=0   failed=0   release_s=0.0    base=None markers={'GYM_MAKE_ENTER': 10.3, 'GRAPH_WARMUP_CAPTURE': 14.2, 'GRAPH_CAPTURE_ENTER': 160.2}
+14-baseline            passed           capture=2.157  managed_t=94.062   graph_reserves=1   failed=0   release_s=0.0    base=0x5200000000 markers={'GYM_MAKE_ENTER': 10.2, 'GRAPH_CAPTURE_ENTER': 154.3}
+15-solver              passed           capture=1.766  managed_t=93.791   graph_reserves=1   failed=0   release_s=0.0    base=0x4c00000000 markers={'GYM_MAKE_ENTER': 9.6, 'GRAPH_WARMUP_CAPTURE': 132.6, 'GRAPH_CAPTURE_ENTER': 165.1}
+16-early               passed           capture=2.141  managed_t=100.829  graph_reserves=0   failed=0   release_s=0.0    base=None markers={'GYM_MAKE_ENTER': 10.0, 'GRAPH_WARMUP_CAPTURE': 13.3, 'GRAPH_CAPTURE_ENTER': 162.0}
+17-baseline            hung-in-capture  capture=None   managed_t=93.164   graph_reserves=42  failed=41  release_s=90.3   base=0x4c05200000 markers={'GYM_MAKE_ENTER': 9.5, 'GRAPH_CAPTURE_ENTER': 154.8}
+18-solver              passed           capture=2.0    managed_t=98.366   graph_reserves=1   failed=0   release_s=0.0    base=0x4c00000000 markers={'GYM_MAKE_ENTER': 10.2, 'GRAPH_WARMUP_CAPTURE': 136.7, 'GRAPH_CAPTURE_ENTER': 169.1}
+19-no-gpu-transforms   hung-in-capture  capture=None   managed_t=96.768   graph_reserves=38  failed=37  release_s=89.8   base=0x4c04a00000 markers={'GYM_MAKE_ENTER': 9.4, 'GRAPH_CAPTURE_ENTER': 163.7}
+20-no-gpu-transforms   hung-in-capture  capture=None   managed_t=101.011  graph_reserves=39  failed=38  release_s=93.4   base=0x4c04c00000 markers={'GYM_MAKE_ENTER': 11.2, 'GRAPH_CAPTURE_ENTER': 170.3}
+01-gpu-transforms-0    hung-in-capture  capture=None   managed_t=98.45    graph_reserves=40  failed=39  release_s=89.9   base=0x4c04e00000 markers={'GYM_MAKE_ENTER': 10.7, 'GRAPH_CAPTURE_ENTER': 169.5}
+02-gpu-transforms-0    hung-in-capture  capture=None   managed_t=92.721   graph_reserves=43  failed=42  release_s=94.3   base=0x4c05400000 markers={'GYM_MAKE_ENTER': 8.6, 'GRAPH_CAPTURE_ENTER': 166.4}
+
+First 96 GiB UVM-Lite reservation per run (t, base):
+  01-early: none (graph window reserved before UVM-Lite was initialized)
+  02-baseline: t=170.955 base=0x5139400000
+  03-solver: t=132.326 base=0x5300000000
+  04-early: none (graph window reserved before UVM-Lite was initialized)
+  05-baseline: t=182.730 base=0x4c00000000
+  06-solver: t=145.049 base=0x4c00000000
+  07-early: none (graph window reserved before UVM-Lite was initialized)
+  08-baseline: t=184.312 base=0x4c00000000
+  09-solver: t=142.720 base=0x4c00000000
+  10-early: none (graph window reserved before UVM-Lite was initialized)
+  11-baseline: t=172.986 base=0x4c00000000
+  12-solver: t=138.760 base=0x4c00000000
+  13-early: none (graph window reserved before UVM-Lite was initialized)
+  14-baseline: t=154.328 base=0x5200000000
+  15-solver: t=132.606 base=0x4c00000000
+  16-early: none (graph window reserved before UVM-Lite was initialized)
+  17-baseline: t=154.843 base=0x4c00000000
+  18-solver: t=136.717 base=0x4c00000000
+  19-no-gpu-transforms: t=163.667 base=0x4c00000000
+  20-no-gpu-transforms: t=170.315 base=0x4c00000000
+  01-gpu-transforms-0: t=169.525 base=0x4c00000000
+  02-gpu-transforms-0: t=166.413 base=0x4c00000000
+
+Tally:
+  baseline-equivalent (baseline, no-gpu-transforms): 6 of 8 hung. Every hang began its graph-window placement at
+    0x4c00000000 when capture started and failed 34-41 times in 2 MiB steps within 90 s. Both passes placed the
+    window at an alternative base on the first attempt (0x5139400000, 0x5200000000).
+  early: 0 of 6 hung. The warm-up ran 13-17 s after start, before UVM-Lite was initialized (97-101 s), so no graph
+    window placement went through UVM-Lite, and capture made none.
+  solver: 0 of 6 hung. The warm-up ran at 132-145 s, after UVM-Lite initialization but before foreign GPU VA occupied
+    0x4c00000000. It placed the window on the first attempt, at 0x4c00000000 in 5 of 6 runs; capture made no placement.
+  Warm-up (12 runs) vs baseline-equivalent (8 runs): 0/12 vs 6/8 hung, one-sided Fisher exact p = 28/38760 = 0.0007.
+  gpu-transforms-0: 2 of 2 hung. The 0x4820-byte managed allocation is still made.
+
+Native stack of that managed allocation with ISAAC_LAB_OVRTX_READ_GPU_TRANSFORMS=0 (first UVM-Lite commit, t=97.3 s;
+frames above nvcuda64.dll are the IOCTL hook):
+  nvcuda64.dll (8 frames) <- omni.cubric.plugin.dll (5) <- usdrt.hierarchy.plugin.dll (2) <- ovstage.dll (12, worker thread)
+In the standalone OVRTX script without OVStage, the same allocation comes from ovrtx.dylib.dll through the same
+usdrt.hierarchy and omni.cubric frames, and read_gpu_transforms=False removed it (one run, no UVM-Lite IOCTLs).

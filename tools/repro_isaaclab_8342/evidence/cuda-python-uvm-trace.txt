@@ -1,0 +1,34 @@
+CUDA Python only: minimal_uvm_va_capture.py under trace_uvm_ioctls.py.
+Windows 11 26100, NVIDIA A40 (WDDM), driver 595.97, cuda-bindings 12.9.5, 2026-10-08.
+reserve/release/commit are DeviceIoControl codes 0x22e004/0x22e008/0x22e00c sent by nvcuda64.dll
+to the UVM-Lite process handle; parameters are {base, length, status}.
+
+--- stdout
+Device: NVIDIA A40
+Pool allocation at 0x2000000000
+Managed allocation at 0x3800000000 (UVM-Lite initialized)
+Reserved foreign GPU VA [0x4500000000, 0x4501000000) with D3DKMT
+Capturing a 32 KiB cuMemAllocAsync
+  ...captured cuMemAllocAsync still running after 10 s
+Captured allocation at 0x4501000000 took 16.693 s
+REPRODUCED: the driver retried the graph window placement past the foreign VA
+--- UVM-Lite IOCTLs
+[    0.342s] tid=12896 reserve base=0x3800000000 length=0xd00000000 ok=1     0.014 ms
+[    0.343s] tid=12896 commit  base=0x3800000000 length=0x4820 ok=1     0.051 ms
+[    0.432s] tid=12896 reserve base=0x4500000000 length=0x1800000000 ok=1     0.044 ms
+[    0.432s] tid=12896 release base=0x4500000000 length=0x1800000000 ok=1  2494.978 ms
+[    2.935s] tid=12896 reserve base=0x4500200000 length=0x1800000000 ok=1     0.046 ms
+[    2.935s] tid=12896 release base=0x4500200000 length=0x1800000000 ok=1  1749.349 ms
+[    4.686s] tid=12896 reserve base=0x4500400000 length=0x1800000000 ok=1     0.019 ms
+[    4.687s] tid=12896 release base=0x4500400000 length=0x1800000000 ok=1  1778.523 ms
+[    6.466s] tid=12896 reserve base=0x4500600000 length=0x1800000000 ok=1     0.026 ms
+[    6.466s] tid=12896 release base=0x4500600000 length=0x1800000000 ok=1  2268.965 ms
+[    8.737s] tid=12896 reserve base=0x4500800000 length=0x1800000000 ok=1     0.024 ms
+[    8.737s] tid=12896 release base=0x4500800000 length=0x1800000000 ok=1  1910.802 ms
+[   10.648s] tid=12896 reserve base=0x4500a00000 length=0x1800000000 ok=1     0.020 ms
+[   10.648s] tid=12896 release base=0x4500a00000 length=0x1800000000 ok=1  2270.550 ms
+[   12.921s] tid=12896 reserve base=0x4500c00000 length=0x1800000000 ok=1     0.032 ms
+[   12.921s] tid=12896 release base=0x4500c00000 length=0x1800000000 ok=1  2119.422 ms
+[   15.041s] tid=12896 reserve base=0x4500e00000 length=0x1800000000 ok=1     0.019 ms
+[   15.041s] tid=12896 release base=0x4500e00000 length=0x1800000000 ok=1  2074.115 ms
+[   17.117s] tid=12896 reserve base=0x4501000000 length=0x1800000000 ok=1     0.030 ms

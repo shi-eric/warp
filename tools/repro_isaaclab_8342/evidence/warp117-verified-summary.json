@@ -1,0 +1,1298 @@
+[
+  {
+    "case": "thread_local-default-legacy0-raw0-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.844,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "default",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "thread_local-default-legacy0-raw1-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.516,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "thread_local-default-legacy1-raw0-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.828,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "thread_local-default-legacy1-raw1-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.578,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  },
+  {
+    "case": "thread_local-nonblocking-legacy0-raw0-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.594,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "thread_local-nonblocking-legacy0-raw1-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.593,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "thread_local-nonblocking-legacy1-raw0-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 3.11,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "thread_local-nonblocking-legacy1-raw1-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.75,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  },
+  {
+    "case": "relaxed-default-legacy0-raw0-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.515,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "default",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "relaxed-default-legacy0-raw1-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.594,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "relaxed-default-legacy1-raw0-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 3.203,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "relaxed-default-legacy1-raw1-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.797,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  },
+  {
+    "case": "relaxed-nonblocking-legacy0-raw0-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.578,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "relaxed-nonblocking-legacy0-raw1-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.328,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "relaxed-nonblocking-legacy1-raw0-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.641,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "relaxed-nonblocking-legacy1-raw1-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.844,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  },
+  {
+    "case": "global-default-legacy0-raw0-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 3.047,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "default",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "global-default-legacy0-raw1-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.969,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "global-default-legacy1-raw0-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.969,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "global-default-legacy1-raw1-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.515,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  },
+  {
+    "case": "global-nonblocking-legacy0-raw0-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.969,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "global-nonblocking-legacy0-raw1-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.766,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "global-nonblocking-legacy1-raw0-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.984,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "global-nonblocking-legacy1-raw1-trial1",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.812,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  },
+  {
+    "case": "thread_local-default-legacy0-raw0-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.89,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "default",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "thread_local-default-legacy0-raw1-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.672,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "thread_local-default-legacy1-raw0-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.531,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "thread_local-default-legacy1-raw1-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.297,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  },
+  {
+    "case": "thread_local-nonblocking-legacy0-raw0-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.453,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "thread_local-nonblocking-legacy0-raw1-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.469,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "thread_local-nonblocking-legacy1-raw0-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.969,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "thread_local-nonblocking-legacy1-raw1-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.046,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  },
+  {
+    "case": "relaxed-default-legacy0-raw0-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.875,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "default",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "relaxed-default-legacy0-raw1-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.157,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "relaxed-default-legacy1-raw0-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.484,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "relaxed-default-legacy1-raw1-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.797,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  },
+  {
+    "case": "relaxed-nonblocking-legacy0-raw0-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.219,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "relaxed-nonblocking-legacy0-raw1-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.375,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "relaxed-nonblocking-legacy1-raw0-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.812,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "relaxed-nonblocking-legacy1-raw1-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.141,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  },
+  {
+    "case": "global-default-legacy0-raw0-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.781,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "default",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "global-default-legacy0-raw1-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.578,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "global-default-legacy1-raw0-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.922,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "global-default-legacy1-raw1-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.703,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  },
+  {
+    "case": "global-nonblocking-legacy0-raw0-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.86,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "global-nonblocking-legacy0-raw1-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.718,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "global-nonblocking-legacy1-raw0-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.485,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "global-nonblocking-legacy1-raw1-trial2",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.406,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  },
+  {
+    "case": "thread_local-default-legacy0-raw0-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.953,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "default",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "thread_local-default-legacy0-raw1-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.812,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "thread_local-default-legacy1-raw0-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.078,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "thread_local-default-legacy1-raw1-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.735,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  },
+  {
+    "case": "thread_local-nonblocking-legacy0-raw0-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.875,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "thread_local-nonblocking-legacy0-raw1-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.813,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "thread_local-nonblocking-legacy1-raw0-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.203,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "thread_local-nonblocking-legacy1-raw1-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.0,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "thread_local",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  },
+  {
+    "case": "relaxed-default-legacy0-raw0-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.984,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "default",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "relaxed-default-legacy0-raw1-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.328,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "relaxed-default-legacy1-raw0-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.688,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "relaxed-default-legacy1-raw1-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.437,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  },
+  {
+    "case": "relaxed-nonblocking-legacy0-raw0-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.734,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "relaxed-nonblocking-legacy0-raw1-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.454,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "relaxed-nonblocking-legacy1-raw0-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.719,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "relaxed-nonblocking-legacy1-raw1-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.812,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "relaxed",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  },
+  {
+    "case": "global-default-legacy0-raw0-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 3.172,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "default",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "global-default-legacy0-raw1-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.719,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "global-default-legacy1-raw0-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.765,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "global-default-legacy1-raw1-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.875,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "default",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  },
+  {
+    "case": "global-nonblocking-legacy0-raw0-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.641,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100"
+    ]
+  },
+  {
+    "case": "global-nonblocking-legacy0-raw1-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.625,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--raw"
+    ]
+  },
+  {
+    "case": "global-nonblocking-legacy1-raw0-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 1.984,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work"
+    ]
+  },
+  {
+    "case": "global-nonblocking-legacy1-raw1-trial3",
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 2.25,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_alloc_capture.py",
+      "--mode",
+      "global",
+      "--stream",
+      "nonblocking",
+      "--rounds",
+      "100",
+      "--legacy-work",
+      "--raw"
+    ]
+  }
+]

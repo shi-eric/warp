@@ -1,0 +1,9 @@
+[default.extend-identifiers]
+# Exact field name in NVIDIA's generated CUPTI API parameter structs.
+numExtSems = "numExtSems"
+
+[default.extend-words]
+# MSVC compiler option selecting the object-file output path.
+Fo = "Fo"
+# Fragment of a hexadecimal Warp kernel hash in captured logs.
+ded = "ded"

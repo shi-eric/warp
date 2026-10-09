@@ -1,0 +1,115 @@
+Confirmed standalone OVRTX hang under a native CUPTI callback logger.
+Process 13300, main thread 3160, Windows A40 / driver 595.97.
+Terminated after 341.671 seconds, after saving thread snapshot and API trace.
+The final cuMemAllocAsync ENTER has no corresponding EXIT.
+The callback logs parameters only; it does not call CUDA or synchronize the GPU.
+Original full trace: Temp/warp-8342/params8192.txt.
+Selected memory/semaphore imports, stream creation, and final handoff follow.
+
+qpc=1510418926235 tid=3160 domain=2 site=EXIT name=cudaStreamCreateWithFlags context=0000025B54117140 uid=2 correlation=5894 status=0 flags=0 result=0000026D62F0F740
+qpc=1510422424141 tid=3160 domain=2 site=EXIT name=cudaStreamCreateWithFlags context=0000025B54117140 uid=2 correlation=6463 status=0 flags=1 result=0000026D5CF521C0
+qpc=1512265012041 tid=7772 domain=2 site=EXIT name=cudaImportExternalMemory context=0000025B54117140 uid=2 correlation=8051 status=0 type=2 handle=000000000000042C size=137166848 flags=1 result=0000026D837A1270
+qpc=1512265017352 tid=7772 domain=2 site=EXIT name=cudaExternalMemoryGetMappedMipmappedArray context=0000025B54117140 uid=2 correlation=8053 status=0 memory=0000026D837A1270 offset=0 extent=5824x5824x0 channels=8,8,8,8 kind=1 flags=10 levels=1 result=0000026ED4AE1D30
+qpc=1512265394909 tid=7772 domain=2 site=EXIT name=cudaImportExternalMemory context=0000025B54117140 uid=2 correlation=8055 status=0 type=2 handle=00000000000011E8 size=16777216 flags=0 result=0000026D837A1ED0
+qpc=1512265401591 tid=7772 domain=2 site=EXIT name=cudaExternalMemoryGetMappedBuffer context=0000025B54117140 uid=2 correlation=8056 status=0 memory=0000026D837A1ED0 offset=0 size=16777216 flags=0 result=000000020EA00000
+qpc=1512265412804 tid=7772 domain=2 site=EXIT name=cudaImportExternalMemory context=0000025B54117140 uid=2 correlation=8058 status=0 type=2 handle=000000000000116C size=16777216 flags=0 result=0000026D837A18A0
+qpc=1512265418483 tid=7772 domain=2 site=EXIT name=cudaExternalMemoryGetMappedBuffer context=0000025B54117140 uid=2 correlation=8059 status=0 memory=0000026D837A18A0 offset=0 size=16777216 flags=0 result=000000020FA00000
+qpc=1512265437497 tid=7772 domain=2 site=EXIT name=cudaImportExternalMemory context=0000025B54117140 uid=2 correlation=8061 status=0 type=2 handle=0000000000000DA0 size=16777216 flags=0 result=0000026DF161C050
+qpc=1512265677589 tid=7772 domain=2 site=EXIT name=cudaExternalMemoryGetMappedBuffer context=0000025B54117140 uid=2 correlation=8062 status=0 memory=0000026DF161C050 offset=0 size=16777216 flags=0 result=0000000210A00000
+qpc=1512265685520 tid=7772 domain=2 site=EXIT name=cudaImportExternalMemory context=0000025B54117140 uid=2 correlation=8064 status=0 type=2 handle=0000000000001108 size=16777216 flags=0 result=0000026DF161C9F0
+qpc=1512265695468 tid=7772 domain=2 site=EXIT name=cudaExternalMemoryGetMappedBuffer context=0000025B54117140 uid=2 correlation=8065 status=0 memory=0000026DF161C9F0 offset=0 size=16777216 flags=0 result=0000000211A00000
+qpc=1512265716823 tid=7772 domain=2 site=EXIT name=cudaImportExternalMemory context=0000025B54117140 uid=2 correlation=8067 status=0 type=2 handle=0000000000001154 size=16777216 flags=0 result=0000026DF161BE40
+qpc=1512265725601 tid=7772 domain=2 site=EXIT name=cudaExternalMemoryGetMappedBuffer context=0000025B54117140 uid=2 correlation=8068 status=0 memory=0000026DF161BE40 offset=0 size=16777216 flags=0 result=0000000212A00000
+qpc=1512266101441 tid=7772 domain=2 site=EXIT name=cudaImportExternalMemory context=0000025B54117140 uid=2 correlation=8070 status=0 type=2 handle=0000000000001118 size=16777216 flags=0 result=0000026DF6395E10
+qpc=1512266113667 tid=7772 domain=2 site=EXIT name=cudaExternalMemoryGetMappedBuffer context=0000025B54117140 uid=2 correlation=8071 status=0 memory=0000026DF6395E10 offset=0 size=16777216 flags=0 result=0000000213A00000
+qpc=1512266715893 tid=7772 domain=2 site=EXIT name=cudaStreamCreateWithFlags context=0000025B54117140 uid=2 correlation=8075 status=0 flags=1 result=0000026ED5325470
+qpc=1512266718387 tid=7772 domain=2 site=EXIT name=cudaImportExternalSemaphore context=0000025B54117140 uid=2 correlation=8077 status=0 type=2 handle=00000000000012EC flags=0 result=0000026ECF03A9F0
+qpc=1512287319323 tid=7772 domain=2 site=EXIT name=cudaStreamCreateWithFlags context=0000025B54117140 uid=2 correlation=8090 status=0 flags=1 result=0000026F6F44BCF0
+qpc=1512287320081 tid=7772 domain=2 site=EXIT name=cudaImportExternalSemaphore context=0000025B54117140 uid=2 correlation=8092 status=0 type=2 handle=00000000000012F4 flags=0 result=0000026F6DBAEE70
+qpc=1512307231084 tid=7772 domain=2 site=EXIT name=cudaStreamCreateWithFlags context=0000025B54117140 uid=2 correlation=8117 status=0 flags=1 result=0000026F8E981820
+qpc=1512307232656 tid=7772 domain=2 site=EXIT name=cudaImportExternalSemaphore context=0000025B54117140 uid=2 correlation=8119 status=0 type=2 handle=0000000000001300 flags=0 result=0000026F8E005B00
+qpc=1512330455858 tid=7772 domain=2 site=EXIT name=cudaImportExternalMemory context=0000025B54117140 uid=2 correlation=8132 status=0 type=2 handle=000000000000130C size=16777216 flags=0 result=0000026D5BCF20E0
+qpc=1512330461914 tid=7772 domain=2 site=EXIT name=cudaExternalMemoryGetMappedBuffer context=0000025B54117140 uid=2 correlation=8133 status=0 memory=0000026D5BCF20E0 offset=0 size=16777216 flags=0 result=0000000214A00000
+qpc=1512330569867 tid=7772 domain=2 site=EXIT name=cudaImportExternalSemaphore context=0000025B54117140 uid=2 correlation=8137 status=0 type=2 handle=0000000000001314 flags=0 result=0000026FA1B5F280
+qpc=1512351728660 tid=7772 domain=2 site=EXIT name=cudaImportExternalSemaphore context=0000025B54117140 uid=2 correlation=8153 status=0 type=2 handle=0000000000001304 flags=0 result=0000026FAB516700
+qpc=1512373447618 tid=7772 domain=2 site=EXIT name=cudaImportExternalSemaphore context=0000025B54117140 uid=2 correlation=8178 status=0 type=2 handle=0000000000001338 flags=0 result=0000026FC9551150
+qpc=1512436275227 tid=12036 domain=2 site=ENTER name=cudaWaitExternalSemaphoresAsync_v2 context=0000025B54117140 uid=2 correlation=8903 status=-1 stream=0000026F6F44BCF0 count=1 semaphore=0000026F6DBAEE70 value=0 flags=0
+qpc=1512436276490 tid=12036 domain=2 site=EXIT name=cudaWaitExternalSemaphoresAsync_v2 context=0000025B54117140 uid=2 correlation=8903 status=0 stream=0000026F6F44BCF0 count=1 semaphore=0000026F6DBAEE70 value=0 flags=0
+qpc=1512436277120 tid=12036 domain=2 site=ENTER name=cudaEventRecord context=0000025B54117140 uid=2 correlation=8905 status=-1 stream=0000026F6F44BCF0 event=0000026D518151F0
+qpc=1512436277455 tid=12036 domain=2 site=EXIT name=cudaEventRecord context=0000025B54117140 uid=2 correlation=8905 status=0 stream=0000026F6F44BCF0 event=0000026D518151F0
+qpc=1512436292826 tid=7772 domain=2 site=ENTER name=cudaEventDestroy context=0000025B54117140 uid=2 correlation=8907 status=-1 event=0000026D518151F0
+qpc=1512436293145 tid=7772 domain=2 site=EXIT name=cudaEventDestroy context=0000025B54117140 uid=2 correlation=8907 status=0 event=0000026D518151F0
+qpc=1512437399024 tid=7772 domain=2 site=ENTER name=cudaEventQuery context=0000025B54117140 uid=2 correlation=8909 status=-1 
+qpc=1512437399403 tid=7772 domain=2 site=EXIT name=cudaEventQuery context=0000025B54117140 uid=2 correlation=8909 status=0 
+qpc=1512437399731 tid=7772 domain=2 site=ENTER name=cudaEventDestroy context=0000025B54117140 uid=2 correlation=8910 status=-1 event=0000026D51814C70
+qpc=1512437400414 tid=7772 domain=2 site=EXIT name=cudaEventDestroy context=0000025B54117140 uid=2 correlation=8910 status=0 event=0000026D51814C70
+qpc=1512437400621 tid=7772 domain=2 site=ENTER name=cudaEventCreateWithFlags context=0000025B54117140 uid=2 correlation=8911 status=-1 
+qpc=1512437400878 tid=7772 domain=2 site=EXIT name=cudaEventCreateWithFlags context=0000025B54117140 uid=2 correlation=8911 status=0 
+qpc=1512437401082 tid=7772 domain=2 site=ENTER name=cudaEventRecord context=0000025B54117140 uid=2 correlation=8912 status=-1 stream=0000026F8E981820 event=0000026D518151F0
+qpc=1512437401389 tid=7772 domain=2 site=EXIT name=cudaEventRecord context=0000025B54117140 uid=2 correlation=8912 status=0 stream=0000026F8E981820 event=0000026D518151F0
+qpc=1512437514541 tid=7772 domain=2 site=ENTER name=cudaEventCreateWithFlags context=0000025B54117140 uid=2 correlation=8914 status=-1 
+qpc=1512437514860 tid=7772 domain=2 site=EXIT name=cudaEventCreateWithFlags context=0000025B54117140 uid=2 correlation=8914 status=0 
+qpc=1512437520692 tid=14580 domain=2 site=ENTER name=cudaWaitExternalSemaphoresAsync_v2 context=0000025B54117140 uid=2 correlation=8916 status=-1 stream=0000026F8E981820 count=1 semaphore=0000026F8E005B00 value=0 flags=0
+qpc=1512437522119 tid=14580 domain=2 site=EXIT name=cudaWaitExternalSemaphoresAsync_v2 context=0000025B54117140 uid=2 correlation=8916 status=0 stream=0000026F8E981820 count=1 semaphore=0000026F8E005B00 value=0 flags=0
+qpc=1512437522795 tid=14580 domain=2 site=ENTER name=cudaEventRecord context=0000025B54117140 uid=2 correlation=8918 status=-1 stream=0000026F8E981820 event=0000026D51814C70
+qpc=1512437523122 tid=14580 domain=2 site=EXIT name=cudaEventRecord context=0000025B54117140 uid=2 correlation=8918 status=0 stream=0000026F8E981820 event=0000026D51814C70
+qpc=1512437534352 tid=7772 domain=2 site=ENTER name=cudaEventDestroy context=0000025B54117140 uid=2 correlation=8920 status=-1 event=0000026D51814C70
+qpc=1512437534672 tid=7772 domain=2 site=EXIT name=cudaEventDestroy context=0000025B54117140 uid=2 correlation=8920 status=0 event=0000026D51814C70
+qpc=1512438648180 tid=7772 domain=2 site=ENTER name=cudaEventQuery context=0000025B54117140 uid=2 correlation=8922 status=-1 
+qpc=1512438648533 tid=7772 domain=2 site=EXIT name=cudaEventQuery context=0000025B54117140 uid=2 correlation=8922 status=0 
+qpc=1512438648728 tid=7772 domain=2 site=ENTER name=cudaEventDestroy context=0000025B54117140 uid=2 correlation=8923 status=-1 event=0000026D51814F30
+qpc=1512438648993 tid=7772 domain=2 site=EXIT name=cudaEventDestroy context=0000025B54117140 uid=2 correlation=8923 status=0 event=0000026D51814F30
+qpc=1512438649332 tid=7772 domain=2 site=ENTER name=cudaEventCreateWithFlags context=0000025B54117140 uid=2 correlation=8924 status=-1 
+qpc=1512438649674 tid=7772 domain=2 site=EXIT name=cudaEventCreateWithFlags context=0000025B54117140 uid=2 correlation=8924 status=0 
+qpc=1512438650205 tid=7772 domain=2 site=ENTER name=cudaEventRecord context=0000025B54117140 uid=2 correlation=8925 status=-1 stream=0000026ED5325470 event=0000026D51814C70
+qpc=1512438650536 tid=7772 domain=2 site=EXIT name=cudaEventRecord context=0000025B54117140 uid=2 correlation=8925 status=0 stream=0000026ED5325470 event=0000026D51814C70
+qpc=1512438782957 tid=7772 domain=2 site=ENTER name=cudaEventCreateWithFlags context=0000025B54117140 uid=2 correlation=8927 status=-1 
+qpc=1512438783301 tid=7772 domain=2 site=EXIT name=cudaEventCreateWithFlags context=0000025B54117140 uid=2 correlation=8927 status=0 
+qpc=1512438787517 tid=11096 domain=2 site=ENTER name=cudaWaitExternalSemaphoresAsync_v2 context=0000025B54117140 uid=2 correlation=8929 status=-1 stream=0000026ED5325470 count=1 semaphore=0000026FA1B5F280 value=0 flags=0
+qpc=1512438788622 tid=11096 domain=2 site=EXIT name=cudaWaitExternalSemaphoresAsync_v2 context=0000025B54117140 uid=2 correlation=8929 status=0 stream=0000026ED5325470 count=1 semaphore=0000026FA1B5F280 value=0 flags=0
+qpc=1512438789256 tid=11096 domain=2 site=ENTER name=cudaEventRecord context=0000025B54117140 uid=2 correlation=8931 status=-1 stream=0000026ED5325470 event=0000026D75D98E30
+qpc=1512438789597 tid=11096 domain=2 site=EXIT name=cudaEventRecord context=0000025B54117140 uid=2 correlation=8931 status=0 stream=0000026ED5325470 event=0000026D75D98E30
+qpc=1512438814070 tid=3160 domain=2 site=ENTER name=cudaMallocAsync context=0000025B54117140 uid=2 correlation=8935 status=-1 stream=0000026ED5325470 bytes=135675904 result=0000000000000000
+qpc=1512438814306 tid=3160 domain=1 site=ENTER name=cuMemAllocAsync context=0000025B54117140 uid=2 correlation=8935 status=-1 stream=0000026ED5325470 bytes=135675904 result=0x0
+qpc=1512438838437 tid=3160 domain=1 site=EXIT name=cuMemAllocAsync context=0000025B54117140 uid=2 correlation=8935 status=0 stream=0000026ED5325470 bytes=135675904 result=0x2007fc6400
+qpc=1512438838879 tid=3160 domain=2 site=EXIT name=cudaMallocAsync context=0000025B54117140 uid=2 correlation=8935 status=0 stream=0000026ED5325470 bytes=135675904 result=0000002007FC6400
+qpc=1512438839105 tid=3160 domain=2 site=ENTER name=cudaStreamWaitEvent context=0000025B54117140 uid=2 correlation=8936 status=-1 stream=0000026ED5325470 event=0000026D75D98E30 flags=0
+qpc=1512438839510 tid=3160 domain=2 site=EXIT name=cudaStreamWaitEvent context=0000025B54117140 uid=2 correlation=8936 status=0 stream=0000026ED5325470 event=0000026D75D98E30 flags=0
+qpc=1512438839746 tid=3160 domain=2 site=ENTER name=cudaMemcpy3DAsync context=0000025B54117140 uid=2 correlation=8937 status=-1 stream=0000026ED5325470 sourceArray=0000026ED63180B0 destination=0000002007FC6400 pitch=23296 extent=5824x5824x1 kind=3
+qpc=1512438842718 tid=3160 domain=2 site=EXIT name=cudaMemcpy3DAsync context=0000025B54117140 uid=2 correlation=8937 status=0 stream=0000026ED5325470 sourceArray=0000026ED63180B0 destination=0000002007FC6400 pitch=23296 extent=5824x5824x1 kind=3
+qpc=1512438843710 tid=3160 domain=2 site=ENTER name=cudaEventCreateWithFlags context=0000025B54117140 uid=2 correlation=8939 status=-1 
+qpc=1512438843968 tid=3160 domain=2 site=EXIT name=cudaEventCreateWithFlags context=0000025B54117140 uid=2 correlation=8939 status=0 
+qpc=1512438844167 tid=3160 domain=2 site=ENTER name=cudaEventRecord context=0000025B54117140 uid=2 correlation=8940 status=-1 stream=0000026ED5325470 event=0000026D62F0F2B0
+qpc=1512438844459 tid=3160 domain=2 site=EXIT name=cudaEventRecord context=0000025B54117140 uid=2 correlation=8940 status=0 stream=0000026ED5325470 event=0000026D62F0F2B0
+qpc=1512438844666 tid=3160 domain=2 site=ENTER name=cudaStreamWaitEvent context=0000025B54117140 uid=2 correlation=8941 status=-1 stream=0000025B6408CB80 event=0000026D62F0F2B0 flags=0
+qpc=1512438844930 tid=3160 domain=2 site=EXIT name=cudaStreamWaitEvent context=0000025B54117140 uid=2 correlation=8941 status=0 stream=0000025B6408CB80 event=0000026D62F0F2B0 flags=0
+qpc=1512438855905 tid=3160 domain=2 site=ENTER name=cudaMallocAsync context=0000025B54117140 uid=2 correlation=8944 status=-1 stream=0000025B6408CB80 bytes=135675904 result=0000000000000000
+qpc=1512438856108 tid=3160 domain=1 site=ENTER name=cuMemAllocAsync context=0000025B54117140 uid=2 correlation=8944 status=-1 stream=0000025B6408CB80 bytes=135675904 result=0x0
+qpc=1512438879751 tid=3160 domain=1 site=EXIT name=cuMemAllocAsync context=0000025B54117140 uid=2 correlation=8944 status=0 stream=0000025B6408CB80 bytes=135675904 result=0x201012a400
+qpc=1512438880422 tid=3160 domain=2 site=EXIT name=cudaMallocAsync context=0000025B54117140 uid=2 correlation=8944 status=0 stream=0000025B6408CB80 bytes=135675904 result=000000201012A400
+qpc=1512438883497 tid=3160 domain=2 site=ENTER name=cudaMemcpyAsync context=0000025B54117140 uid=2 correlation=8948 status=-1 stream=0000025B6408CB80 source=0000002007FC6400 destination=000000201012A400 bytes=135675904 kind=3
+qpc=1512438885575 tid=3160 domain=2 site=EXIT name=cudaMemcpyAsync context=0000025B54117140 uid=2 correlation=8948 status=0 stream=0000025B6408CB80 source=0000002007FC6400 destination=000000201012A400 bytes=135675904 kind=3
+qpc=1512438888116 tid=3160 domain=2 site=ENTER name=cudaEventCreateWithFlags context=0000025B54117140 uid=2 correlation=8950 status=-1 
+qpc=1512438888456 tid=3160 domain=2 site=EXIT name=cudaEventCreateWithFlags context=0000025B54117140 uid=2 correlation=8950 status=0 
+qpc=1512438888649 tid=3160 domain=2 site=ENTER name=cudaEventRecord context=0000025B54117140 uid=2 correlation=8951 status=-1 stream=0000025B6408CB80 event=0000026EB97BDE20
+qpc=1512438888940 tid=3160 domain=2 site=EXIT name=cudaEventRecord context=0000025B54117140 uid=2 correlation=8951 status=0 stream=0000025B6408CB80 event=0000026EB97BDE20
+qpc=1512438889139 tid=3160 domain=2 site=ENTER name=cudaStreamWaitEvent context=0000025B54117140 uid=2 correlation=8952 status=-1 stream=0000026ED5325470 event=0000026EB97BDE20 flags=0
+qpc=1512438889410 tid=3160 domain=2 site=EXIT name=cudaStreamWaitEvent context=0000025B54117140 uid=2 correlation=8952 status=0 stream=0000026ED5325470 event=0000026EB97BDE20 flags=0
+qpc=1512438889603 tid=3160 domain=2 site=ENTER name=cudaFreeAsync context=0000025B54117140 uid=2 correlation=8953 status=-1 stream=0000026ED5325470 pointer=0000002007FC6400
+qpc=1512438889794 tid=3160 domain=1 site=ENTER name=cuMemFreeAsync context=0000025B54117140 uid=2 correlation=8953 status=-1 
+qpc=1512438890355 tid=3160 domain=1 site=EXIT name=cuMemFreeAsync context=0000025B54117140 uid=2 correlation=8953 status=0 
+qpc=1512438890548 tid=3160 domain=2 site=EXIT name=cudaFreeAsync context=0000025B54117140 uid=2 correlation=8953 status=0 stream=0000026ED5325470 pointer=0000002007FC6400
+qpc=1512438891077 tid=3160 domain=2 site=ENTER name=cudaEventDestroy context=0000025B54117140 uid=2 correlation=8955 status=-1 event=0000026EB97BDE20
+qpc=1512438891325 tid=3160 domain=2 site=EXIT name=cudaEventDestroy context=0000025B54117140 uid=2 correlation=8955 status=0 event=0000026EB97BDE20
+qpc=1512438891943 tid=3160 domain=2 site=ENTER name=cudaEventDestroy context=0000025B54117140 uid=2 correlation=8957 status=-1 event=0000026D62F0F2B0
+qpc=1512438892141 tid=3160 domain=2 site=EXIT name=cudaEventDestroy context=0000025B54117140 uid=2 correlation=8957 status=0 event=0000026D62F0F2B0
+qpc=1512438893716 tid=3160 domain=2 site=ENTER name=cudaEventDestroy context=0000025B54117140 uid=2 correlation=8959 status=-1 event=0000026D75D98E30
+qpc=1512438893947 tid=3160 domain=2 site=EXIT name=cudaEventDestroy context=0000025B54117140 uid=2 correlation=8959 status=0 event=0000026D75D98E30
+qpc=1512438898090 tid=3160 domain=2 site=ENTER name=cudaStreamBeginCapture context=0000025B54117140 uid=2 correlation=8962 status=-1 stream=0000025B6408CB80 mode=1
+qpc=1512438898286 tid=3160 domain=1 site=ENTER name=cuStreamBeginCapture_v2 context=0000025B54117140 uid=2 correlation=8962 status=-1 
+qpc=1512438898697 tid=3160 domain=1 site=EXIT name=cuStreamBeginCapture_v2 context=0000025B54117140 uid=2 correlation=8962 status=0 
+qpc=1512438898920 tid=3160 domain=2 site=EXIT name=cudaStreamBeginCapture context=0000025B54117140 uid=2 correlation=8962 status=0 stream=0000025B6408CB80 mode=1
+qpc=1512438913892 tid=3160 domain=1 site=ENTER name=cuLaunchKernel context=0000025B54117140 uid=2 correlation=8974 status=-1 
+qpc=1512438917196 tid=3160 domain=1 site=EXIT name=cuLaunchKernel context=0000025B54117140 uid=2 correlation=8974 status=0 
+qpc=1512438919377 tid=3160 domain=2 site=ENTER name=cudaMallocAsync context=0000025B54117140 uid=2 correlation=8977 status=-1 stream=0000025B6408CB80 bytes=32768 result=0000000000000000
+qpc=1512438919643 tid=3160 domain=1 site=ENTER name=cuMemAllocAsync context=0000025B54117140 uid=2 correlation=8977 status=-1 stream=0000025B6408CB80 bytes=32768 result=0x0

@@ -1,0 +1,20 @@
+[
+  {
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 78.328,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/renderer-no-stage/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\probe_ovrtx_capture.py",
+      "--cameras",
+      "4096",
+      "--objects",
+      "32",
+      "--no-map",
+      "--no-prefix",
+      "--rounds",
+      "3"
+    ]
+  }
+]

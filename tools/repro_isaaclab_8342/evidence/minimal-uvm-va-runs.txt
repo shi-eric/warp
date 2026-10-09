@@ -1,0 +1,30 @@
+minimal_uvm_va_capture.py outcomes, 2026-10-08. Windows 11 26100, NVIDIA A40 (WDDM), driver 595.97.
+Each row is a fresh process. The captured allocation is a single 32 KiB cuMemAllocAsync.
+
+Default: managed allocation, 16 MiB of foreign GPU VA (D3DKMT) at the next 96 GiB window
+  uv run --no-project (fresh cuda-bindings 12.9.5 environment), 10 processes:
+    stalled 7: 16.254, 14.964, 16.893, 15.896, 16.993, 18.253, 17.732 s
+    missed 3:  0.007 s each; the window was placed at 0x581fe00000, 0x5133400000, 0x4c29000000
+  Existing cuda-bindings 12.9.5 environment, 8 processes:
+    stalled 7: 17.305, 17.233, 15.857, 16.477, 15.992, 15.481, 16.157 s
+    missed 1:  0.007 s; the window was placed at 0x54a2e00000
+  Under a scratch version of the IOCTL hook, 8 processes: stalled 8 (15.730-17.757 s).
+  Under trace_uvm_ioctls.py: one miss, then the stall in cuda-python-uvm-trace.txt (outputs of any
+    intermediate attempts were not kept). In the miss, the first UVM-Lite reserve for the window was
+    already at the alternative base (0x54ace00000).
+
+Obstacle size (earlier scratch version of the same sequence):
+  4 MiB: 4.709 s (2 failed placements). 8 MiB: 8.030-9.101 s (4). 16 MiB: ~16 s (8).
+
+Controls:
+  --no-managed (same obstacle at the next window): 0.001 s; the window moved past the obstacle without UVM-Lite IOCTLs.
+  --warmup (graph window reserved before the foreign VA): 0.000 s; later capture reused the window.
+  Warm-up before the managed allocation: 0.000 s.
+  Managed allocation, no obstacle: 0.024 s.
+  Non-captured first stream-ordered pool allocation instead of capture: 8.668 s with an 8 MiB obstacle.
+  Legacy cuMemAlloc instead of capture: 0.000 s (does not reserve a 96 GiB window).
+
+--vulkan (managed allocation, then one 2 MiB vkAllocateMemory block, no D3DKMT):
+  Still inside the captured cuMemAllocAsync after 140 s; terminated by timeout.
+  An earlier variant with 4 x 2 MiB blocks made 306 failed placements (mean release 1.954 s) before a 600 s timeout.
+--vulkan --no-managed: 0.001 s.

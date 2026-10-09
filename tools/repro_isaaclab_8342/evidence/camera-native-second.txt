@@ -1,0 +1,260 @@
+﻿Native instruction pointers:
+43 ntdll.dll+0x161c74
+36 ntdll.dll+0x162744
+32 ntdll.dll+0x165844
+8 ntdll.dll+0x162274
+2 ntdll.dll+0x1658a4
+1 nvrtum64.dll+0x4065f1
+1 ntdll.dll+0x51793
+1 nvoglv64.dll+0x131ec70
+1 ntdll.dll+0x161d14
+THREAD 3596: CPU=132.891s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x9c1c3, ovrtx.dylib.dll+0xac32f0, carb.tasking.plugin.dll+0x11491, gpu.foundation.plugin.dll+0x3b9b60, carb.tasking.plugin.dll+0x125c7, carb.tasking.plugin.dll+0x74b50, carb.tasking.plugin.dll+0x24ec6, carb.tasking.plugin.dll+0x1287c, carb.tasking.plugin.dll+0x37238, carb.tasking.plugin.dll+0x1ee9a, ovrtx.dylib.dll+0x1b0f01, carb.tasking.plugin.dll+0x74b58, ovrtx.dylib.dll+0xabe100, gpu.foundation.plugin.dll+0x3b9b20, ovrtx.dylib.dll+0x110d88, carb.tasking.plugin.dll+0x471c0, carb.tasking.plugin.dll+0x43300, carb.tasking.plugin.dll+0x24f90
+THREAD 12744: CPU=0.000s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ucrtbase.dll+0x12b2d, ucrtbase.dll+0x7b1ce, python312.dll+0x1a79a0, python312.dll+0x17fe72, python312.dll+0xf625b, python312.dll+0x22a5b0, python312.dll+0x22a594, python312.dll+0x97fa, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 344: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x13314c0, KERNELBASE.dll+0x39201, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x2550c0, kernel32.dll+0x57000, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x256343, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 6816: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x13314c0, KERNELBASE.dll+0x39201, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x2550c0, kernel32.dll+0x57000, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x256343, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 17404: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x13314c0, KERNELBASE.dll+0x39201, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x2550c0, kernel32.dll+0x57000, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x256343, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 2248: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x13314c0, KERNELBASE.dll+0x39201, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x2550c0, kernel32.dll+0x57000, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x256343, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 4392: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x13314c0, KERNELBASE.dll+0x39201, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x2550c0, kernel32.dll+0x57000, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x256343, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 17056: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x13314c0, KERNELBASE.dll+0x39201, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x2550c0, kernel32.dll+0x57000, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x256343, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 13184: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x13314c0, KERNELBASE.dll+0x39201, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x2550c0, kernel32.dll+0x57000, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x256343, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 16900: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x13314c0, KERNELBASE.dll+0x39201, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x2550c0, kernel32.dll+0x57000, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x256343, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 6256: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x13314c0, KERNELBASE.dll+0x39201, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x2550c0, kernel32.dll+0x57000, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x256343, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 16476: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x13314c0, KERNELBASE.dll+0x39201, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x2550c0, kernel32.dll+0x57000, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x256343, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 13028: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x13314c0, KERNELBASE.dll+0x39201, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x2550c0, kernel32.dll+0x57000, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x256343, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 1452: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x13314c0, KERNELBASE.dll+0x39201, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x2550c0, kernel32.dll+0x57000, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x256343, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 3068: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x13314c0, KERNELBASE.dll+0x39201, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x2550c0, kernel32.dll+0x57000, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x256343, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 9928: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x13314c0, KERNELBASE.dll+0x39201, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x2550c0, kernel32.dll+0x57000, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x256343, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 4688: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x13314c0, KERNELBASE.dll+0x39201, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x2550c0, kernel32.dll+0x57000, libscipy_openblas64_-b788215d9d47792bcba3a2e2a7114320.dll+0x256343, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 5692: CPU=0.000s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, KERNELBASE.dll+0x126878, KERNELBASE.dll+0x39e328, KERNELBASE.dll+0x1267f4, nvcuda64.dll+0x3e73b4, KERNELBASE.dll+0xbe9c5, KERNELBASE.dll+0xbe27f, nvcuda64.dll+0x0, nvcuda64.dll+0x1f5797, nvcuda64.dll+0x4b17b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 14908: CPU=0.266s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, KERNELBASE.dll+0x39201, nvcuda64.dll+0x1f5d74, nvcuda64.dll+0xd48ce, nvcuda64.dll+0x10495d, nvcuda64.dll+0x104abd, nvcuda64.dll+0x20f155, nvcuda64.dll+0xd8457, nvcuda64.dll+0x2d4d95, nvcuda64.dll+0x0, nvcuda64.dll+0x1f5797, nvcuda64.dll+0x4b17b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 12340: CPU=0.141s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, tbb12.dll+0x284f, tbb12.dll+0x2af9f, tbb12.dll+0x211e6, tbb12.dll+0x20f6b
+THREAD 15116: CPU=0.156s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, tbb12.dll+0x284f, tbb12.dll+0x2af9f, tbb12.dll+0x211e6, tbb12.dll+0x20f6b
+THREAD 16864: CPU=0.062s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, tbb12.dll+0x284f, tbb12.dll+0x2af9f, tbb12.dll+0x211e6, tbb12.dll+0x20f6b
+THREAD 13340: CPU=0.141s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, tbb12.dll+0x284f, tbb12.dll+0x2af9f, tbb12.dll+0x211e6, tbb12.dll+0x20f6b
+THREAD 12112: CPU=0.125s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, tbb12.dll+0x284f, tbb12.dll+0x2af9f, tbb12.dll+0x211e6, tbb12.dll+0x20f6b
+THREAD 9944: CPU=0.125s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, tbb12.dll+0x284f, tbb12.dll+0x2af9f, tbb12.dll+0x211e6, tbb12.dll+0x20f6b
+THREAD 5440: CPU=0.188s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, tbb12.dll+0x284f, tbb12.dll+0x2af9f, tbb12.dll+0x211e6, tbb12.dll+0x20f6b
+THREAD 15012: CPU=0.109s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, tbb12.dll+0x284f, tbb12.dll+0x2af9f, tbb12.dll+0x211e6, tbb12.dll+0x20f6b
+THREAD 13056: CPU=0.125s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, tbb12.dll+0x284f, tbb12.dll+0x211e6, tbb12.dll+0x20f6b
+THREAD 15164: CPU=0.109s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, tbb12.dll+0x284f, tbb12.dll+0x2af9f, tbb12.dll+0x211e6, tbb12.dll+0x20f6b
+THREAD 4184: CPU=0.172s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, tbb12.dll+0x284f, tbb12.dll+0x2af9f, tbb12.dll+0x211e6, tbb12.dll+0x20f6b
+THREAD 11316: CPU=0.062s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, tbb12.dll+0x284f, tbb12.dll+0x211e6, tbb12.dll+0x20f6b
+THREAD 13296: CPU=0.078s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, tbb12.dll+0x284f, tbb12.dll+0x2af9f, tbb12.dll+0x211e6, nvcudart_hybrid64.dll+0x0, tbb12.dll+0x20f6b, nvcudart_hybrid64.dll+0xaeaeb, ntdll.dll+0xe799b, usd_sdf.dll+0x423908, nvapi64.dll+0x0, ntdll.dll+0x15f89e, usd_usdPhysics.dll+0x7afea, ntdll.dll+0xbcae, usd_usdPhysics.dll+0x7b56d, ntdll.dll+0x1d24e0, ntdll.dll+0x177f01, ntdll.dll+0x1a3ee, ntdll.dll+0x177f90
+THREAD 13100: CPU=0.094s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, tbb12.dll+0x284f, tbb12.dll+0x2af9f, tbb12.dll+0x211e6, tbb12.dll+0x20f6b
+THREAD 12072: CPU=0.141s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, tbb12.dll+0x284f, tbb12.dll+0x2af9f, tbb12.dll+0x211e6, tbb12.dll+0x20f6b
+THREAD 7584: CPU=0.266s RIP=ntdll.dll+0x162274
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0xcef34, KERNELBASE.dll+0x3e7a1, msvcp140.dll+0x17bd7, msvcp140.dll+0x1873f, usd_work.dll+0x550a, usd_work.dll+0x5349, usd_work.dll+0x532b, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 5840: CPU=119.266s RIP=nvrtum64.dll+0x4065f1
+  Candidate stack code pointers (scan, not an unwind): nvrtum64.dll+0x8bd213, nvrtum64.dll+0x422cc2, nvrtum64.dll+0x4230f3, ntdll.dll+0x1cde4, nvrtum64.dll+0x445fcd, ntdll.dll+0x1cca4, nvrtum64.dll+0x58b639, nvrtum64.dll+0x41589a, nvrtum64.dll+0x41ba3e, nvrtum64.dll+0x422892, nvrtum64.dll+0x404b5f, nvrtum64.dll+0x422c54, nvrtum64.dll+0x3fc15d, nvrtum64.dll+0x4a0a07, nvrtum64.dll+0x4a2ecf
+THREAD 16556: CPU=128.281s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0xaf5f, ntdll.dll+0xd872, ntdll.dll+0xc5ff, ntdll.dll+0xd800, ntdll.dll+0x22949, ntdll.dll+0x1d0d1, ntdll.dll+0x1cca4, ntdll.dll+0x79300, nvoglv64.dll+0x10eac48, nvoglv64.dll+0x131ee04, cudnn_adv64_9.dll+0x1df0000, nvoglv64.dll+0x131ef18, nvoglv64.dll+0x1528d1c, ntdll.dll+0x1cd01, nvoglv64.dll+0x124f12a, nvoglv64.dll+0x1306b14
+THREAD 15148: CPU=127.703s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0xaf5f, ntdll.dll+0xc5ff, ntdll.dll+0xd872, ntdll.dll+0x22949, ntdll.dll+0x1d0d1, ntdll.dll+0x1cca4, ntdll.dll+0x79300, nvrtum64.dll+0x148c118, nvrtum64.dll+0x6862f0, nvrtum64.dll+0x2c3e0e, nvrtum64.dll+0x2bcf1e, nvrtum64.dll+0x14a81c0, nvrtum64.dll+0x2a5e58, nvrtum64.dll+0x29863b
+THREAD 13352: CPU=144.297s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): carb.tasking.plugin.dll+0x24467, carb.tasking.plugin.dll+0xf15b, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 7544: CPU=46.203s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): carb.tasking.plugin.dll+0x24467, carb.tasking.plugin.dll+0xf15b, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 11220: CPU=137.500s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0xaf5f, nvoglv64.dll+0x10eafc0, ntdll.dll+0xc5ff, nvoglv64.dll+0x13217c4, ntdll.dll+0xd872, ntdll.dll+0x22949, nvoglv64.dll+0x15cffc0, nvoglv64.dll+0x121a6ee, nvoglv64.dll+0x1219bdf, nvoglv64.dll+0x123a61e, nvoglv64.dll+0x1245f1d, ntdll.dll+0x79300, nvoglv64.dll+0x148858f, nvoglv64.dll+0x10eac48, nvoglv64.dll+0x148ca8e, ntdll.dll+0x1d0d1, ntdll.dll+0xac5c, ntdll.dll+0x1cca4
+THREAD 16032: CPU=43.391s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): carb.tasking.plugin.dll+0x24467, carb.tasking.plugin.dll+0xf15b, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 6112: CPU=96.422s RIP=ntdll.dll+0x51793
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0xac5c, ntdll.dll+0xde4a, ntdll.dll+0xd872, ntdll.dll+0x1d0d1, ntdll.dll+0x1cde4, ntdll.dll+0x1cca4, ntdll.dll+0x79300, nvrtum64.dll+0x148d0b4, nvrtum64.dll+0x686235, nvrtum64.dll+0xcc67f, nvrtum64.dll+0x2c3a5a, nvrtum64.dll+0x2bcf1e, nvrtum64.dll+0x14a81c0, nvrtum64.dll+0x2a5e58, nvrtum64.dll+0x29863b
+THREAD 15748: CPU=99.047s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0xaf5f, ntdll.dll+0xd872, ntdll.dll+0xc5ff, ntdll.dll+0xd800, ntdll.dll+0x22949, ntdll.dll+0x1d0d1, ntdll.dll+0x1cca4, ntdll.dll+0x79300, nvoglv64.dll+0x10eac48, nvoglv64.dll+0x131ee04, cudnn_adv64_9.dll+0x1df0000, nvoglv64.dll+0x131ef18, nvoglv64.dll+0x1528d1c, nvoglv64.dll+0x1306b14
+THREAD 11008: CPU=99.047s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0xaf5f, ntdll.dll+0xc5ff, ntdll.dll+0xd872, ntdll.dll+0x5212a, ntdll.dll+0x1cca4, nvoglv64.dll+0x10eac48, cudnn_adv64_9.dll+0x1df0001, cudnn_adv64_9.dll+0x1df0000, ntdll.dll+0x551ab, ntdll.dll+0x1d0d1, nvoglv64.dll+0x1321701, nvoglv64.dll+0x10eafc0, ntdll.dll+0x545ed, nvoglv64.dll+0x131ed39, nvoglv64.dll+0x131ef18, nvoglv64.dll+0x1315212, nvoglv64.dll+0x160be7, nvoglv64.dll+0x1487e5d
+THREAD 17392: CPU=195.969s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0xaf5f, ntdll.dll+0x1cca4, ntdll.dll+0xc5ff, ntdll.dll+0xd872, ntdll.dll+0x5212a, nvoglv64.dll+0x149215b, cudnn_adv64_9.dll+0x1df000b, nvoglv64.dll+0x0, ntdll.dll+0x1cde4, ntdll.dll+0x1d0d1, ntdll.dll+0x551ab, ntdll.dll+0x5514a, ntdll.dll+0x54895
+THREAD 12500: CPU=106.297s RIP=nvoglv64.dll+0x131ec70
+  Candidate stack code pointers (scan, not an unwind): nvoglv64.dll+0x131ef23, nvoglv64.dll+0x1315212, nvoglv64.dll+0x160be7, nvoglv64.dll+0x1487e5d, nvoglv64.dll+0x148c99c, ntdll.dll+0x1d0d1, ntdll.dll+0xac5c, ntdll.dll+0x1cca4, ntdll.dll+0xde4a
+THREAD 15764: CPU=52.797s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): carb.tasking.plugin.dll+0x24467, carb.tasking.plugin.dll+0xf15b, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 15700: CPU=101.875s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0xaf5f, ntdll.dll+0xc5ff, ntdll.dll+0xd872, ntdll.dll+0x5212a, ntdll.dll+0xde4a, ntdll.dll+0x515fd, ntdll.dll+0xcdbb2, ntdll.dll+0x0, ntdll.dll+0x1df7f, ntdll.dll+0x1d0d1, ntdll.dll+0x1cde4, ntdll.dll+0x1cca4, ntdll.dll+0x79268, nvrtum64.dll+0x148d0b4, nvrtum64.dll+0xa4fc47, cudnn_adv64_9.dll+0x1df0000, nvrtum64.dll+0x49a22e, nvrtum64.dll+0x8883bd
+THREAD 10740: CPU=79.047s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0xaf5f, ntdll.dll+0x1cde4, ntdll.dll+0x1cca4, ntdll.dll+0xc5ff, ntdll.dll+0xd872, ntdll.dll+0x5212a, nvoglv64.dll+0x10eafc0, cudnn_adv64_9.dll+0x1df0001, ntdll.dll+0x1d0d1, nvoglv64.dll+0x1306b14, nvoglv64.dll+0x1321a01, ntdll.dll+0xde4a, nvoglv64.dll+0x13217c4, nvoglv64.dll+0x1320a06, nvoglv64.dll+0x131ed39, nvoglv64.dll+0x131ef18, nvoglv64.dll+0x1315208, nvoglv64.dll+0x160be7
+THREAD 10576: CPU=155.250s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0xaf5f, ntdll.dll+0xd872, ntdll.dll+0xc5ff, ntdll.dll+0xd800, ntdll.dll+0x22949, ntdll.dll+0x1d0d1, ntdll.dll+0x1cca4, ntdll.dll+0x79300, nvoglv64.dll+0x10eac48, nvoglv64.dll+0x131ee04, cudnn_adv64_9.dll+0x1df0000, nvoglv64.dll+0x131ef18, nvoglv64.dll+0x1528d1c
+THREAD 6076: CPU=0.031s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x9c1c3, carb.tasking.plugin.dll+0x47248, ntdll.dll+0xa6a81, carb.tasking.plugin.dll+0x11491, carb.tasking.plugin.dll+0x471c0, carb.tasking.plugin.dll+0x25566, ucrtbase.dll+0x174bf, carb.tasking.plugin.dll+0xf1cf, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 1908: CPU=0.000s RIP=ntdll.dll+0x1658a4
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x75f3e, ntdll.dll+0x74ea0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 13496: CPU=0.000s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x9c1c3, omniclient.dll+0x135f1f8, omniclient.dll+0x135f250, omniclient.dll+0x38f7b5, omniclient.dll+0x135f270, omniclient.dll+0x31dc9f, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 1068: CPU=0.000s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x94d4e, omniclient.dll+0x1374348, omniclient.dll+0xfc3908, KERNELBASE.dll+0x39618, omniclient.dll+0x12c8128, omniclient.dll+0x9c668d, omniclient.dll+0x9c6916, omniclient.dll+0x9c6426, omniclient.dll+0xdfd44d, omniclient.dll+0x9c67a6, omniclient.dll+0x9c6186, omniclient.dll+0xdf7b6f, omniclient.dll+0x6c1310, omniclient.dll+0x13640e8, omniclient.dll+0xf24a78, omniclient.dll+0xf24a60, omniclient.dll+0x1363a18, omniclient.dll+0xdf81f9
+THREAD 1388: CPU=0.000s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x94d4e, omniclient.dll+0x1374348, omniclient.dll+0xfc3908, KERNELBASE.dll+0x39618, omniclient.dll+0x12c8128, omniclient.dll+0x9c668d, omniclient.dll+0x9c6916, omniclient.dll+0x9c6426, omniclient.dll+0xdfd44d, omniclient.dll+0x9c67a6, omniclient.dll+0x9c6186, omniclient.dll+0xdf7b6f, omniclient.dll+0x6c1310, omniclient.dll+0x13640e8, omniclient.dll+0xf24a78, omniclient.dll+0xf24a60, omniclient.dll+0x1363a18, omniclient.dll+0xdf81f9
+THREAD 13536: CPU=0.047s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x94d4e, omniclient.dll+0x1374260, omniclient.dll+0xdfd249, msvcp140.dll+0x1850f, omniclient.dll+0xfc3908, KERNELBASE.dll+0x39618, omniclient.dll+0x12c8128, omniclient.dll+0x7525c4, omniclient.dll+0x9c6916, omniclient.dll+0x9c57b1, omniclient.dll+0x9c67a6, omniclient.dll+0x1363d58, omniclient.dll+0x1363d48, omniclient.dll+0x9c6186, omniclient.dll+0xdfc200, omniclient.dll+0xdf7add, omniclient.dll+0xdf7c14, omniclient.dll+0x6a919f
+THREAD 492: CPU=0.141s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x9c1c3, omniclient.dll+0x135e3c0, omniclient.dll+0x383840, omniclient.dll+0x31dc9f, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 4992: CPU=0.203s RIP=ntdll.dll+0x162274
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0xcef34, KERNELBASE.dll+0x3e7a1, msvcp140.dll+0x17bd7, msvcp140.dll+0x1873f, ov_25.11usd_ms.dll+0xf1172, ov_25.11usd_ms.dll+0xf0fe9, ucrtbase.dll+0x174bf, ov_25.11usd_ms.dll+0xf0fd3, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 16280: CPU=41.156s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x94d4e, ovstage.dll+0x302dc, KERNELBASE.dll+0x39618, ovstage.dll+0xb4521, msvcp140.dll+0x176ea, ovstage.dll+0x32993, ntdll.dll+0x8c510, ovstage.dll+0x2dfa1, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 11816: CPU=0.016s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x94d4e, ntdll.dll+0xa6a81, ovrtx.dylib.dll+0xaa9e90, KERNELBASE.dll+0x39618, msvcp140.dll+0x176ea, ovrtx.dylib.dll+0xa5351, ovrtx.dylib.dll+0xa4c7f, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 10516: CPU=0.000s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, carb.crashreporter-breakpad.plugin.dll+0x694e5, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 3704: CPU=0.000s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, cupti64_2025.1.0.dll+0x4801a, cupti64_2025.1.0.dll+0x19cb22, cupti64_2025.1.0.dll+0x4f566, cupti64_2025.1.0.dll+0x0, cupti64_2025.1.0.dll+0x19c7ca, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 13188: CPU=0.047s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, cupti64_2025.1.0.dll+0x19cb22, cupti64_2025.1.0.dll+0x3e21f, cupti64_2025.1.0.dll+0x0, cupti64_2025.1.0.dll+0x19c7ca, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 7420: CPU=0.016s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, KERNELBASE.dll+0x39201, nvoglv64.dll+0xa696f7, nvoglv64.dll+0xa68ca8, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 9964: CPU=0.016s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, KERNELBASE.dll+0x39201, nvoglv64.dll+0xddc267, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 2224: CPU=0.281s RIP=ntdll.dll+0x162274
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0xcef34, KERNELBASE.dll+0x39a2d, KERNELBASE.dll+0x3e7a1, nvoglv64.dll+0x0, nvoglv64.dll+0xa58500, ucrtbase.dll+0x19ec1, ucrtbase.dll+0x1984c, Windows.Devices.winmd+0xc0000, ntdll.dll+0xe7980, ucrtbase.dll+0x1e541, ucrtbase.dll+0x0, ucrtbase.dll+0x185cb, ntdll.dll+0x1cca4, omniclient.dll+0xe6c16b, cudnn_engines_runtime_compiled64_9.dll+0x57a49c, cudnn_engines_runtime_compiled64_9.dll+0x57ba24, cudnn_engines_runtime_compiled64_9.dll+0x52828f, cudnn_engines_runtime_compiled64_9.dll+0x5221ff
+THREAD 12436: CPU=0.016s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, nvoglv64.dll+0x2b52610, nvoglv64.dll+0xa366ca, nvoglv64.dll+0xf41562, nvoglv64.dll+0xa385e8, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 1848: CPU=0.000s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, nvoglv64.dll+0x2b4c1d0, nvoglv64.dll+0xa366ca, nvoglv64.dll+0xf52222, KERNELBASE.dll+0xbbedb, nvoglv64.dll+0xa385e8, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 11852: CPU=0.078s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, nvoglv64.dll+0x2b4c1d0, nvoglv64.dll+0xa366ca, nvoglv64.dll+0xf5ec54, KERNELBASE.dll+0xbbedb, nvoglv64.dll+0xa385e8, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 2696: CPU=0.125s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, nvoglv64.dll+0xa366ca, nvoglv64.dll+0xf3ef4d, KERNELBASE.dll+0xbbedb, nvoglv64.dll+0xa385e8, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 15836: CPU=0.062s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, KERNELBASE.dll+0x39201, nvcuda64.dll+0x1f5d74, nvcuda64.dll+0xd4891, nvcuda64.dll+0x10495d, nvcuda64.dll+0x104abd, nvcuda64.dll+0x20f16d, nvcuda64.dll+0x3c20e4, nvcuda64.dll+0x2d4d95, nvcuda64.dll+0x0, nvcuda64.dll+0x1f5797, nvcuda64.dll+0x4b17b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 7452: CPU=0.109s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, KERNELBASE.dll+0x39201, nvcuda64.dll+0x1f5d74, nvcuda64.dll+0xd4891, nvcuda64.dll+0x10495d, nvcuda64.dll+0x104abd, nvcuda64.dll+0x20f16d, nvcuda64.dll+0x3c20e4, nvcuda64.dll+0x2d4d95, nvcuda64.dll+0x0, nvcuda64.dll+0x1f5797, nvcuda64.dll+0x4b17b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 9180: CPU=0.625s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, user32.dll+0x52259, nvoglv64.dll+0xa366ca, nvoglv64.dll+0x106e2b6, nvoglv64.dll+0xacfabb, nvoglv64.dll+0x2b4c1d0, nvoglv64.dll+0xaca9ae, nvoglv64.dll+0x1064b30, nvoglv64.dll+0x1064b18, nvoglv64.dll+0xa385e8, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 16004: CPU=0.500s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x9c1c3, carb.tasking.plugin.dll+0x22c36, carb.tasking.plugin.dll+0x47238, carb.tasking.plugin.dll+0x11491, carb.tasking.plugin.dll+0x471c0, carb.tasking.plugin.dll+0x24937, carb.tasking.plugin.dll+0xf1cf, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 17312: CPU=0.016s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ovrtx.dylib.dll+0x3ca68, KERNELBASE.dll+0x32a0f, ovrtx.dylib.dll+0xad6218, ovrtx.dylib.dll+0x20f8e8, KERNELBASE.dll+0xe90e0, ucrtbase.dll+0x174bf, ovrtx.dylib.dll+0x20e842, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 11112: CPU=0.016s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ovrtx.dylib.dll+0x7128fa, ovrtx.dylib.dll+0x6e2632, ovrtx.dylib.dll+0x6e0fa8, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 12572: CPU=0.000s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ovrtx.dylib.dll+0x7128fa, ovrtx.dylib.dll+0x6e2632, ovrtx.dylib.dll+0x6e0fa8, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 2492: CPU=0.000s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ovrtx.dylib.dll+0x7128fa, ovrtx.dylib.dll+0x6e2632, ovrtx.dylib.dll+0x6e0fa8, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 2288: CPU=0.000s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ovrtx.dylib.dll+0x7128fa, ovrtx.dylib.dll+0x6e2632, ovrtx.dylib.dll+0x6e0fa8, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 16804: CPU=0.000s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ovrtx.dylib.dll+0x7128fa, ovrtx.dylib.dll+0x6e2632, ovrtx.dylib.dll+0x6e0fa8, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 3140: CPU=0.000s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ovrtx.dylib.dll+0x7128fa, ovrtx.dylib.dll+0x6e2632, ovrtx.dylib.dll+0x6e0fa8, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 11000: CPU=0.016s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ovrtx.dylib.dll+0x7128fa, ovrtx.dylib.dll+0x6e2632, ovrtx.dylib.dll+0x6e0fa8, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 17264: CPU=0.016s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ovrtx.dylib.dll+0x7128fa, ovrtx.dylib.dll+0x6e2632, ovrtx.dylib.dll+0x6e0fa8, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 3612: CPU=0.000s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ovrtx.dylib.dll+0x7128fa, ovrtx.dylib.dll+0x6e2632, ovrtx.dylib.dll+0x6e0fa8, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 17372: CPU=0.016s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ovrtx.dylib.dll+0x7128fa, ovrtx.dylib.dll+0x6e2632, ovrtx.dylib.dll+0x6e0fa8, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 10032: CPU=0.016s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ovrtx.dylib.dll+0x7128fa, ovrtx.dylib.dll+0x6e2632, ovrtx.dylib.dll+0x6e0fa8, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 14940: CPU=0.031s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ovrtx.dylib.dll+0x7128fa, ovrtx.dylib.dll+0x6e2632, ovrtx.dylib.dll+0x6e0fa8, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 1736: CPU=0.000s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ovrtx.dylib.dll+0x7128fa, ovrtx.dylib.dll+0x6e2632, ovrtx.dylib.dll+0x6e0fa8, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 11040: CPU=0.000s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ovrtx.dylib.dll+0x7128fa, ovrtx.dylib.dll+0x6e2632, ovrtx.dylib.dll+0x6e0fa8, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 1752: CPU=0.000s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ovrtx.dylib.dll+0x7128fa, ovrtx.dylib.dll+0x6e2632, ovrtx.dylib.dll+0x6e0fa8, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 17292: CPU=0.000s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, ovrtx.dylib.dll+0x7128fa, ovrtx.dylib.dll+0x6e2632, ovrtx.dylib.dll+0x6e0fa8, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 12304: CPU=0.000s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x9c1c3, gpu.foundation.plugin.dll+0xb4a56, gpu.foundation.plugin.dll+0x65c9f, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 472: CPU=0.000s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x9c1c3, gpu.foundation.plugin.dll+0x10f498, gpu.foundation.plugin.dll+0x10d7f4, gpu.foundation.plugin.dll+0x10fd50, KERNELBASE.dll+0xe90e0, gpu.foundation.plugin.dll+0x3e38b8, gpu.foundation.plugin.dll+0x10bcf0, cudnn_adv64_9.dll+0x1df0001, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 10128: CPU=0.109s RIP=ntdll.dll+0x162274
+  Candidate stack code pointers (scan, not an unwind): gpu.foundation.plugin.dll+0xc403b, gpu.foundation.plugin.dll+0xb9c0b, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 15916: CPU=1.516s RIP=ntdll.dll+0x162274
+  Candidate stack code pointers (scan, not an unwind): ovrtx.dylib.dll+0x12fb83, carb.tasking.plugin.dll+0x278f0, msvcp140.dll+0x1850f, carb.tasking.plugin.dll+0x27e79, ovrtx.dylib.dll+0x8f20f6, ovrtx.dylib.dll+0xdb4bb8, ovrtx.dylib.dll+0xdb4bc8, ovrtx.dylib.dll+0x8db301, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 13856: CPU=1.047s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x9c1c3, carb.tasking.plugin.dll+0x11491, carb.tasking.plugin.dll+0x125c7, carb.tasking.plugin.dll+0x6d490, carb.tasking.plugin.dll+0x24ec6, carb.tasking.plugin.dll+0x1272d, carb.tasking.plugin.dll+0xacd1, carb.tasking.plugin.dll+0x37238, carb.tasking.plugin.dll+0x1d351, carb.tasking.plugin.dll+0x6d498, ovrtx.dylib.dll+0xe09200, carb.tasking.plugin.dll+0x6ede, ovrtx.dylib.dll+0x7a02a1, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 17152: CPU=159.672s RIP=ntdll.dll+0x162274
+  Candidate stack code pointers (scan, not an unwind): carb.tasking.plugin.dll+0x3a90, carb.tasking.plugin.dll+0x772a, carb.tasking.plugin.dll+0xa7a4, carb.tasking.plugin.dll+0x23d08, ovrtx.dylib.dll+0x7a03a7, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 3652: CPU=0.078s RIP=ntdll.dll+0x162274
+  Candidate stack code pointers (scan, not an unwind): carb.tasking.plugin.dll+0x3a90, carb.tasking.plugin.dll+0x772a, ucrtbase.dll+0x1e0fb, carb.tasking.plugin.dll+0xa7a4, carb.tasking.plugin.dll+0x23d08, ovrtx.dylib.dll+0x788cbd, ovrtx.dylib.dll+0x102ad48, ovrtx.dylib.dll+0xd85b60, ovrtx.dylib.dll+0xd85b78, ovrtx.dylib.dll+0x78428d, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 15444: CPU=0.047s RIP=ntdll.dll+0x161c74
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x32a5f, omniclient.dll+0x35ec91, KERNELBASE.dll+0x32a0f, omniclient.dll+0x4a08b2, omniclient.dll+0x4a17ac, ucrtbase.dll+0x174bf, omniclient.dll+0x31dc9f, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 12016: CPU=1.766s RIP=ntdll.dll+0x161d14
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x3991c, omniclient.dll+0x38502f, omniclient.dll+0x4ad063, omniclient.dll+0x4a29ef, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 4972: CPU=0.000s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x94d4e, carb.scenerenderer-rtx.plugin.dll+0x125cc8, carb.scenerenderer-rtx.plugin.dll+0x18fa48, carb.scenerenderer-rtx.plugin.dll+0x142f38, ovrtx.dylib.dll+0xf1b210, carb.scenerenderer-rtx.plugin.dll+0xb49a, carb.scenerenderer-rtx.plugin.dll+0x11b140, carb.scenerenderer-rtx.plugin.dll+0x18fa38, KERNELBASE.dll+0x39618, carb.scenerenderer-rtx.plugin.dll+0x630f7, msvcp140.dll+0x176ea, KERNELBASE.dll+0xe90e0, carb.scenerenderer-rtx.plugin.dll+0x68281, carb.scenerenderer-rtx.plugin.dll+0x126778, carb.scenerenderer-rtx.plugin.dll+0x62f8f, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 1396: CPU=0.453s RIP=ntdll.dll+0x162274
+  Candidate stack code pointers (scan, not an unwind): rtx.scenedb.plugin.dll+0x164dcb, rtx.scenedb.plugin.dll+0x19e543, cudnn_adv64_9.dll+0x1df000b, rtx.scenedb.plugin.dll+0x19d0df, rtx.scenedb.plugin.dll+0x59bc8, rtx.scenedb.plugin.dll+0x4346f8, rtx.scenedb.plugin.dll+0x154c29, KERNELBASE.dll+0xe90e0, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 16844: CPU=0.281s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x9c1c3, carb.tasking.plugin.dll+0x11491, carb.tasking.plugin.dll+0x125c7, carb.tasking.plugin.dll+0x74d90, carb.tasking.plugin.dll+0x24ec6, ntdll.dll+0xbb83a, carb.tasking.plugin.dll+0x1272d, carb.tasking.plugin.dll+0x19352, carb.tasking.plugin.dll+0x37238, carb.tasking.plugin.dll+0x1d351, carb.tasking.plugin.dll+0x74d98, ucrtbase.dll+0x3780, ntdll.dll+0x8c510, carb.tasking.plugin.dll+0x6ede, rtx.hydra.dll+0x165c2c, rtx.hydra.dll+0x155921, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7
+THREAD 3944: CPU=0.219s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x9c1c3, carb.tasking.plugin.dll+0x11491, carb.tasking.plugin.dll+0x125c7, carb.tasking.plugin.dll+0x7a550, carb.tasking.plugin.dll+0x24ec6, ntdll.dll+0xbb83a, carb.tasking.plugin.dll+0x1272d, carb.tasking.plugin.dll+0x19352, carb.tasking.plugin.dll+0x37238, carb.tasking.plugin.dll+0x1d351, carb.tasking.plugin.dll+0x7a558, ucrtbase.dll+0x3780, ntdll.dll+0x8c510, carb.tasking.plugin.dll+0x6ede, rtx.hydra.dll+0x165c2c, rtx.hydra.dll+0x155921, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7
+THREAD 10176: CPU=0.000s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x9c1c3, ucrtbase.dll+0x3780, carb.tasking.plugin.dll+0x176a2, carb.tasking.plugin.dll+0x6db10, carb.tasking.plugin.dll+0x24e72, ovrtx.dylib.dll+0xab886, carb.tasking.plugin.dll+0x1272d, carb.tasking.plugin.dll+0x37218, carb.tasking.plugin.dll+0x1d297, carb.tasking.plugin.dll+0x6db18, ntdll.dll+0xa6a81, ovrtx.dylib.dll+0xaab930, carb.tasking.plugin.dll+0xacd1, KERNELBASE.dll+0xe90e0, ucrtbase.dll+0x1e0fb, carb.tasking.plugin.dll+0xb2c9, carb.tasking.plugin.dll+0x471c0, carb.tasking.plugin.dll+0x973f
+THREAD 10616: CPU=0.172s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, ntdll.dll+0x1cde4, omniclient.dll+0x5d120d, omniclient.dll+0x5d4b35, omniclient.dll+0x38f260, omniclient.dll+0x35ec91, ntdll.dll+0x0, omniclient.dll+0x135e498, omniclient.dll+0x38502f, omniclient.dll+0x601147, omniclient.dll+0x1358aa0, omniclient.dll+0x35c57c, omniclient.dll+0x5d40e9, omniclient.dll+0x5ff074, omniclient.dll+0x5d1ee6, omniclient.dll+0x5d260d, omniclient.dll+0x5d2536, omniclient.dll+0x3bdbf9
+THREAD 4696: CPU=0.000s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x9c1c3, _omniclient.cp312-win_amd64.pyd+0x8170e, _omniclient.cp312-win_amd64.pyd+0xecf08, _omniclient.cp312-win_amd64.pyd+0xecf78, _omniclient.cp312-win_amd64.pyd+0x9ba32, _omniclient.cp312-win_amd64.pyd+0xa69f0, _omniclient.cp312-win_amd64.pyd+0xc733, ucrtbase.dll+0x37b0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 11236: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x259efb, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x1314440, KERNELBASE.dll+0x39201, kernel32.dll+0x57000, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x25aaf3, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 5820: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x259efb, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x1314440, KERNELBASE.dll+0x39201, kernel32.dll+0x57000, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x25aaf3, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 3096: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x259efb, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x1314440, KERNELBASE.dll+0x39201, kernel32.dll+0x57000, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x25aaf3, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 2340: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x259efb, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x1314440, KERNELBASE.dll+0x39201, kernel32.dll+0x57000, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x25aaf3, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 14424: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x259efb, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x1314440, KERNELBASE.dll+0x39201, kernel32.dll+0x57000, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x25aaf3, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 15716: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x259efb, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x1314440, KERNELBASE.dll+0x39201, kernel32.dll+0x57000, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x25aaf3, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 6744: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x259efb, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x1314440, KERNELBASE.dll+0x39201, kernel32.dll+0x57000, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x25aaf3, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 17088: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x259efb, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x1314440, KERNELBASE.dll+0x39201, kernel32.dll+0x57000, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x25aaf3, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 4552: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x259efb, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x1314440, KERNELBASE.dll+0x39201, kernel32.dll+0x57000, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x25aaf3, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 16612: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x259efb, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x1314440, KERNELBASE.dll+0x39201, kernel32.dll+0x57000, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x25aaf3, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 9472: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x259efb, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x1314440, KERNELBASE.dll+0x39201, kernel32.dll+0x57000, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x25aaf3, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 11888: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x259efb, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x1314440, KERNELBASE.dll+0x39201, kernel32.dll+0x57000, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x25aaf3, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 10596: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x259efb, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x1314440, KERNELBASE.dll+0x39201, kernel32.dll+0x57000, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x25aaf3, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 15724: CPU=0.000s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x259efb, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x1314440, KERNELBASE.dll+0x39201, kernel32.dll+0x57000, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x25aaf3, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 6156: CPU=0.016s RIP=ntdll.dll+0x162744
+  Candidate stack code pointers (scan, not an unwind): KERNELBASE.dll+0x39333, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x259efb, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x1314440, KERNELBASE.dll+0x39201, kernel32.dll+0x57000, libscipy_openblas-64eda39e79589aedb16f58e5547eb599.dll+0x25aaf3, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c
+THREAD 15668: CPU=2.281s RIP=ntdll.dll+0x165844
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x9c1c3, ovstage.dll+0x21b3fa, carb.tasking.plugin.dll+0x176a2, carb.tasking.plugin.dll+0x6e710, carb.tasking.plugin.dll+0x24e72, carb.tasking.plugin.dll+0x64738, carb.tasking.plugin.dll+0x9fb9, carb.tasking.plugin.dll+0xacd1, carb.tasking.plugin.dll+0x1272d, carb.tasking.plugin.dll+0x1d6c0, carb.tasking.plugin.dll+0x37218, carb.tasking.plugin.dll+0x1d297, ovstage.dll+0x3778c8, carb.tasking.plugin.dll+0xb2c9, ovstage.dll+0x12ac6e, carb.tasking.plugin.dll+0x6e718, ovstage.dll+0x3388a0, KERNELBASE.dll+0xe90e0
+THREAD 16472: CPU=0.016s RIP=ntdll.dll+0x1658a4
+  Candidate stack code pointers (scan, not an unwind): ntdll.dll+0x75f3e, ntdll.dll+0x77bb0, kernel32.dll+0x2e8d7, ntdll.dll+0x8c53c

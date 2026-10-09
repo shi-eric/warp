@@ -1,0 +1,41 @@
+[
+  {
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 15.547,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_mujoco_capture.py",
+      "--rounds",
+      "100",
+      "--warmup"
+    ]
+  },
+  {
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 11.672,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_mujoco_capture.py",
+      "--rounds",
+      "100",
+      "--warmup"
+    ]
+  },
+  {
+    "outcome": "passed",
+    "exit_code": 0,
+    "seconds": 11.547,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/venv-117/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\AppData\\Local\\Temp\\warp-8342\\probe_mujoco_capture.py",
+      "--rounds",
+      "100",
+      "--warmup"
+    ]
+  }
+]

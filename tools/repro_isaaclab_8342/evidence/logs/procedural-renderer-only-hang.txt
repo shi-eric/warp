@@ -1,0 +1,30 @@
+Warp 1.17.0 initialized:
+   CUDA Toolkit 12.9, Driver 13.2
+   Devices:
+     "cpu"      : "Intel64 Family 6 Model 134 Stepping 0, GenuineIntel"
+     "cuda:0"   : "NVIDIA A40" (48 GiB, sm_86, mempool enabled)
+   Kernel cache:
+     \\?\C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\kernel_cache\1.17.0
+Versions: {'warp-lang': '1.17.0', 'ovrtx': '0.5.0.377615', 'ovstage': '0.2.0.377349'}
+Module prefix_kernels a199671 load on device 'cpu' took 2.82 ms  (cached)
+Module prefix_kernels a199671 load on device 'cuda:0' took 2.81 ms  (cached)
+Hierarchy: GPU_INCREMENTAL
+[Warning] [carb] Source: carb_profiler_nvtx_plugin was already registered.
+Attaching populated stage
+Stage attached
+Round 1: renderer step
+Round 1: before captured allocation
+Timeout (0:02:00)!
+Thread 0x00000ee4 (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\renderer-only\Lib\site-packages\warp\_src\context.py", line 5044 in allocate
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\renderer-only\Lib\site-packages\warp\_src\types.py", line 3901 in _init_new
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\renderer-only\Lib\site-packages\warp\_src\types.py", line 3418 in __init__
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\renderer-only\Lib\site-packages\warp\_src\context.py", line 9869 in empty
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\probe_renderer_capture.py", line 246 in <module>
+Timeout (0:02:00)!
+Thread 0x00000ee4 (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\renderer-only\Lib\site-packages\warp\_src\context.py", line 5044 in allocate
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\renderer-only\Lib\site-packages\warp\_src\types.py", line 3901 in _init_new
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\renderer-only\Lib\site-packages\warp\_src\types.py", line 3418 in __init__
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\renderer-only\Lib\site-packages\warp\_src\context.py", line 9869 in empty
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\probe_renderer_capture.py", line 246 in <module>

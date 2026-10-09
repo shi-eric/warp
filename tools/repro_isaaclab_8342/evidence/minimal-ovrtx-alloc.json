@@ -1,0 +1,12 @@
+[
+  {
+    "outcome": "failed",
+    "exit_code": 1,
+    "seconds": 392.547,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/renderer-no-stage/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\minimal_ovrtx_alloc_capture.py"
+    ]
+  }
+]

@@ -1,0 +1,50 @@
+KERNELBASE LOAD 0x7ffdff460000 table None file C:\Windows\System32\KERNELBASE.dll
+0 0xcc8afedbc8 ntdll.dll+0x161cd4 (NtDeviceIoControlFile+0x14)
+1 0xcc8afedbd0 KERNELBASE.dll+0x3a293 (DeviceIoControl+0x73)
+2 0xcc8afedc40 kernel32.dll+0x232b5 (DeviceIoControl+0x75)
+3 0xcc8afedc90 nvcuda64.dll+0x311639 (cuProfilerStop+0x76369)
+4 0xcc8afedce0 nvcuda64.dll+0x1e3349
+5 0xcc8afedd60 nvcuda64.dll+0x1eeee9
+6 0xcc8afede50 nvcuda64.dll+0x1f06c5
+7 0xcc8afeded0 nvcuda64.dll+0x1a8c24
+8 0xcc8afedf40 nvcuda64.dll+0x196882
+9 0xcc8afee220 nvcuda64.dll+0x15f5be
+10 0xcc8afee2e0 nvcuda64.dll+0x1f41f6
+11 0xcc8afee310 nvcuda64.dll+0x15f715
+12 0xcc8afee340 nvcuda64.dll+0x2db5a9 (cuProfilerStop+0x402d9)
+13 0xcc8afee800 nvcuda64.dll+0x83de9
+14 0xcc8afee860 nvcuda64.dll+0x28a544 (cuMemFreeAsync+0x244)
+15 0xcc8afee950 nvcuda64.dll+0x28a5c5 (cuMemAllocAsync+0x25)
+16 0xcc8afee990 warp.dll+0x6fee82 (wp_nvrtc_version+0x7042)
+17 0xcc8afee9c0 warp.dll+0x6fb561 (wp_nvrtc_version+0x3721)
+18 0xcc8afeeaa0 warp.dll+0x6e63ab (wp_alloc_device_async+0xdb)
+19 0xcc8afeec10 libffi-8.dll+0x4791 (ffi_prep_go_closure+0x71)
+20 0xcc8afeec40 libffi-8.dll+0x44a0 (ffi_call_go+0x140)
+21 0xcc8afeec90 libffi-8.dll+0x4352 (ffi_call+0x12)
+22 0xcc8afeecd0 _ctypes.pyd+0x3ec6
+23 0xcc8afeee20 _ctypes.pyd+0x297b
+24 0xcc8afeef90 _ctypes.pyd+0x2585
+25 0xcc8afef030 python312.dll+0x55a7e (PyObject_Vectorcall+0x5de)
+26 0xcc8afef0b0 python312.dll+0x554d9 (PyObject_Vectorcall+0x39)
+27 0xcc8afef0f0 python312.dll+0x56a18 (_PyEval_EvalFrameDefault+0x8d8)
+28 0xcc8afef320 python312.dll+0x549fc (_PyFunction_Vectorcall+0x17c)
+29 0xcc8afef380 python312.dll+0x6817a (PyNumber_Long+0x8f6)
+30 0xcc8afef430 python312.dll+0x67589 (Py_BuildValue+0x38d)
+31 0xcc8afef480 python312.dll+0x36c36 (PyObject_Call+0xb6)
+32 0xcc8afef4d0 python312.dll+0x5a573 (_PyEval_EvalFrameDefault+0x4433)
+33 0xcc8afef700 python312.dll+0xc642c (_PyType_CalculateMetaclass+0x114)
+34 0xcc8afef740 python312.dll+0xc4c86 (PyEval_EvalCode+0xb6)
+35 0xcc8afef7c0 python312.dll+0x36074 (_PyLong_AsByteArray+0x354)
+36 0xcc8afef7f0 python312.dll+0x36164 (_PyLong_AsByteArray+0x444)
+37 0xcc8afef840 python312.dll+0x15e4cc (PyDict_DelItemString+0x28c)
+38 0xcc8afef8b0 python312.dll+0x15e19a (_PyRun_SimpleFileObject+0x126)
+39 0xcc8afef930 python312.dll+0x15df75 (_PyRun_AnyFileObject+0x4d)
+40 0xcc8afef970 python312.dll+0x15da2a (_Py_get_osfhandle+0x1ae)
+41 0xcc8afefa40 python312.dll+0x15d903 (_Py_get_osfhandle+0x87)
+42 0xcc8afefa70 python312.dll+0x11179b (Py_RunMain+0x267)
+43 0xcc8afefaf0 python312.dll+0x11154c (Py_RunMain+0x18)
+44 0xcc8afefb20 python312.dll+0x1f4b (Py_Main+0x2b)
+45 0xcc8afefb70 python.exe+0x1230
+46 0xcc8afefbb0 kernel32.dll+0x2e8d7 (BaseThreadInitThunk+0x17)
+47 0xcc8afefbe0 ntdll.dll+0x8c53c (RtlUserThreadStart+0x2c)
+Unwind stopped 48 last error 0

@@ -1,0 +1,22 @@
+Warp 1.17.0 initialized:
+   CUDA Toolkit 12.9, Driver 13.2
+   Devices:
+     "cpu"      : "Intel64 Family 6 Model 134 Stepping 0, GenuineIntel"
+     "cuda:0"   : "NVIDIA A40" (48 GiB, sm_86, mempool enabled)
+   Kernel cache:
+     \\?\C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\kernel_cache\1.17.0
+Torch: 2.12.0+cu130
+Module prefix_kernels a199671 load on device 'cuda:0' took 2.54 ms  (cached)
+[Warning] [carb] Source: carb_profiler_nvtx_plugin was already registered.
+Populating exported USD 8192 environments
+Attaching 262144 body paths
+Attached
+Round 1: rendering
+Round 1: capture enter
+Timeout (0:02:00)!
+Thread 0x000025dc (most recent call first):
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\IsaacLab\.venv\Lib\site-packages\warp\_src\context.py", line 5044 in allocate
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\IsaacLab\.venv\Lib\site-packages\warp\_src\types.py", line 3901 in _init_new
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\IsaacLab\.venv\Lib\site-packages\warp\_src\types.py", line 3418 in __init__
+  File "C:\Users\horde\AppData\Local\Temp\warp-8342\IsaacLab\.venv\Lib\site-packages\warp\_src\context.py", line 9869 in empty
+  File "C:\Users\horde\Code\warp\tools\repro_isaaclab_8342\probe_renderer_fixture.py", line 183 in <module>

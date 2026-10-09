@@ -1,0 +1,17 @@
+[
+  {
+    "outcome": "failed",
+    "exit_code": 1,
+    "seconds": 235.218,
+    "command": [
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/IsaacLab/.venv/Scripts/python.exe",
+      "-u",
+      "C:\\Users\\horde\\Code\\warp\\tools\\repro_isaaclab_8342\\probe_renderer_fixture.py",
+      "--fixture",
+      "C:/Users/horde/AppData/Local/Temp/warp-8342/renderer-fixture",
+      "--gpu-transforms",
+      "--torch",
+      "--release-products"
+    ]
+  }
+]
