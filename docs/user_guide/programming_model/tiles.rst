@@ -506,6 +506,8 @@ Maps/Reductions
 * :func:`tile_scan_max_inclusive <warp._src.lang.tile_scan_max_inclusive>`
 * :func:`tile_scan_min_inclusive <warp._src.lang.tile_scan_min_inclusive>`
 
+.. _tile-struct-element-types:
+
 Struct Element Types
 ^^^^^^^^^^^^^^^^^^^^
 
@@ -529,9 +531,56 @@ Field-wise additive accumulation combines only the fields whose scalar leaf type
 ``float32``, and ``float64``. Vector and matrix fields accumulate component-wise when their scalar
 component is one of these types. All other fields, including ``bool``, the narrow integers
 ``[u]int8`` and ``[u]int16``, and array fields, are carried through the struct value unchanged
-rather than accumulated. Array fields are carried as descriptors with unspecified merge behavior; see
-:ref:`limitations-arrays-in-structs`. Accumulation is differentiable for the accumulating fields,
-subject to the general CPU ``block_dim=1`` rule described under `CPU vs. GPU behavior differences`_.
+rather than accumulated. Array fields are carried as descriptors with unspecified merge behavior.
+Accumulation is differentiable for the accumulating fields, subject to the general CPU ``block_dim=1``
+rule described under `CPU vs. GPU behavior differences`_.
+
+For example, :func:`tile_sum <warp.tile_sum>` reduces the tile of structs below: the ``weight``
+field is summed across the tile, while the ``values`` array field is carried through as a descriptor.
+The array contents are left untouched:
+
+.. testcode::
+
+    TILE_N = 8
+
+
+    @wp.struct
+    class ParticleBatch:
+        weight: wp.float32
+        values: wp.array[wp.float32]
+
+
+    @wp.kernel
+    def combine_batches(batches: wp.array[ParticleBatch], combined: wp.array[ParticleBatch]):
+        # cooperatively reduce a tile of struct elements field-wise
+        t = wp.tile_load(batches, shape=TILE_N, storage="shared")
+        wp.tile_store(combined, wp.tile_sum(t))
+
+
+    # each batch references a *different* payload array
+    payloads = [wp.array(np.full(TILE_N, float(i), dtype=np.float32), dtype=wp.float32) for i in range(TILE_N)]
+
+    batches = []
+    for i in range(TILE_N):
+        b = ParticleBatch()
+        b.weight = float(i)
+        b.values = payloads[i]
+        batches.append(b)
+    batches = wp.array(batches, dtype=ParticleBatch)
+
+    combined = wp.zeros(1, dtype=ParticleBatch)
+    wp.launch_tiled(combine_batches, dim=[1], inputs=[batches], outputs=[combined], block_dim=TILE_N)
+
+    # the weight field is summed field-wise across the tile: 0 + 1 + ... + 7
+    print(f"weight = {combined.numpy()['weight'][0]}")
+
+.. testoutput::
+
+    weight = 28.0
+
+Each tile element references a different payload array here. The reduction carries one array descriptor
+through unchanged rather than reading, merging, or summing the array contents. Which descriptor survives
+is unspecified. To combine the payloads deterministically, accumulate their contents explicitly in a kernel.
 
 Arithmetic
 ^^^^^^^^^^
