@@ -95,6 +95,22 @@ This accounts for earlier observations:
 Warp only issues the allocation. Any first allocation from a new stream-ordered
 pool or graph-allocation window is affected, whether captured or not.
 
+### C++ reproduction
+
+`minimal_uvm_va_stall.cpp` is the shortest reproduction: the CUDA driver API plus
+three D3DKMT calls. It makes one managed allocation, reserves 16 MiB of foreign
+GPU VA where CUDA will place its next 96 GiB range, and times the process's first
+`cuMemAllocAsync`, which must reserve the default pool's range. No capture is
+needed. From an x64 Visual Studio developer prompt:
+
+```bat
+cl /nologo /EHsc /O2 /I"%CUDA_PATH%\include" minimal_uvm_va_stall.cpp /link /LIBPATH:"%CUDA_PATH%\lib\x64" cuda.lib
+minimal_uvm_va_stall.exe
+```
+
+On this A40, the allocation took 16.0–17.2 seconds in six runs, 3.6–4.3 seconds
+with `--obstacle-mib 4`, and 0.011–0.020 seconds with `--no-managed`.
+
 ### CUDA Python reproduction
 
 `minimal_uvm_va_capture.py` depends only on `cuda-bindings`. It reserves
