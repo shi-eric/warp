@@ -111,6 +111,12 @@ minimal_uvm_va_stall.exe
 On this A40, the allocation took 16.0–17.2 seconds in six runs, 3.6–4.3 seconds
 with `--obstacle-mib 4`, and 0.011–0.020 seconds with `--no-managed`.
 
+To trace the driver's UVM-Lite calls, add `uvm_ioctl_trace.cpp` to the `cl`
+command. Its static initializer patches `nvcuda64.dll`'s `DeviceIoControl` import
+and logs to stderr. A traced default run made eight 96 GiB reserve/release pairs
+2 MiB apart, 1.5–2.4 seconds per release, before placing the range just past the
+obstacle after 15.8 seconds. With `--no-managed`, it made no UVM-Lite calls.
+
 ### CUDA Python reproduction
 
 `minimal_uvm_va_capture.py` depends only on `cuda-bindings`. It reserves
