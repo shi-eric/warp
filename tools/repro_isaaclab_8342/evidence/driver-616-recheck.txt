@@ -1,0 +1,98 @@
+Driver 616.92 recheck, 2026-10-09/10. NVIDIA A40, WDDM, Windows 11 26100, same machine as the 595.97 runs.
+nvidia-smi: NVIDIA-SMI 616.92, KMD Version: 616.92, CUDA UMD Version: 13.4.
+Binaries were not rebuilt after the driver update. Every run is a fresh process.
+
+== minimal_uvm_va_stall.exe (C++, first cuMemAllocAsync) ==
+Foreign GPU VA at [0x2d00000000, 0x2d01000000)
+First cuMemAllocAsync at 0x2d01000000 took 15.548 s: STALLED
+Foreign GPU VA at [0x3900000000, 0x3901000000)
+First cuMemAllocAsync at 0x3901000000 took 15.800 s: STALLED
+Foreign GPU VA at [0x3800000000, 0x3801000000)
+First cuMemAllocAsync at 0x3801000000 took 16.799 s: STALLED
+--obstacle-mib 4:
+Foreign GPU VA at [0x2d00000000, 0x2d00400000)
+First cuMemAllocAsync at 0x2d00400000 took 3.425 s: STALLED
+--no-managed (2 runs):
+Foreign GPU VA at [0x2000000000, 0x2001000000)
+First cuMemAllocAsync at 0x2001000000 took 0.018 s
+Foreign GPU VA at [0x2000000000, 0x2001000000)
+First cuMemAllocAsync at 0x2001000000 took 0.016 s
+
+== minimal_uvm_va_stall.exe + uvm_ioctl_trace.cpp ==
+uvm_ioctl_trace: tracing UVM-Lite IOCTLs from nvcuda64.dll
+[   0.450s] reserve base=0x2000000000 length=0xd00000000 ok=1      0.021 ms
+[   0.451s] commit  base=0x2000000000 length=0x4820 ok=1      0.078 ms
+[   0.531s] reserve base=0x2d00000000 length=0x1800000000 ok=1      0.025 ms
+[   0.531s] release base=0x2d00000000 length=0x1800000000 ok=1   2439.309 ms
+[   2.972s] reserve base=0x2d00200000 length=0x1800000000 ok=1      0.011 ms
+[   2.972s] release base=0x2d00200000 length=0x1800000000 ok=1   2270.864 ms
+[   5.243s] reserve base=0x2d00400000 length=0x1800000000 ok=1      0.009 ms
+[   5.244s] release base=0x2d00400000 length=0x1800000000 ok=1   2219.788 ms
+[   7.465s] reserve base=0x2d00600000 length=0x1800000000 ok=1      0.010 ms
+[   7.465s] release base=0x2d00600000 length=0x1800000000 ok=1   2334.198 ms
+[   9.800s] reserve base=0x2d00800000 length=0x1800000000 ok=1      0.010 ms
+[   9.800s] release base=0x2d00800000 length=0x1800000000 ok=1   2211.659 ms
+[  12.014s] reserve base=0x2d00a00000 length=0x1800000000 ok=1      0.018 ms
+[  12.014s] release base=0x2d00a00000 length=0x1800000000 ok=1   2108.839 ms
+[  14.124s] reserve base=0x2d00c00000 length=0x1800000000 ok=1      0.012 ms
+[  14.124s] release base=0x2d00c00000 length=0x1800000000 ok=1   1900.101 ms
+[  16.025s] reserve base=0x2d00e00000 length=0x1800000000 ok=1      0.011 ms
+[  16.025s] release base=0x2d00e00000 length=0x1800000000 ok=1   2102.434 ms
+[  18.128s] reserve base=0x2d01000000 length=0x1800000000 ok=1      0.012 ms
+Foreign GPU VA at [0x2d00000000, 0x2d01000000)
+First cuMemAllocAsync at 0x2d01000000 took 17.623 s: STALLED
+exit=1
+--no-managed:
+uvm_ioctl_trace: tracing UVM-Lite IOCTLs from nvcuda64.dll
+Foreign GPU VA at [0x2000000000, 0x2001000000)
+First cuMemAllocAsync at 0x2001000000 took 0.031 s
+exit=0
+
+== minimal_uvm_va_capture.py (CUDA Python, captured cuMemAllocAsync) ==
+default:      Captured allocation at 0x4501000000 took 15.757 s  REPRODUCED
+default:      Captured allocation at 0x4b01000000 took 16.399 s  REPRODUCED
+--no-managed: foreign VA [0x3800000000, 0x3801000000); captured allocation at 0x3801000000 took 0.001 s
+--warmup:     foreign VA [0x5d00000000, 0x5d01000000); captured allocation at 0x3800000000 took 0.000 s
+--vulkan (16 MiB of 2 MiB vkAllocateMemory blocks): still stalled after about 32 minutes; terminated.
+
+== trace_uvm_ioctls.py minimal_uvm_va_capture.py ==
+Captured allocation at 0x4501000000 took 16.035 s
+Timestamps are seconds after perf_counter=4666.891
+[    0.594s] tid=12364 reserve base=0x3800000000 length=0xd00000000 ok=1     0.029 ms
+[    0.595s] tid=12364 commit  base=0x3800000000 length=0x4820 ok=1     0.079 ms
+[    0.646s] tid=12364 reserve base=0x4500000000 length=0x1800000000 ok=1     0.043 ms
+[    0.646s] tid=12364 release base=0x4500000000 length=0x1800000000 ok=1  1733.156 ms
+[    2.380s] tid=12364 reserve base=0x4500200000 length=0x1800000000 ok=1     0.019 ms
+[    2.380s] tid=12364 release base=0x4500200000 length=0x1800000000 ok=1  2107.401 ms
+[    4.492s] tid=12364 reserve base=0x4500400000 length=0x1800000000 ok=1     0.031 ms
+[    4.493s] tid=12364 release base=0x4500400000 length=0x1800000000 ok=1  2289.329 ms
+[    6.784s] tid=12364 reserve base=0x4500600000 length=0x1800000000 ok=1     0.024 ms
+[    6.784s] tid=12364 release base=0x4500600000 length=0x1800000000 ok=1  2471.984 ms
+[    9.261s] tid=12364 reserve base=0x4500800000 length=0x1800000000 ok=1     0.024 ms
+[    9.261s] tid=12364 release base=0x4500800000 length=0x1800000000 ok=1  1820.270 ms
+[   11.082s] tid=12364 reserve base=0x4500a00000 length=0x1800000000 ok=1     0.020 ms
+[   11.082s] tid=12364 release base=0x4500a00000 length=0x1800000000 ok=1  2007.271 ms
+[   13.090s] tid=12364 reserve base=0x4500c00000 length=0x1800000000 ok=1     0.018 ms
+[   13.090s] tid=12364 release base=0x4500c00000 length=0x1800000000 ok=1  1743.833 ms
+[   14.835s] tid=12364 reserve base=0x4500e00000 length=0x1800000000 ok=1     0.018 ms
+[   14.835s] tid=12364 release base=0x4500e00000 length=0x1800000000 ok=1  1837.271 ms
+[   16.674s] tid=12364 reserve base=0x4501000000 length=0x1800000000 ok=1     0.038 ms
+
+== Isaac Lab benchmark A/B (same command and runner as isaaclab-warmup-ab.txt) ==
+Plan: baseline,early,baseline,early,baseline,baseline; 480 s per-run timeout; hung = capture not returned 90 s after entry.
+Run 01 hit the 480 s run timeout 73 s into capture (cold start after the driver install), still walking the graph
+window with 32 failed placements; it is counted as hung.
+
+{"run": "01-baseline", "outcome": "timeout", "seconds": 481.6, "warmup_marker": false, "markers": {"GYM_MAKE_ENTER": "3061.945", "GRAPH_CAPTURE_ENTER": "3413.351"}, "trace_start": "3005.481", "capture_seconds": null, "uvm_calls": 82, "managed_init_t": 175.035, "graph_window_reserves": 33, "graph_window_failed_placements": 32, "graph_window_release_seconds": 71.6, "graph_window_final_base": "0x4c04000000"}
+{"run": "02-early", "outcome": "passed", "seconds": 215.9, "warmup_marker": true, "markers": {"GYM_MAKE_ENTER": "3497.839", "GRAPH_WARMUP_CAPTURE": "3501.631", "GRAPH_CAPTURE_ENTER": "3658.889"}, "trace_start": "3487.207", "capture_seconds": 3.672, "uvm_calls": 3, "managed_init_t": 102.467, "graph_window_reserves": 0, "graph_window_failed_placements": 0, "graph_window_release_seconds": 0.0, "graph_window_final_base": null}
+{"run": "03-baseline", "outcome": "hung-in-capture", "seconds": 276.5, "warmup_marker": false, "markers": {"GYM_MAKE_ENTER": "3714.174", "GRAPH_CAPTURE_ENTER": "3884.816"}, "trace_start": "3702.930", "capture_seconds": null, "uvm_calls": 96, "managed_init_t": 103.733, "graph_window_reserves": 40, "graph_window_failed_placements": 39, "graph_window_release_seconds": 93.3, "graph_window_final_base": "0x4c04e00000"}
+{"run": "04-early", "outcome": "passed", "seconds": 211.1, "warmup_marker": true, "markers": {"GYM_MAKE_ENTER": "3991.516", "GRAPH_WARMUP_CAPTURE": "3995.305", "GRAPH_CAPTURE_ENTER": "4152.098"}, "trace_start": "3980.814", "capture_seconds": 2.047, "uvm_calls": 17, "managed_init_t": 99.022, "graph_window_reserves": 0, "graph_window_failed_placements": 0, "graph_window_release_seconds": 0.0, "graph_window_final_base": null}
+{"run": "05-baseline", "outcome": "hung-in-capture", "seconds": 266.5, "warmup_marker": false, "markers": {"GYM_MAKE_ENTER": "4200.762", "GRAPH_CAPTURE_ENTER": "4365.469"}, "trace_start": "4190.688", "capture_seconds": null, "uvm_calls": 92, "managed_init_t": 100.369, "graph_window_reserves": 38, "graph_window_failed_placements": 37, "graph_window_release_seconds": 90.8, "graph_window_final_base": "0x4c04a00000"}
+{"run": "06-baseline", "outcome": "passed", "seconds": 196.0, "warmup_marker": false, "markers": {"GYM_MAKE_ENTER": "4468.619", "GRAPH_CAPTURE_ENTER": "4614.193"}, "trace_start": "4458.393", "capture_seconds": 2.312, "uvm_calls": 10, "managed_init_t": 94.27, "graph_window_reserves": 1, "graph_window_failed_placements": 0, "graph_window_release_seconds": 0.0, "graph_window_final_base": "0x5500000000"}
+
+Tally: baseline 3 of 4 hung (the pass used the alternative base 0x5500000000); early warm-up 0 of 2 hung.
+Pooled with 595.97: warm-up 0 of 14, baseline 9 of 12; one-sided Fisher exact p = C(12,9)/C(26,9) = 220/3124550 ≈ 7e-5.
+
+Conclusion: no change from 595.97. Ranges are still requested at full size (0xd00000000 managed, 0x1800000000
+pool/graph), each failed placement is still a 1.7-2.5 s 0x22e008 release followed by a retry 2 MiB higher, and the
+reservation never fails with CUDA_ERROR_OUT_OF_MEMORY, so an OOM-triggered smaller-reservation fallback cannot apply.

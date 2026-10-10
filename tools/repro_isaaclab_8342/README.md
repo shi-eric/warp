@@ -1,7 +1,8 @@
 # Isaac Lab #8342 investigation
 
-Investigated on 2026-10-07–08. **The reported allocation hang was reproduced on
-this NVIDIA A40 with driver 595.97**, using the stock 8,192-camera task at the
+Investigated on 2026-10-07–08 and rechecked on driver 616.92 on 2026-10-10
+(unchanged; `evidence/driver-616-recheck.txt`). **The reported allocation hang was
+reproduced on this NVIDIA A40 with driver 595.97**, using the stock 8,192-camera task at the
 reported Isaac Lab commit and its public OVRTX/OVStage pins. The reporter's
 source builds are not required to reproduce the symptom here.
 
@@ -109,13 +110,17 @@ minimal_uvm_va_stall.exe
 ```
 
 On this A40, the allocation took 16.0–17.2 seconds in six runs, 3.6–4.3 seconds
-with `--obstacle-mib 4`, and 0.011–0.020 seconds with `--no-managed`.
+with `--obstacle-mib 4`, and 0.011–0.020 seconds with `--no-managed`. Driver
+616.92 gave 15.5–16.8, 3.4, and 0.016–0.018 seconds.
 
 To trace the driver's UVM-Lite calls, add `uvm_ioctl_trace.cpp` to the `cl`
 command. Its static initializer patches `nvcuda64.dll`'s `DeviceIoControl` import
 and logs to stderr. A traced default run made eight 96 GiB reserve/release pairs
 2 MiB apart, 1.5–2.4 seconds per release, before placing the range just past the
 obstacle after 15.8 seconds. With `--no-managed`, it made no UVM-Lite calls.
+The 616.92 trace is the same: full 96 GiB requests, eight releases of 1.9–2.4
+seconds, and no smaller-range fallback, because the reservation never fails with
+`CUDA_ERROR_OUT_OF_MEMORY`.
 
 ### CUDA Python reproduction
 
@@ -188,6 +193,10 @@ both runs hung. With OVStage, the managed allocation comes from `ovstage.dll`
 through `usdrt.hierarchy.plugin.dll` and `omni.cubric.plugin.dll`. In the
 standalone OVRTX script without OVStage, `read_gpu_transforms=False` removed it.
 
+On driver 616.92, baseline runs hung in 3 of 4 and `early` runs in 0 of 2.
+Pooled over both drivers, warm-up runs hung in 0 of 14 and baseline runs in 9 of
+12 (one-sided Fisher exact p ≈ 7 × 10⁻⁵).
+
 Graph allocations exceeding the window, or a new device or memory pool, would
 still require a new window.
 
@@ -208,7 +217,7 @@ still require a new window.
 | --- | --- | --- |
 | OS | Windows 11, build 26100 | Windows 11 Enterprise, build 26200 |
 | GPU | NVIDIA A40, 48 GiB, sm_86, WDDM | RTX 6000 Ada / L40 |
-| Driver | 595.97; CUDA driver API 13.2 | 596.72 / 596.86 |
+| Driver | 595.97 (CUDA driver API 13.2); rechecked on 616.92 | 596.72 / 596.86 |
 | Warp | 1.17.0 wheel; 1.19.0.dev0 checkout | 1.17.0 |
 | Embedded Warp CUDA Toolkit | 12.9 wheel; 13.4 checkout | Not established by the report |
 | MuJoCo / MuJoCo-Warp | Both 3.12.0, isolated temporary environment | MuJoCo-Warp 3.12.0 |
