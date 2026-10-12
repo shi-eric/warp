@@ -5,6 +5,7 @@
 
 #include "builtin.h"
 
+#include "bvh_ray.h"
 #include "intersect.h"
 
 #ifdef __CUDA_ARCH__
@@ -439,6 +440,7 @@ struct bvh_query_t {
         , bounds_nr(0)
         , last_query_valid(true)
         , kind(BvhQueryKind::AABB)
+        , ray_use_standard_slabs(false)
         , radius(0.0f)
         , radius_sq(0.0f)
     {
@@ -477,6 +479,7 @@ struct bvh_query_t {
     // discriminant: bvh_query_next_dynamic (kind-erased queries) and the CPU tiled
     // fallback in tile_bvh.h. The codegen-selected per-kind iterators never read it.
     BvhQueryKind kind;
+    bool ray_use_standard_slabs;
     // Minkowski-offset: sphere radius, or ray inflation radius (0 => plain ray / aabb).
     float radius;
     float radius_sq;  // pre-computed radius*radius for sphere/capsule node tests
@@ -487,7 +490,7 @@ struct bvh_query_t {
 // The ray variants also apply the max_dist predicate (closed endpoint for capsules,
 // half-open for plain rays, matching the original behavior of each).
 template <BvhQueryKind QUERY_KIND>
-CUDA_CALLABLE inline bool
+CUDA_CALLABLE WP_FORCEINLINE bool
 bvh_query_test(const bvh_query_t& query, const vec3& node_lower, const vec3& node_upper, const float& max_dist)
 {
     if constexpr (QUERY_KIND == BvhQueryKind::SPHERE) {
@@ -505,9 +508,11 @@ bvh_query_test(const bvh_query_t& query, const vec3& node_lower, const vec3& nod
         );
         return hit && !(t > max_dist);
     } else if constexpr (QUERY_KIND == BvhQueryKind::RAY) {
-        // Plain ray: original slab test with its original half-open max_dist bound.
+        // Plain ray: include parallel face contacts and retain the half-open max_dist bound.
         float t = FLT_MAX;
-        bool hit = intersect_ray_aabb(query.input_lower, query.input_upper, node_lower, node_upper, t);
+        const bool hit = query.ray_use_standard_slabs
+            ? intersect_ray_aabb(query.input_lower, query.input_upper, node_lower, node_upper, t)
+            : bvh_ray_intersect_aabb(query.input_lower, query.input_upper, node_lower, node_upper, t);
         return hit && !(t >= max_dist);
     } else {
         return intersect_aabb_aabb(query.input_lower, query.input_upper, node_lower, node_upper);
@@ -553,6 +558,7 @@ CUDA_CALLABLE inline bvh_query_t bvh_query_ray(uint64_t id, const vec3& start, c
 {
     bvh_query_t query = bvh_query(id, start, 1.0f / dir, root);
     query.kind = BvhQueryKind::RAY;
+    query.ray_use_standard_slabs = bvh_ray_use_standard_slabs(start, dir, query.input_upper);
     return query;
 }
 

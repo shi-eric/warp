@@ -77,6 +77,26 @@ def bvh_query_ray(bvh_id: wp.uint64, start: wp.vec3, dir: wp.vec3, bounds_inters
         bounds_intersected[bounds_nr] = 1
 
 
+@wp.kernel(module_options={"fast_math": True}, module="unique")
+def bvh_query_ray_fast_math(bvh_id: wp.uint64, start: wp.vec3, dir: wp.vec3, bounds_intersected: wp.array[int]):
+    query = wp.bvh_query_ray(bvh_id, start, dir)
+    bounds_nr = int(0)
+
+    while wp.bvh_query_next(query, bounds_nr):
+        bounds_intersected[bounds_nr] = 1
+
+
+@wp.kernel
+def bvh_query_ray_with_max_dist(
+    bvh_id: wp.uint64, start: wp.vec3, dir: wp.vec3, max_dist: float, bounds_intersected: wp.array[int]
+):
+    query = wp.bvh_query_ray(bvh_id, start, dir)
+    bounds_nr = int(0)
+
+    while wp.bvh_query_next(query, bounds_nr, max_dist):
+        bounds_intersected[bounds_nr] = 1
+
+
 @wp.kernel
 def bvh_query_sphere(bvh_id: wp.uint64, center: wp.vec3, radius: float, bounds_intersected: wp.array[int]):
     query = wp.bvh_query_sphere(bvh_id, center, radius)
@@ -439,6 +459,146 @@ def test_bvh_query_erased_func_param(test, device):
     reference = expected.numpy()
     test.assertGreater(reference.sum(), 0)
     np.testing.assert_array_equal(actual.numpy(), reference)
+
+
+def test_bvh_ray_parallel_slab_boundaries(test, device):
+    """Include exact AABB faces in packed-leaf and internal-node ray queries."""
+    lowers = wp.array([(0.5, -1.0, -1.0), (0.5, -2.0, -1.0), (0.5, 3.0, -1.0)], dtype=wp.vec3, device=device)
+    uppers = wp.array([(1.0, 1.0, 1.0), (1.0, -1.5, 1.0), (1.0, 4.0, 1.0)], dtype=wp.vec3, device=device)
+    bounds_intersected = wp.zeros(3, dtype=int, device=device)
+
+    cases = (
+        ("lower y face", wp.vec3(0.0, -1.0, 0.0), wp.vec3(1.0, 0.0, 0.0), (1, 0, 0)),
+        ("upper y face", wp.vec3(0.0, 1.0, 0.0), wp.vec3(1.0, 0.0, 0.0), (1, 0, 0)),
+        ("negative zero y direction", wp.vec3(0.0, 1.0, 0.0), wp.vec3(1.0, -0.0, 0.0), (1, 0, 0)),
+        ("reverse ray on upper y face", wp.vec3(2.0, 1.0, 0.0), wp.vec3(-1.0, 0.0, 0.0), (1, 0, 0)),
+        ("lower z face", wp.vec3(0.0, 0.0, -1.0), wp.vec3(1.0, 0.0, 0.0), (1, 0, 0)),
+        ("upper z face", wp.vec3(0.0, 0.0, 1.0), wp.vec3(1.0, 0.0, 0.0), (1, 0, 0)),
+        ("one parallel axis", wp.vec3(0.0, -1.5, 1.0), wp.vec3(1.0, 1.0, 0.0), (1, 0, 0)),
+        ("oblique ray on lower y face", wp.vec3(0.0, -1.5, 0.0), wp.vec3(1.0, 1.0, 0.5), (1, 0, 0)),
+        ("lower x face", wp.vec3(0.5, -3.0, 0.0), wp.vec3(0.0, 1.0, 0.0), (1, 1, 1)),
+        ("upper x face", wp.vec3(1.0, -3.0, 0.0), wp.vec3(0.0, 1.0, 0.0), (1, 1, 1)),
+        ("root lower face", wp.vec3(0.0, -2.0, 0.0), wp.vec3(1.0, 0.0, 0.0), (0, 1, 0)),
+        ("root upper face", wp.vec3(0.0, 4.0, 0.0), wp.vec3(1.0, 0.0, 0.0), (0, 0, 1)),
+        ("interior", wp.vec3(0.0, 0.0, 0.0), wp.vec3(1.0, 0.0, 0.0), (1, 0, 0)),
+        ("outside parallel slab", wp.vec3(0.0, 2.0, 0.0), wp.vec3(1.0, 0.0, 0.0), (0, 0, 0)),
+        ("outside negative zero slab", wp.vec3(0.0, 2.0, 0.0), wp.vec3(1.0, -0.0, 0.0), (0, 0, 0)),
+        ("outside stationary ray", wp.vec3(-1.0, 2.0, 0.0), wp.vec3(0.0, 0.0, 0.0), (0, 0, 0)),
+    )
+
+    for leaf_size in (1, 4):
+        bvh = wp.Bvh(lowers, uppers, leaf_size=leaf_size)
+        for name, start, direction, expected in cases:
+            for query_kernel in (
+                bvh_query_ray,
+                bvh_query_ray_fast_math,
+                bvh_query_ray_via_erased_func,
+                tile_bvh_query_ray_kernel,
+            ):
+                with test.subTest(case=name, kernel=query_kernel.key, leaf_size=leaf_size):
+                    bounds_intersected.zero_()
+                    inputs = [bvh.id, start, direction, bounds_intersected]
+                    if query_kernel is tile_bvh_query_ray_kernel:
+                        wp.launch_tiled(query_kernel, dim=1, inputs=inputs, block_dim=64, device=device)
+                    else:
+                        wp.launch(query_kernel, dim=1, inputs=inputs, device=device)
+                    np.testing.assert_array_equal(bounds_intersected.numpy(), expected)
+
+        for max_dist, expected in ((0.5, (0, 0, 0)), (1.0, (1, 0, 0))):
+            with test.subTest(max_dist=max_dist, leaf_size=leaf_size):
+                bounds_intersected.zero_()
+                wp.launch(
+                    bvh_query_ray_with_max_dist,
+                    dim=1,
+                    inputs=[bvh.id, wp.vec3(0.0, 1.0, 0.0), wp.vec3(1.0, 0.0, 0.0), max_dist, bounds_intersected],
+                    device=device,
+                )
+                np.testing.assert_array_equal(bounds_intersected.numpy(), expected)
+
+    # Both slab endpoints become NaN when the ray lies in a zero-thickness box.
+    flat_lower = wp.array([(0.5, 1.0, -1.0)], dtype=wp.vec3, device=device)
+    flat_upper = wp.array([(1.0, 1.0, 1.0)], dtype=wp.vec3, device=device)
+    flat_bvh = wp.Bvh(flat_lower, flat_upper)
+    flat_hits = wp.zeros(1, dtype=int, device=device)
+    for query_kernel in (
+        bvh_query_ray,
+        bvh_query_ray_fast_math,
+        bvh_query_ray_via_erased_func,
+        tile_bvh_query_ray_kernel,
+    ):
+        with test.subTest(case="zero-thickness slab", kernel=query_kernel.key):
+            flat_hits.zero_()
+            inputs = [flat_bvh.id, wp.vec3(0.0, 1.0, 0.0), wp.vec3(1.0, 0.0, 0.0), flat_hits]
+            if query_kernel is tile_bvh_query_ray_kernel:
+                wp.launch_tiled(query_kernel, dim=1, inputs=inputs, block_dim=64, device=device)
+            else:
+                wp.launch(query_kernel, dim=1, inputs=inputs, device=device)
+            np.testing.assert_array_equal(flat_hits.numpy(), (1,))
+
+
+def test_bvh_ray_parallel_near_face(test, device):
+    """Do not turn a nearby parallel miss into a face contact under fast math."""
+    tiny = np.nextafter(np.float32(0.0), np.float32(1.0))
+    normal = np.finfo(np.float32).tiny
+    lowers = wp.array([(0.5, 0.0, -1.0), (0.5, normal, -1.0)], dtype=wp.vec3, device=device)
+    uppers = wp.array([(1.0, normal, 1.0), (1.0, 2.0 * normal, 1.0)], dtype=wp.vec3, device=device)
+    hits = wp.zeros(2, dtype=int, device=device)
+    cases = (
+        (-tiny, (0, 0)),
+        (0.0, (1, 0)),
+        (normal - tiny, (1, 0)),
+        (normal, (1, 1)),
+        (normal + tiny, (0, 1)),
+    )
+    for leaf_size in (1, 4):
+        bvh = wp.Bvh(lowers, uppers, leaf_size=leaf_size)
+        for y, expected in cases:
+            for query_kernel in (bvh_query_ray, bvh_query_ray_fast_math, tile_bvh_query_ray_kernel):
+                with test.subTest(y=y, kernel=query_kernel.key, leaf_size=leaf_size):
+                    hits.zero_()
+                    inputs = [bvh.id, wp.vec3(0.0, y, 0.0), wp.vec3(1.0, 0.0, -0.0), hits]
+                    if query_kernel is tile_bvh_query_ray_kernel:
+                        wp.launch_tiled(query_kernel, dim=1, inputs=inputs, block_dim=64, device=device)
+                    else:
+                        wp.launch(query_kernel, dim=1, inputs=inputs, device=device)
+                    np.testing.assert_array_equal(hits.numpy(), expected)
+
+
+def test_bvh_ray_nonzero_reciprocal_overflow_miss(test, device):
+    """An overflowing reciprocal must not turn a moving axis into a parallel one."""
+    lowers = wp.array([(1.0, 0.0, -1.0)], dtype=wp.vec3, device=device)
+    uppers = wp.array([(2.0, 0.01, 1.0)], dtype=wp.vec3, device=device)
+    bvh = wp.Bvh(lowers, uppers)
+    hits = wp.zeros(1, dtype=int, device=device)
+    for dy in (1.0e-39, -1.0e-39):
+        for query_kernel in (bvh_query_ray, bvh_query_ray_fast_math, bvh_query_ray_via_erased_func):
+            with test.subTest(dy=dy, kernel=query_kernel.key):
+                hits.zero_()
+                wp.launch(
+                    query_kernel,
+                    dim=1,
+                    inputs=[bvh.id, wp.vec3(0.0), wp.vec3(1.0e-38, dy, 0.0), hits],
+                    device=device,
+                )
+                # Positive Y exits at t=1e37, before X enters at t=1e38.
+                # Negative Y immediately leaves the slab.
+                np.testing.assert_array_equal(hits.numpy(), (0,))
+
+
+def test_tile_bvh_ray_overflow_entry(test, device):
+    """Preserve CUDA tiled hits when moving-axis entry and exit both overflow."""
+    lowers = wp.array([(2.0**126, -1.0, -1.0)], dtype=wp.vec3, device=device)
+    uppers = wp.array([(2.0**127, 1.0, 1.0)], dtype=wp.vec3, device=device)
+    bvh = wp.Bvh(lowers, uppers)
+    hits = wp.zeros(1, dtype=int, device=device)
+    wp.launch_tiled(
+        tile_bvh_query_ray_kernel,
+        dim=1,
+        inputs=[bvh.id, wp.vec3(0.0), wp.vec3(0.125, 0.0, 0.0), hits],
+        block_dim=32,
+        device=device,
+    )
+    np.testing.assert_array_equal(hits.numpy(), (1,))
 
 
 def test_bvh_ray_query_inside_and_outside_bounds(test, device):
@@ -1243,6 +1403,19 @@ for name, func in (
     )
 
 add_function_test(TestBvh, "test_capture_bvh_rebuild", test_capture_bvh_rebuild, devices=cuda_devices_with_mempool)
+
+
+add_function_test(
+    TestBvh, "test_bvh_ray_parallel_slab_boundaries", test_bvh_ray_parallel_slab_boundaries, devices=devices
+)
+add_function_test(TestBvh, "test_bvh_ray_parallel_near_face", test_bvh_ray_parallel_near_face, devices=devices)
+add_function_test(TestBvh, "test_tile_bvh_ray_overflow_entry", test_tile_bvh_ray_overflow_entry, devices=cuda_devices)
+add_function_test(
+    TestBvh,
+    "test_bvh_ray_nonzero_reciprocal_overflow_miss",
+    test_bvh_ray_nonzero_reciprocal_overflow_miss,
+    devices=devices,
+)
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
