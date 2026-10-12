@@ -6,6 +6,7 @@
 #include "apic.h"
 #include "apic_internal.h"
 #include "apic_types.h"
+#include "error.h"
 #include "sparse_util.h"
 
 #include <algorithm>
@@ -251,6 +252,50 @@ bool apic_capture_bsr_transpose(
     return true;
 }
 
+// Check that a source topology can be transposed within buffers sized for
+// ``nnz`` blocks: offsets must be nondecreasing within [0, nnz], and active
+// blocks must reference columns in [0, col_count). Offsets are checked in full
+// before any column is read, since the active ranges index into the columns.
+bool bsr_transpose_validate_host(
+    int row_count, int col_count, int nnz, const int* bsr_offsets, const int* bsr_row_counts, const int* bsr_columns
+)
+{
+    if (bsr_offsets[0] < 0 || bsr_offsets[row_count] > nnz) {
+        wp::set_error_string(
+            "Warp sparse error: Invalid BSR offsets: offsets[0] = %d and offsets[%d] = %d must be in [0, %d]",
+            bsr_offsets[0], row_count, bsr_offsets[row_count], nnz
+        );
+        return false;
+    }
+
+    for (int row = 0; row < row_count; ++row) {
+        if (bsr_offsets[row + 1] < bsr_offsets[row]) {
+            wp::set_error_string(
+                "Warp sparse error: Invalid BSR offsets: offsets[%d] = %d is less than offsets[%d] = %d", row + 1,
+                bsr_offsets[row + 1], row, bsr_offsets[row]
+            );
+            return false;
+        }
+    }
+
+    for (int row = 0; row < row_count; ++row) {
+        const int row_end = std::min(bsr_active_row_end(bsr_offsets, bsr_row_counts, row), bsr_offsets[row + 1]);
+        for (int block = bsr_offsets[row]; block < row_end; ++block) {
+            const int col = bsr_columns[block];
+            if (col < 0 || col >= col_count) {
+                wp::set_error_string(
+                    "Warp sparse error: Invalid BSR column: block %d in row %d has column %d, but valid columns are "
+                    "in the range [0, %d)",
+                    block, row, col, col_count
+                );
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
 }  // namespace
 
 
@@ -396,7 +441,7 @@ WP_API void wp_bsr_matrix_from_triplets_host(
     }
 }
 
-WP_API void wp_bsr_transpose_host(
+WP_API bool wp_bsr_transpose_host(
     int row_count,
     int col_count,
     int nnz,
@@ -418,7 +463,11 @@ WP_API void wp_bsr_transpose_host(
             row_count, col_count, nnz, bsr_offsets, bsr_row_counts, bsr_columns, transposed_bsr_offsets,
             transposed_bsr_row_counts, transposed_bsr_columns, block_indices, status
         ))
-        return;
+        return true;
+
+    // Reject malformed source topology before writing to any output buffer.
+    if (!bsr_transpose_validate_host(row_count, col_count, nnz, bsr_offsets, bsr_row_counts, bsr_columns))
+        return false;
 
     const int capacity = std::min(nnz, bsr_offsets[row_count]);
     const bool padded = transposed_bsr_row_counts != nullptr;
@@ -481,7 +530,7 @@ WP_API void wp_bsr_transpose_host(
             sorted_beg = sorted_end;
         }
 
-        return;
+        return true;
     }
 
     // Count blocks per column and transpose blocks
@@ -500,6 +549,7 @@ WP_API void wp_bsr_transpose_host(
     std::partial_sum(transposed_bsr_offsets, transposed_bsr_offsets + col_count + 1, transposed_bsr_offsets);
 
     std::fill(transposed_bsr_columns + active_nnz, transposed_bsr_columns + nnz, -1);
+    return true;
 }
 
 WP_API void wp_bsr_compress_inplace_host(

@@ -606,7 +606,7 @@ WP_API void wp_bsr_matrix_from_triplets_device(
     int* bsr_columns
 );
 
-WP_API void wp_bsr_transpose_host(
+WP_API bool wp_bsr_transpose_host(
     int row_count,
     int col_count,
     int nnz,

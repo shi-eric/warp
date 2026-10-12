@@ -2617,12 +2617,14 @@ static bool apic_cpu_replay_stream(
             }
             // g_apic_state is null during replay, so this executes the real
             // transpose. Same entry point wp.sparse.bsr_set_transpose uses.
-            wp_bsr_transpose_host(
-                rec->row_count, rec->col_count, rec->nnz_upper_bound, reinterpret_cast<const int*>(bsr_offsets),
-                reinterpret_cast<const int*>(bsr_row_counts), reinterpret_cast<const int*>(bsr_columns),
-                reinterpret_cast<int*>(t_offsets), reinterpret_cast<int*>(t_row_counts),
-                reinterpret_cast<int*>(t_columns), reinterpret_cast<int*>(block_indices), reinterpret_cast<int*>(status)
-            );
+            if (!wp_bsr_transpose_host(
+                    rec->row_count, rec->col_count, rec->nnz_upper_bound, reinterpret_cast<const int*>(bsr_offsets),
+                    reinterpret_cast<const int*>(bsr_row_counts), reinterpret_cast<const int*>(bsr_columns),
+                    reinterpret_cast<int*>(t_offsets), reinterpret_cast<int*>(t_row_counts),
+                    reinterpret_cast<int*>(t_columns), reinterpret_cast<int*>(block_indices),
+                    reinterpret_cast<int*>(status)
+                ))
+                return false;
             break;
         }
 

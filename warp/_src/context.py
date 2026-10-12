@@ -7849,6 +7849,7 @@ class Runtime:
                 ctypes.POINTER(ctypes.c_int),  # status
             ]
             self.core.wp_bsr_transpose_host.argtypes = bsr_transpose_argtypes
+            self.core.wp_bsr_transpose_host.restype = ctypes.c_bool
             self.core.wp_bsr_transpose_device.argtypes = bsr_transpose_argtypes
 
             bsr_compress_inplace_argtypes = [

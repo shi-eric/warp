@@ -38,6 +38,7 @@ from warp.tests.unittest_utils import (
     get_test_devices_with_cuda_graph_module_load,
     get_test_devices_with_graph_capture_allocation,
     get_test_devices_with_graph_capture_allocation_and_cuda_graph_module_load,
+    suppress_native_error_output,
 )
 
 
@@ -2921,6 +2922,29 @@ def test_capture_with_bsr_transpose(test, device):
         np.testing.assert_array_equal(values_out.numpy()[:n], np.arange(1, n + 1, dtype=np.float32))
 
 
+def test_capture_with_invalid_bsr_transpose_source(test, device):
+    """Report BSR transpose source topology that becomes invalid after CPU capture.
+
+    Capture a valid transpose, then plant an out-of-range column before replay
+    so the regression covers replay-time validation in the host transpose
+    rather than wrapper-time checks."""
+    n = 4
+    indices = wp.array(np.arange(n, dtype=np.int32), device=device)
+    A = bsr_from_triplets(n, n, indices, indices, wp.ones(n, dtype=wp.float32, device=device))
+    At = bsr_zeros(n, n, block_type=wp.float32, device=device)
+
+    # Load the sparse kernels outside the capture.
+    bsr_set_transpose(At, A)
+    with wp.ScopedCapture(device=device, apic=True, force_module_load=False) as capture:
+        bsr_set_transpose(At, A)
+
+    A.columns.assign(np.array([0, 1, 2, n], dtype=np.int32))
+
+    with suppress_native_error_output():
+        with test.assertRaisesRegex(RuntimeError, r"block 3 in row 3 has column 4"):
+            wp.capture_launch(capture.graph)
+
+
 def test_capture_with_padded_bsr_transpose(test, device):
     """Verify that padded BSR transpose replay must preserve row_counts and status pointers."""
     from warp.sparse import (  # noqa: PLC0415
@@ -3967,6 +3991,12 @@ add_function_test(
     "test_capture_with_bsr_transpose",
     test_capture_with_bsr_transpose,
     devices=devices,
+)
+add_function_test(
+    TestApic,
+    "test_capture_with_invalid_bsr_transpose_source",
+    test_capture_with_invalid_bsr_transpose_source,
+    devices=["cpu"],
 )
 add_function_test(
     TestApic,

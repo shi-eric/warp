@@ -1753,6 +1753,48 @@ class TestSparse(unittest.TestCase):
         diag_pruned = _bsr_pruned(diag_copy)
         self.assertEqual(diag_pruned.nnz_sync(), 0)
 
+    def test_bsr_transpose_cpu_rejects_invalid_topology(self):
+        # The host transpose must reject source topology that would index outside
+        # the buffers sized for nnz blocks, before writing to the destination.
+        cases = {
+            "negative_offset": ([-5, 1, 2], [1, 2], r"offsets\[0\] = -5 and offsets\[2\] = 2 must be in \[0, 2\]"),
+            "offsets_exceed_nnz": ([0, 1, 4], [1, 2], r"offsets\[0\] = 0 and offsets\[2\] = 4 must be in \[0, 2\]"),
+            "decreasing_offsets": ([0, 100, 2], [1, 2], r"offsets\[2\] = 2 is less than offsets\[1\] = 100"),
+            "overlapping_rows": ([0, 2, 0, 2], [1, 2], r"offsets\[2\] = 0 is less than offsets\[1\] = 2"),
+            "negative_column": ([0, 1, 2], [-1, 2], r"block 0 in row 0 has column -1, .* \[0, 3\)"),
+            "column_out_of_range": ([0, 1, 2], [1, 3], r"block 1 in row 1 has column 3, .* \[0, 3\)"),
+        }
+        ncol, nnz = 3, 2
+        with wp.ScopedDevice("cpu"):
+            for name, (offsets, columns, message) in cases.items():
+                with self.subTest(name):
+                    nrow = len(offsets) - 1
+                    src = bsr_zeros(nrow, ncol, float)
+                    src.notify_nnz_changed(nnz=4)
+                    src.offsets.assign(np.array(offsets, dtype=np.int32))
+                    src.columns.assign(np.array([*columns, 0, 0], dtype=np.int32))
+                    src.values.assign(np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32))
+                    src.notify_nnz_changed(nnz=nnz)
+
+                    # A compact destination is resized before the native call and
+                    # must be left as a valid empty matrix.
+                    dest = bsr_zeros(1, 1, float)
+                    with suppress_native_error_output(), self.assertRaisesRegex(ValueError, message):
+                        bsr_set_transpose(dest, src)
+                    self.assertEqual((dest.nrow, dest.ncol), (ncol, nrow))
+                    assert_np_equal(dest.offsets.numpy()[: ncol + 1], np.zeros(ncol + 1, dtype=np.int32))
+                    self.assertIsNone(dest.row_counts)
+                    self.assertEqual(dest.nnz_sync(), 0)
+
+                    # A padded destination must be left unchanged.
+                    padded = bsr_zeros(ncol, nrow, float, row_capacity=2)
+                    padded.row_counts.fill_(1)
+                    with suppress_native_error_output(), self.assertRaisesRegex(ValueError, message):
+                        bsr_set_transpose(padded, src, topology="padded")
+                    assert_np_equal(padded.offsets.numpy(), np.arange(0, 2 * ncol + 1, 2, dtype=np.int32))
+                    assert_np_equal(padded.row_counts.numpy(), np.ones(ncol, dtype=np.int32))
+                    self.assertEqual(padded.status_sync(), BSR_STATUS_SUCCESS)
+
 
 add_function_test(TestSparse, "test_csr_from_triplets", test_csr_from_triplets, devices=devices)
 add_function_test(TestSparse, "test_bsr_from_triplets", test_bsr_from_triplets, devices=devices)

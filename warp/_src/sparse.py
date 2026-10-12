@@ -2650,6 +2650,15 @@ def bsr_set_transpose(
 ):
     """Assign the transposed matrix ``src`` to matrix ``dest``.
 
+    With the ``"compact"`` and ``"padded"`` topology policies on CPU, Warp
+    raises a :class:`ValueError` if ``src.offsets`` decrease or fall outside
+    ``[0, src.nnz]``, or if an active block of ``src`` has a column outside
+    ``[0, src.ncol)``. A compact ``dest`` is then left empty, and a padded
+    ``dest`` is left unchanged. If such a topology is encountered during CPU
+    graph replay, :func:`warp.capture_launch` raises a :class:`RuntimeError`.
+    On CUDA devices, Warp does not currently report invalid source topology,
+    so callers must ensure ``src`` is well formed.
+
     Args:
         dest: Sparse matrix to populate.
         src: Sparse matrix to transpose.
@@ -2660,6 +2669,10 @@ def bsr_set_transpose(
           the deprecated ``masked=True``, and ``"padded"`` writes the transposed active
           topology into existing destination row capacity and records capacity
           overflow in ``dest.status_sync()``.
+
+    Raises:
+        ValueError: If the arguments are incompatible or, on CPU, if ``src``
+          has invalid topology.
     """
 
     src, src_scale = _extract_matrix_and_scale(src)
@@ -2738,7 +2751,7 @@ def bsr_set_transpose(
         with wp.ScopedDevice(dest.device):
             if restore_capacity is not None:
                 wp.copy(dest=dest.offsets, src=restore_capacity, count=dest.nrow + 1)
-            native_func(
+            success = native_func(
                 src.nrow,
                 src.ncol,
                 nnz,
@@ -2751,6 +2764,11 @@ def bsr_set_transpose(
                 ctypes.cast(block_index_map.ptr, ctypes.POINTER(ctypes.c_int32)),
                 ctypes.cast(status.ptr, ctypes.POINTER(ctypes.c_int32)),
             )
+
+        # The host transpose validates the source before writing, so the
+        # destination is unchanged on failure.
+        if dest.device.is_cpu and not success:
+            raise ValueError(runtime.get_error_string())
 
         wp.launch(
             _bsr_transpose_values,
@@ -2821,7 +2839,7 @@ def bsr_set_transpose(
                 _mark_apic_deferred_nnz_update(dest, apic_capture)
 
         with wp.ScopedDevice(dest.device):
-            native_func(
+            success = native_func(
                 src.nrow,
                 src.ncol,
                 nnz,
@@ -2834,6 +2852,13 @@ def bsr_set_transpose(
                 ctypes.cast(block_index_map.ptr, ctypes.POINTER(ctypes.c_int32)),
                 None,  # status
             )
+
+            if dest.device.is_cpu and not success:
+                # dest was already resized for the transpose, so leave it as a
+                # valid empty matrix rather than with uninitialized offsets.
+                error = runtime.get_error_string()
+                bsr_set_zero(dest)
+                raise ValueError(error)
 
             dest._refresh_nnz_transfer_if_pending()
 
@@ -2860,7 +2885,11 @@ def bsr_set_transpose(
 
 
 def bsr_transposed(A: BsrMatrixOrExpression) -> BsrMatrix:
-    """Return a copy of the transposed matrix ``A``."""
+    """Return a copy of the transposed matrix ``A``.
+
+    Raises:
+        ValueError: On CPU, if ``A`` has invalid topology. See :func:`bsr_set_transpose`.
+    """
 
     if A.block_shape == (1, 1):
         block_type = A.values.dtype
