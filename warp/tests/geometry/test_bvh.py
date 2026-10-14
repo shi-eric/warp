@@ -484,6 +484,8 @@ def test_bvh_ray_parallel_slab_boundaries(test, device):
         ("outside parallel slab", wp.vec3(0.0, 2.0, 0.0), wp.vec3(1.0, 0.0, 0.0), (0, 0, 0)),
         ("outside negative zero slab", wp.vec3(0.0, 2.0, 0.0), wp.vec3(1.0, -0.0, 0.0), (0, 0, 0)),
         ("outside stationary ray", wp.vec3(-1.0, 2.0, 0.0), wp.vec3(0.0, 0.0, 0.0), (0, 0, 0)),
+        ("stationary lower corner", wp.vec3(0.5, -1.0, -1.0), wp.vec3(0.0), (1, 0, 0)),
+        ("stationary upper corner", wp.vec3(1.0, 1.0, 1.0), wp.vec3(-0.0), (1, 0, 0)),
     )
 
     for leaf_size in (1, 4):
