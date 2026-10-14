@@ -603,6 +603,95 @@ def test_tile_bvh_ray_overflow_entry(test, device):
     np.testing.assert_array_equal(hits.numpy(), (1,))
 
 
+def test_tile_bvh_ray_input_reuse(test, device):
+    """Refresh each block's ray inputs, including exceptional and boundary cases."""
+    tiny = np.nextafter(np.float32(0.0), np.float32(1.0))
+    normal = np.finfo(np.float32).tiny
+    scenarios = (
+        (
+            "faces",
+            (0.5, -1.0, -1.0),
+            (1.0, 1.0, 1.0),
+            (
+                ((0.0, -1.0, 0.0), (1.0, 0.0, 0.0), 1),
+                ((2.0, 1.0, 0.0), (-1.0, -0.0, 0.0), 1),
+                ((0.0, 2.0, 0.0), (1.0, -0.0, 0.0), 0),
+                ((0.5, -1.0, -1.0), (0.0, 0.0, 0.0), 1),
+                ((1.0, 1.0, 1.0), (-0.0, -0.0, -0.0), 1),
+                ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0), 0),
+                ((float("inf"), 0.0, 0.0), (1.0, 0.0, 0.0), 0),
+                ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), 1),
+            ),
+        ),
+        (
+            "flat slab",
+            (0.5, 1.0, -1.0),
+            (1.0, 1.0, 1.0),
+            (
+                ((0.0, 1.0, 0.0), (1.0, -0.0, 0.0), 1),
+                ((0.0, 2.0, 0.0), (1.0, 0.0, 0.0), 0),
+            ),
+        ),
+        (
+            "subnormal distances",
+            (0.5, 0.0, -1.0),
+            (1.0, normal, 1.0),
+            (
+                ((0.0, -tiny, 0.0), (1.0, 0.0, 0.0), 0),
+                ((0.0, 0.0, 0.0), (1.0, -0.0, 0.0), 1),
+                ((0.0, normal + tiny, 0.0), (1.0, 0.0, 0.0), 0),
+            ),
+        ),
+        (
+            "overflowing entry",
+            (2.0**126, 0.0, -1.0),
+            (2.0**127, 1.0, 1.0),
+            (
+                ((0.0, 0.5, 0.0), (0.125, 0.0, 0.0), 1),
+                ((0.0, -tiny, 0.0), (0.125, 0.0, 0.0), 0),
+                ((0.0, 2.0, 0.0), (0.125, -0.0, 0.0), 0),
+                ((0.0, 0.0, 0.0), (0.125, -0.0, 0.0), 1),
+            ),
+        ),
+        (
+            "overflowing reciprocal",
+            (1.0, 0.0, -1.0),
+            (2.0, 0.001, 1.0),
+            (
+                ((0.0, 0.0, 0.0), (1.0e-37, 1.0e-39, 0.0), 0),
+                ((0.0, 0.0, 0.0), (1.0e-37, -1.0e-39, 0.0), 0),
+                ((0.0, 0.0, 0.0), (1.0, 0.0, 0.0), 1),
+            ),
+        ),
+    )
+    for name, lower, upper, cases in scenarios:
+        bvh = wp.Bvh(
+            wp.array([lower], dtype=wp.vec3, device=device),
+            wp.array([upper], dtype=wp.vec3, device=device),
+        )
+        # Reverse the sequence in the second block to detect shared inputs
+        # leaking between blocks as well as between successive queries.
+        starts = np.array([case[0] for case in cases], dtype=np.float32)
+        directions = np.array([case[1] for case in cases], dtype=np.float32)
+        expected = np.array([case[2] for case in cases], dtype=np.int32)
+        starts = wp.array(np.stack((starts, starts[::-1])), dtype=wp.vec3, device=device)
+        directions = wp.array(np.stack((directions, directions[::-1])), dtype=wp.vec3, device=device)
+        expected = np.stack((expected, expected[::-1]))[:, :, None]
+        hits = wp.zeros(expected.shape, dtype=int, device=device)
+        for kernel in (tile_bvh_query_ray_sequence, tile_bvh_query_ray_sequence_fast_math):
+            for block_dim in (32, 64, 128, 256):
+                with test.subTest(case=name, kernel=kernel.key, block_dim=block_dim):
+                    hits.zero_()
+                    wp.launch_tiled(
+                        kernel,
+                        dim=2,
+                        inputs=[bvh.id, starts, directions, hits],
+                        block_dim=block_dim,
+                        device=device,
+                    )
+                    np.testing.assert_array_equal(hits.numpy(), expected)
+
+
 def test_bvh_ray_query_inside_and_outside_bounds(test, device):
     """Verify BVH ray intersections for origins inside and outside the bounds.
 
@@ -876,6 +965,27 @@ def tile_bvh_query_ray_kernel(
         # This ensures we can verify that each bound is only reported once
         if result_idx >= 0:
             wp.atomic_add(bounds_intersected, result_idx, 1)
+
+
+@wp.kernel
+def tile_bvh_query_ray_sequence(
+    bvh_id: wp.uint64,
+    starts: wp.array2d[wp.vec3],
+    directions: wp.array2d[wp.vec3],
+    bounds_intersected: wp.array3d[int],
+):
+    block, _ = wp.tid()
+    for ray in range(starts.shape[1]):
+        query = wp.tile_bvh_query_ray(bvh_id, starts[block, ray], directions[block, ray])
+        while wp.tile_query_valid(query):
+            result_idx = wp.untile(wp.tile_bvh_query_next(query))
+            if result_idx >= 0:
+                wp.atomic_add(bounds_intersected, block, ray, result_idx, 1)
+
+
+tile_bvh_query_ray_sequence_fast_math = wp.kernel(
+    tile_bvh_query_ray_sequence.func, module="unique", module_options={"fast_math": True}
+)
 
 
 def test_tile_bvh_query(test, device):
@@ -1412,6 +1522,7 @@ add_function_test(
 )
 add_function_test(TestBvh, "test_bvh_ray_parallel_near_face", test_bvh_ray_parallel_near_face, devices=devices)
 add_function_test(TestBvh, "test_tile_bvh_ray_overflow_entry", test_tile_bvh_ray_overflow_entry, devices=cuda_devices)
+add_function_test(TestBvh, "test_tile_bvh_ray_input_reuse", test_tile_bvh_ray_input_reuse, devices=cuda_devices)
 add_function_test(
     TestBvh,
     "test_bvh_ray_nonzero_reciprocal_overflow_miss",

@@ -111,7 +111,6 @@ CUDA_CALLABLE inline bool bvh_ray_intersect_signed_aabb(
     return hit;
 }
 
-template <bool UNBOUNDED = false>
 CUDA_CALLABLE inline bool
 bvh_ray_intersect_aabb(const vec3& start, const vec3& rcp_dir, const vec3& lower, const vec3& upper, float& t)
 {
@@ -158,31 +157,6 @@ bvh_ray_intersect_aabb(const vec3& start, const vec3& rcp_dir, const vec3& lower
 #endif
     }
     const bool hit = (lmax >= 0.0f) & (lmax >= lmin);
-    // An outside parallel slab can leave [+inf, +inf]. Scalar queries reject
-    // infinite entry at their max_dist check; unbounded CUDA tiles need this
-    // check, while preserving moving-axis times that both overflow.
-    if (UNBOUNDED && hit && lmin == INFINITY) {
-        for (int i = 0; i < 3; ++i) {
-            if (bvh_ray_abs_bits(rcp_dir[i]) == 0x7f800000U) {
-#if defined(__CUDA_ARCH__)
-                // Preserve subnormal coordinates under fast math here too.
-                uint32_t outside;
-                asm("{ .reg .pred lo, hi;\n"
-                    "setp.lt.f32 lo, %1, %2;\n"
-                    "setp.gt.f32 hi, %1, %3;\n"
-                    "or.pred lo, lo, hi;\n"
-                    "selp.u32 %0, 1, 0, lo; }"
-                    : "=r"(outside)
-                    : "f"(start[i]), "f"(lower[i]), "f"(upper[i]));
-                if (outside)
-                    return false;
-#else
-                if (start[i] < lower[i] || start[i] > upper[i])
-                    return false;
-#endif
-            }
-        }
-    }
     if (hit)
         t = lmin;
     return hit;

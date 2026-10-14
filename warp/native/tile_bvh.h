@@ -10,6 +10,21 @@ namespace wp {
 
 #if defined(__CUDA_ARCH__)
 
+// Tiled queries have block-uniform inputs and only one active query per block.
+// Keep the ray in shared memory so its six components do not stay live in
+// registers throughout traversal. Initialization uses the existing stack barrier.
+struct bvh_ray_shared_inputs_t {
+    float start[3];
+    float reciprocal[3];
+    bool use_standard_slabs;
+};
+
+CUDA_CALLABLE inline bvh_ray_shared_inputs_t& bvh_ray_shared_inputs()
+{
+    __shared__ bvh_ray_shared_inputs_t inputs;
+    return inputs;
+}
+
 struct bvh_query_thread_block_t {
     CUDA_CALLABLE bvh_query_thread_block_t()
         : bvh()
@@ -21,7 +36,6 @@ struct bvh_query_thread_block_t {
         , is_ray(false)
         , input_lower()
         , input_upper()
-        , ray_use_standard_slabs(false)
     {
     }
 
@@ -48,7 +62,6 @@ struct bvh_query_thread_block_t {
     wp::vec3 input_lower;
     wp::vec3 input_upper;
     bool is_ray;
-    bool ray_use_standard_slabs;
 };
 
 
@@ -56,10 +69,33 @@ CUDA_CALLABLE inline bool
 bvh_query_intersection_test(const bvh_query_thread_block_t& query, const vec3& node_lower, const vec3& node_upper)
 {
     if (query.is_ray) {
-        float t = 0.0f;
-        return query.ray_use_standard_slabs
-            ? intersect_ray_aabb(query.input_lower, query.input_upper, node_lower, node_upper, t)
-            : bvh_ray_intersect_aabb<true>(query.input_lower, query.input_upper, node_lower, node_upper, t);
+        // Load one axis at a time. Volatile prevents hoisting all six ray
+        // components into registers before testing the node's slabs.
+        volatile bvh_ray_shared_inputs_t& inputs = bvh_ray_shared_inputs();
+        if (inputs.use_standard_slabs) {
+            const vec3 start(inputs.start[0], inputs.start[1], inputs.start[2]);
+            const vec3 reciprocal(inputs.reciprocal[0], inputs.reciprocal[1], inputs.reciprocal[2]);
+            float t;
+            return intersect_ray_aabb(start, reciprocal, node_lower, node_upper, t);
+        }
+        float lmin = -INFINITY;
+        float lmax = INFINITY;
+        bool outside = false;
+#pragma unroll
+        for (int i = 0; i < 3; ++i) {
+            const float start = inputs.start[i];
+            const float reciprocal = inputs.reciprocal[i];
+            float a, b;
+            bvh_ray_slab_times(start, reciprocal, node_lower[i], node_upper[i], a, b);
+            // Exceptional moving-axis reciprocals use the standard path above.
+            // On a true parallel axis, equal infinite endpoints mean a miss;
+            // face-contact NaNs instead leave that axis unconstrained below.
+            outside |= (bvh_ray_abs_bits(reciprocal) == 0x7f800000U) & (a == b);
+            const bool negative = reciprocal < 0.0f;
+            lmin = max(negative ? b : a, lmin);
+            lmax = min(negative ? a : b, lmax);
+        }
+        return !outside & (lmax >= 0.0f) & (lmax >= lmin);
     } else {
         return intersect_aabb_aabb(query.input_lower, query.input_upper, node_lower, node_upper);
     }
@@ -76,8 +112,9 @@ using bvh_query_thread_block_t = bvh_query_t;
 
 #if defined(__CUDA_ARCH__)
 
-CUDA_CALLABLE inline bvh_query_thread_block_t
-bvh_query_thread_block(uint64_t id, bool is_ray, const vec3& lower, const vec3& upper)
+CUDA_CALLABLE inline bvh_query_thread_block_t bvh_query_thread_block(
+    uint64_t id, bool is_ray, const vec3& lower, const vec3& upper, bool ray_use_standard_slabs = false
+)
 {
     // This routine traverses the BVH tree until it finds
     // the first overlapping bound.
@@ -116,6 +153,14 @@ bvh_query_thread_block(uint64_t id, bool is_ray, const vec3& lower, const vec3& 
         // Pre-seed as "valid" so the first tile_query_valid() check (which happens after
         // the first tile_bvh_query_next()) doesn't return false before the query runs.
         query.last_valid_shared_mem[0] = 1;
+        if (is_ray) {
+            bvh_ray_shared_inputs_t& inputs = bvh_ray_shared_inputs();
+            for (int i = 0; i < 3; ++i) {
+                inputs.start[i] = lower[i];
+                inputs.reciprocal[i] = upper[i];
+            }
+            inputs.use_standard_slabs = ray_use_standard_slabs;
+        }
     }
     __syncthreads();
 
@@ -373,9 +418,8 @@ CUDA_CALLABLE inline bvh_query_thread_block_t tile_bvh_query_aabb(uint64_t id, c
 // New tile-based ray query function
 CUDA_CALLABLE inline bvh_query_thread_block_t tile_bvh_query_ray(uint64_t id, const vec3& start, const vec3& dir)
 {
-    bvh_query_thread_block_t query = bvh_query_thread_block(id, true, start, 1.0f / dir);
-    query.ray_use_standard_slabs = bvh_ray_use_standard_slabs(start, dir, query.input_upper);
-    return query;
+    const vec3 reciprocal = 1.0f / dir;
+    return bvh_query_thread_block(id, true, start, reciprocal, bvh_ray_use_standard_slabs(start, dir, reciprocal));
 }
 
 #else
