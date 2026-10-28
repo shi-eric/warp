@@ -306,6 +306,45 @@ def test_redefining_failed_kernels_together_recovers(test, device):
     assert_np_equal(a.numpy(), np.full(4, 2.0))
 
 
+_BLOCK_DIM_SOURCE = """\
+import warp as wp
+
+@wp.kernel
+def tile_kernel(a: wp.array[float]):
+    t = wp.tile(1.0)
+    wp.tile_store(a, wp.tile_reshape(t, shape=(256,)))  # builds only with block_dim=256
+"""
+
+_REDEFINED_TILE_SOURCE = """\
+@wp.kernel
+def tile_kernel(a: wp.array[float]):
+    i = wp.tid()
+    a[i] = 2.0
+"""
+
+
+def test_replaced_definition_keeps_working_block_dims(test, device):
+    """Verify an earlier definition that fails at one block_dim keeps working at another.
+
+    Dropping the failed definition applies to the block_dim whose build failed,
+    so the variants where it builds keep it, as they did before it failed.
+    """
+    module = _import_module(_BLOCK_DIM_SOURCE)
+    a = wp.zeros(256, dtype=float, device=device)
+
+    earlier_definition = module.tile_kernel
+    _redefine(module, _REDEFINED_TILE_SOURCE)
+
+    with test.assertRaisesRegex(ValueError, 'Error while parsing function "tile_kernel"'):
+        wp.launch(earlier_definition, dim=64, inputs=[a], block_dim=64, device=device)
+
+    wp.launch(earlier_definition, dim=256, inputs=[a], block_dim=256, device=device)
+    assert_np_equal(a.numpy(), np.full(256, 1.0))
+
+    wp.launch(module.tile_kernel, dim=64, inputs=[a], block_dim=64, device=device)
+    assert_np_equal(a.numpy()[:64], np.full(64, 2.0))
+
+
 _CLOSURE_SOURCE = """\
 import warp as wp
 
@@ -358,6 +397,13 @@ for _func in (
     test_failed_closure_is_not_replaced_by_another_closure,
 ):
     add_function_test(TestModuleContamination, func=_func, name=_func.__name__, devices=devices)
+
+add_function_test(
+    TestModuleContamination,
+    func=test_replaced_definition_keeps_working_block_dims,
+    name="test_replaced_definition_keeps_working_block_dims",
+    devices=get_cuda_test_devices(),
+)
 
 
 if __name__ == "__main__":

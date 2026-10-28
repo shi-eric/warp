@@ -3479,7 +3479,7 @@ class ModuleBuilder:
         self.shared_memory_bytes = {}  # map from lto symbol to shared memory requirements
 
         if hasher is None:
-            hasher = ModuleHasher(module._get_live_kernels(), options)
+            hasher = ModuleHasher(module._get_live_kernels(options["block_dim"]), options)
 
         # A different block-size variant may have changed the shared
         # Kernel.hash since this hasher was cached. Emit this variant's symbols.
@@ -3493,7 +3493,7 @@ class ModuleBuilder:
                 self.build_kernel(kernel)
             except Exception as e:
                 # Module.load() checks whether the failing kernel is an earlier definition.
-                e._warp_failed_kernel = weakref.ref(kernel)
+                e._warp_build_failure = (weakref.ref(kernel), self.options["block_dim"])
                 raise
 
         # build deferred functions
@@ -3981,9 +3981,9 @@ class ModuleExec:
         """Return the kernel's symbol identity in this executable's variant."""
         name = self.kernel_names.get(kernel)
         if name is None:
-            # An earlier definition that failed to build was dropped from the module.
+            # An earlier definition that failed to build was dropped from this block_dim variant.
             root = kernel if kernel.generic_parent is None else kernel.generic_parent
-            replaced_error = kernel.module._replaced_failed_kernels.get(root)
+            replaced_error = kernel.module._replaced_failed_kernels.get(root, {}).get(self.block_dim)
             if replaced_error is not None:
                 _raise_recorded_build_error(replaced_error)
 
@@ -4230,8 +4230,8 @@ class Module:
         # (device context, block_dim) variants whose build failed, mapped to the error that failed it
         self.failed_builds = {}
 
-        # earlier definitions dropped from this module because they failed to build,
-        # mapped to a copy of their error without its traceback
+        # earlier definitions dropped from block_dim variants because they failed to build there,
+        # mapped to {block_dim: copy of the error without its traceback}
         self._replaced_failed_kernels = weakref.WeakKeyDictionary()
 
         # hash data, including the module hash. Module may store multiple hashes (one per block_dim used)
@@ -4470,8 +4470,9 @@ class Module:
         # for a reload of module on next launch
         self.mark_modified()
 
-    def _get_live_kernels(self):
-        # Return a list of kernels that still have references.
+    def _get_live_kernels(self, block_dim: int | None = None):
+        # Return a list of kernels that still have references, leaving out earlier
+        # definitions dropped from the given block_dim variant.
         # We return a regular list instead of the WeakSet to avoid undesirable issues
         # if kernels are garbage collected before the caller is done using this list.
         # Note that we should avoid retaining strong references to kernels unnecessarily
@@ -4480,10 +4481,13 @@ class Module:
         # but this can have undesirable consequences (e.g., GC during graph capture),
         # so we should avoid it as a general rule.  Instead, we rely on Python's
         # reference counting GC to collect kernels that have gone out of scope.
-        return list(self._live_kernels)
+        if block_dim is None or not self._replaced_failed_kernels:
+            return list(self._live_kernels)
+
+        return [k for k in self._live_kernels if block_dim not in self._replaced_failed_kernels.get(k, ())]
 
     def _drop_failed_earlier_definition(self, build_error: Exception) -> bool:
-        """Drop the kernel that failed a build from this module if it has since been redefined.
+        """Drop the kernel that failed a build from its block_dim variant if it has since been redefined.
 
         A module builds every live kernel, and a kernel that fails to build fails
         the module. An earlier definition can outlive its redefinition through
@@ -4497,22 +4501,32 @@ class Module:
         definition that fails still fails the module. Kernels that a function
         creates on each call share its source, so they are not redefinitions.
 
+        Each block_dim builds its own variant of the module, and a kernel can build
+        at one block_dim and fail at another, so the drop applies only to the
+        block_dim whose build failed.
+
         Returns:
             Whether a kernel was dropped, in which case the build can be retried.
         """
-        kernel_ref = getattr(build_error, "_warp_failed_kernel", None)
-        kernel = kernel_ref() if kernel_ref is not None else None
+        failure = getattr(build_error, "_warp_build_failure", None)
+        if failure is None:
+            return False
+
+        kernel_ref, block_dim = failure
+        kernel = kernel_ref()
         if kernel is None:
             return False
 
-        # Only drop a kernel that is still in the module, so every retry makes progress.
+        # Only drop a kernel that is still in the variant, so every retry makes progress.
         root = kernel if kernel.generic_parent is None else kernel.generic_parent
         current = self.kernels.get(root.key)
-        if root not in self._live_kernels or current is None or current.adj.source == root.adj.source:
+        dropped = self._replaced_failed_kernels.get(root, {})
+        if root not in self._live_kernels or block_dim in dropped:
+            return False
+        if current is None or current.adj.source == root.adj.source:
             return False
 
-        self._live_kernels.discard(root)
-        self._replaced_failed_kernels[root] = _copy_build_error(build_error)
+        self._replaced_failed_kernels[root] = dropped | {block_dim: _copy_build_error(build_error)}
         self.mark_modified()
         return True
 
@@ -4616,7 +4630,7 @@ class Module:
         """
         block_dim = self.options["block_dim"]
         options = self.resolve_options(warp.config)
-        self.hashers[block_dim] = ModuleHasher(self._get_live_kernels(), options)
+        self.hashers[block_dim] = ModuleHasher(self._get_live_kernels(block_dim), options)
         self.resolved_options[block_dim] = options
         return self.hashers[block_dim].get_hash()
 
@@ -4649,7 +4663,7 @@ class Module:
 
                 if block_dim not in self.hashers:
                     options = self.resolve_options(warp.config, block_dim=block_dim)
-                    self.hashers[block_dim] = ModuleHasher(self._get_live_kernels(), options)
+                    self.hashers[block_dim] = ModuleHasher(self._get_live_kernels(block_dim), options)
                     self.resolved_options[block_dim] = options
 
         return self.hashers[block_dim].get_hash()
@@ -4938,7 +4952,7 @@ class Module:
                 # redefined with the same key can leave an older *live* clustered
                 # kernel that still generates WP_CLUSTER_DIMS yet would be missed
                 # by self.kernels.values().
-                cluster_hasher = ModuleHasher(self._get_live_kernels(), options)
+                cluster_hasher = ModuleHasher(self._get_live_kernels(options["block_dim"]), options)
                 for kernel in cluster_hasher.get_unique_kernels():
                     cluster_dim = _get_kernel_cluster_dim(kernel)
                     if cluster_dim > 1:
