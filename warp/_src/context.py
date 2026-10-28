@@ -3489,7 +3489,12 @@ class ModuleBuilder:
         # build all unique kernels
         self.kernels = hasher.get_unique_kernels()
         for kernel in self.kernels:
-            self.build_kernel(kernel)
+            try:
+                self.build_kernel(kernel)
+            except Exception as e:
+                # Module.load() checks whether the failing kernel is an earlier definition.
+                e._warp_failed_kernel = weakref.ref(kernel)
+                raise
 
         # build deferred functions
         for func in self.deferred_functions:
@@ -3976,6 +3981,12 @@ class ModuleExec:
         """Return the kernel's symbol identity in this executable's variant."""
         name = self.kernel_names.get(kernel)
         if name is None:
+            # An earlier definition that failed to build was dropped from the module.
+            root = kernel if kernel.generic_parent is None else kernel.generic_parent
+            replaced_error = kernel.module._replaced_failed_kernels.get(root)
+            if replaced_error is not None:
+                _raise_recorded_build_error(replaced_error)
+
             # An equivalent kernel can be registered after this executable was
             # loaded, invalidating module hashers. Resolve this variant's hash;
             # the kernel's current hash may belong to another block size.
@@ -4174,6 +4185,19 @@ def _raise_recorded_build_error(build_error: Exception) -> NoReturn:
     raise replay from None
 
 
+def _copy_build_error(build_error: Exception) -> Exception:
+    """Return a copy of a build error that does not hold its traceback.
+
+    The traceback would keep the failed kernel, and every frame on the way to
+    it, alive for as long as the error is recorded. If the type cannot be
+    rebuilt from its ``args``, fall back to a ``RuntimeError`` with its message.
+    """
+    try:
+        return type(build_error)(*build_error.args)
+    except Exception:
+        return RuntimeError(str(build_error))
+
+
 # -----------------------------------------------------
 # stores all functions and kernels for a Python module
 # creates a hash of the function to use for checking
@@ -4205,6 +4229,10 @@ class Module:
 
         # (device context, block_dim) variants whose build failed, mapped to the error that failed it
         self.failed_builds = {}
+
+        # earlier definitions dropped from this module because they failed to build,
+        # mapped to a copy of their error without its traceback
+        self._replaced_failed_kernels = weakref.WeakKeyDictionary()
 
         # hash data, including the module hash. Module may store multiple hashes (one per block_dim used)
         self.hashers = {}
@@ -4453,6 +4481,40 @@ class Module:
         # so we should avoid it as a general rule.  Instead, we rely on Python's
         # reference counting GC to collect kernels that have gone out of scope.
         return list(self._live_kernels)
+
+    def _drop_failed_earlier_definition(self, build_error: Exception) -> bool:
+        """Drop the kernel that failed a build from this module if it has since been redefined.
+
+        A module builds every live kernel, and a kernel that fails to build fails
+        the module. An earlier definition can outlive its redefinition through
+        references the user does not control: IPython keeps the last exception for
+        ``%debug``, and its traceback references every kernel in the build that
+        failed. Without this, fixing kernels in a notebook cell and running the
+        cell again would keep failing the module until the interpreter restarted.
+
+        Only an earlier definition that fails is dropped, and launching it replays
+        its error. Earlier definitions that build stay in the module, and a current
+        definition that fails still fails the module. Kernels that a function
+        creates on each call share its source, so they are not redefinitions.
+
+        Returns:
+            Whether a kernel was dropped, in which case the build can be retried.
+        """
+        kernel_ref = getattr(build_error, "_warp_failed_kernel", None)
+        kernel = kernel_ref() if kernel_ref is not None else None
+        if kernel is None:
+            return False
+
+        # Only drop a kernel that is still in the module, so every retry makes progress.
+        root = kernel if kernel.generic_parent is None else kernel.generic_parent
+        current = self.kernels.get(root.key)
+        if root not in self._live_kernels or current is None or current.adj.source == root.adj.source:
+            return False
+
+        self._live_kernels.discard(root)
+        self._replaced_failed_kernels[root] = _copy_build_error(build_error)
+        self.mark_modified()
+        return True
 
     def _detach_references(self):
         """Remove this module from the dependent sets of modules it references."""
@@ -5115,6 +5177,22 @@ class Module:
         binary_path: os.PathLike | None = None,
         output_arch: int | None = None,
         meta_path: os.PathLike | None = None,
+    ) -> ModuleExec | None:
+        while True:
+            try:
+                return self._load(device, block_dim, binary_path, output_arch, meta_path)
+            except Exception as e:
+                # A build that an earlier definition failed can be retried without it.
+                if not self._drop_failed_earlier_definition(e):
+                    raise
+
+    def _load(
+        self,
+        device,
+        block_dim: int | None,
+        binary_path: os.PathLike | None,
+        output_arch: int | None,
+        meta_path: os.PathLike | None,
     ) -> ModuleExec | None:
         device = runtime.get_device(device)
 

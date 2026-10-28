@@ -9,6 +9,8 @@ import unittest
 import uuid
 from importlib import util
 
+import numpy as np
+
 import warp as wp
 from warp.tests.unittest_utils import *
 
@@ -138,6 +140,206 @@ def test_native_failure_fails_the_module(test, device):
         wp.launch(module.sibling_kernel, dim=4, inputs=[a], device=device)
 
 
+def _redefine(module, code: str):
+    """Run more source in an imported module's namespace, as running a notebook cell again does.
+
+    Warp reads a kernel's source from its file when the kernel is defined, so the
+    code has to come from a real file, which can be removed afterwards.
+    """
+    file, file_path = tempfile.mkstemp(suffix=".py")
+    try:
+        with os.fdopen(file, "w") as f:
+            f.write(code)
+
+        exec(compile(code, file_path, "exec"), module.__dict__)
+    finally:
+        os.remove(file_path)
+
+
+_REDEFINITION_SOURCE = """\
+import warp as wp
+
+@wp.kernel
+def exercise_kernel(a: wp.array[float]):
+    i = wp.tid()
+    a[i] = None  # unfinished, fails codegen
+
+@wp.kernel
+def sibling_kernel(a: wp.array[float]):
+    i = wp.tid()
+    a[i] = 7.0
+"""
+
+_FIXED_EXERCISE_SOURCE = """\
+@wp.kernel
+def exercise_kernel(a: wp.array[float]):
+    i = wp.tid()
+    a[i] = 2.0 * float(i)
+"""
+
+_STILL_FAILING_EXERCISE_SOURCE = """\
+@wp.kernel
+def exercise_kernel(a: wp.array[float]):
+    i = wp.tid()
+    a[i] = undefined_name
+"""
+
+_EXERCISE_ERROR = r'Error while parsing function "exercise_kernel"'
+
+
+def test_redefinition_recovers_failed_module(test, device):
+    """Verify redefining a kernel that failed to build lets its module build again.
+
+    IPython keeps the last exception for ``%debug``, and its traceback references
+    the failed definition, so the failed definition outlives a notebook cell that
+    redefines the kernel. It must not keep failing the module after the fix.
+    """
+    module = _import_module(_REDEFINITION_SOURCE)
+    a = wp.zeros(4, dtype=float, device=device)
+
+    with test.assertRaisesRegex(wp.WarpCodegenTypeError, _EXERCISE_ERROR):
+        wp.launch(module.exercise_kernel, dim=4, inputs=[a], device=device)
+
+    # Keep the failed definition alive, as a retained traceback would.
+    failed_definition = module.exercise_kernel
+
+    _redefine(module, _FIXED_EXERCISE_SOURCE)
+    test.assertIsNot(module.exercise_kernel, failed_definition)
+
+    wp.launch(module.exercise_kernel, dim=4, inputs=[a], device=device)
+    assert_np_equal(a.numpy(), np.array([0.0, 2.0, 4.0, 6.0]))
+
+    wp.launch(module.sibling_kernel, dim=4, inputs=[a], device=device)
+    assert_np_equal(a.numpy(), np.full(4, 7.0))
+
+
+def test_replaced_failed_definition_fails_on_its_own(test, device):
+    """Verify a failed definition launched after its replacement fails without failing the module.
+
+    Redefining the kernel removes the failed definition from the module, so
+    launching it replays its recorded failure, and the module keeps working.
+    """
+    module = _import_module(_REDEFINITION_SOURCE)
+    a = wp.zeros(4, dtype=float, device=device)
+
+    with test.assertRaisesRegex(wp.WarpCodegenTypeError, _EXERCISE_ERROR):
+        wp.launch(module.exercise_kernel, dim=4, inputs=[a], device=device)
+
+    failed_definition = module.exercise_kernel
+    _redefine(module, _FIXED_EXERCISE_SOURCE)
+
+    for _ in range(2):
+        with test.assertRaisesRegex(wp.WarpCodegenTypeError, _EXERCISE_ERROR):
+            wp.launch(failed_definition, dim=4, inputs=[a], device=device)
+
+    wp.launch(module.sibling_kernel, dim=4, inputs=[a], device=device)
+    assert_np_equal(a.numpy(), np.full(4, 7.0))
+
+
+def test_failing_redefinition_fails_the_module(test, device):
+    """Verify a redefinition that also fails to build fails the module with its own error."""
+    module = _import_module(_REDEFINITION_SOURCE)
+    a = wp.zeros(4, dtype=float, device=device)
+
+    with test.assertRaisesRegex(wp.WarpCodegenTypeError, _EXERCISE_ERROR):
+        wp.launch(module.exercise_kernel, dim=4, inputs=[a], device=device)
+
+    # Keep the failed definition alive, as a retained traceback would.
+    failed_definition = module.exercise_kernel
+    _redefine(module, _STILL_FAILING_EXERCISE_SOURCE)
+
+    with test.assertRaisesRegex(wp.WarpCodegenKeyError, "undefined_name"):
+        wp.launch(module.exercise_kernel, dim=4, inputs=[a], device=device)
+
+    with test.assertRaisesRegex(wp.WarpCodegenKeyError, "undefined_name"):
+        wp.launch(module.sibling_kernel, dim=4, inputs=[a], device=device)
+
+
+_TWO_EXERCISES_SOURCE = """\
+import warp as wp
+
+@wp.kernel
+def first_exercise(a: wp.array[float]):
+    i = wp.tid()
+    a[i] = None  # unfinished, fails codegen
+
+@wp.kernel
+def second_exercise(a: wp.array[float]):
+    i = wp.tid()
+    a[i] = None  # unfinished, fails codegen
+"""
+
+_FIXED_EXERCISES_SOURCE = """\
+@wp.kernel
+def first_exercise(a: wp.array[float]):
+    i = wp.tid()
+    a[i] = 1.0
+
+@wp.kernel
+def second_exercise(a: wp.array[float]):
+    i = wp.tid()
+    a[i] = 2.0
+"""
+
+
+def test_redefining_failed_kernels_together_recovers(test, device):
+    """Verify fixing two failed kernels in one notebook cell recovers after one run of the cell.
+
+    A build stops at the first kernel that fails, so when the cell redefines both
+    kernels, only one of them is known to have failed.
+    """
+    module = _import_module(_TWO_EXERCISES_SOURCE)
+    a = wp.zeros(4, dtype=float, device=device)
+
+    with test.assertRaises(wp.WarpCodegenTypeError):
+        wp.launch(module.first_exercise, dim=4, inputs=[a], device=device)
+
+    # Keep both failed definitions alive, as a retained traceback would.
+    failed_definitions = (module.first_exercise, module.second_exercise)
+
+    _redefine(module, _FIXED_EXERCISES_SOURCE)
+
+    wp.launch(module.first_exercise, dim=4, inputs=[a], device=device)
+    assert_np_equal(a.numpy(), np.full(4, 1.0))
+
+    wp.launch(module.second_exercise, dim=4, inputs=[a], device=device)
+    assert_np_equal(a.numpy(), np.full(4, 2.0))
+
+
+_CLOSURE_SOURCE = """\
+import warp as wp
+
+def make_fill_kernel(value):
+    @wp.kernel
+    def fill(a: wp.array[float]):
+        i = wp.tid()
+        a[i] = value
+
+    return fill
+
+fill_failing = make_fill_kernel("not a number")
+"""
+
+
+def test_failed_closure_is_not_replaced_by_another_closure(test, device):
+    """Verify a kernel created by the same function does not count as a redefinition.
+
+    Kernels a function creates on each call share its source and key. A failing
+    one is still live and still fails the module when the next one is created.
+    """
+    module = _import_module(_CLOSURE_SOURCE)
+    a = wp.zeros(4, dtype=float, device=device)
+
+    with test.assertRaises(Exception) as caught:
+        wp.launch(module.fill_failing, dim=4, inputs=[a], device=device)
+
+    fill_two = module.make_fill_kernel(2.0)
+    test.assertEqual(fill_two.key, module.fill_failing.key)
+
+    with test.assertRaises(type(caught.exception)):
+        wp.launch(fill_two, dim=4, inputs=[a], device=device)
+
+
 class TestModuleContamination(unittest.TestCase):
     pass
 
@@ -149,6 +351,11 @@ for _func in (
     test_validation_failure_fails_the_module,
     test_validation_failure_repeats_on_relaunch,
     test_native_failure_fails_the_module,
+    test_redefinition_recovers_failed_module,
+    test_replaced_failed_definition_fails_on_its_own,
+    test_failing_redefinition_fails_the_module,
+    test_redefining_failed_kernels_together_recovers,
+    test_failed_closure_is_not_replaced_by_another_closure,
 ):
     add_function_test(TestModuleContamination, func=_func, name=_func.__name__, devices=devices)
 
