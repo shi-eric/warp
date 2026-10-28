@@ -4,6 +4,8 @@
 """Test that a kernel that fails to build fails its module, and says why."""
 
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 import uuid
@@ -15,14 +17,21 @@ import warp as wp
 from warp.tests.unittest_utils import *
 
 
-def _import_module(code: str):
+def _import_module(code: str, name: str | None = None):
     """Import a throwaway Warp module from source.
 
     The kernels under test have to live in a module of their own. Defining them
     in this file would fail the test file's own module, and the point of these
     tests is what a build failure does to the module that contains it.
+
+    Args:
+        code: The module's source.
+        name: The module's name. Defaults to a unique name, so that the module
+            shares nothing with other tests, including kernel cache entries.
     """
-    name = f"_test_module_contamination_{uuid.uuid4().hex[:12]}"
+    if name is None:
+        name = f"_test_module_contamination_{uuid.uuid4().hex[:12]}"
+
     file, file_path = tempfile.mkstemp(suffix=".py")
     try:
         with os.fdopen(file, "w") as f:
@@ -213,11 +222,11 @@ def test_redefinition_recovers_failed_module(test, device):
     assert_np_equal(a.numpy(), np.full(4, 7.0))
 
 
-def test_replaced_failed_definition_fails_on_its_own(test, device):
-    """Verify a failed definition launched after its replacement fails without failing the module.
+def test_replaced_failed_definition_reports_its_error(test, device):
+    """Verify a failed definition launched after its replacement still reports its own error.
 
-    Redefining the kernel removes the failed definition from the module, so
-    launching it replays its recorded failure, and the module keeps working.
+    Launching an earlier definition returns it to the module, so it fails as it
+    would have without the redefinition.
     """
     module = _import_module(_REDEFINITION_SOURCE)
     a = wp.zeros(4, dtype=float, device=device)
@@ -231,9 +240,6 @@ def test_replaced_failed_definition_fails_on_its_own(test, device):
     for _ in range(2):
         with test.assertRaisesRegex(wp.WarpCodegenTypeError, _EXERCISE_ERROR):
             wp.launch(failed_definition, dim=4, inputs=[a], device=device)
-
-    wp.launch(module.sibling_kernel, dim=4, inputs=[a], device=device)
-    assert_np_equal(a.numpy(), np.full(4, 7.0))
 
 
 def test_failing_redefinition_fails_the_module(test, device):
@@ -324,25 +330,84 @@ def tile_kernel(a: wp.array[float]):
 
 
 def test_replaced_definition_keeps_working_block_dims(test, device):
-    """Verify an earlier definition that fails at one block_dim keeps working at another.
+    """Verify an earlier definition that failed at one block_dim still builds at another after its replacement.
 
-    Dropping the failed definition applies to the block_dim whose build failed,
-    so the variants where it builds keep it, as they did before it failed.
+    Each block_dim builds its own variant of the module, so launching the
+    set-aside definition at a block_dim where it builds succeeds.
     """
     module = _import_module(_BLOCK_DIM_SOURCE)
     a = wp.zeros(256, dtype=float, device=device)
 
     earlier_definition = module.tile_kernel
-    _redefine(module, _REDEFINED_TILE_SOURCE)
-
     with test.assertRaisesRegex(ValueError, 'Error while parsing function "tile_kernel"'):
         wp.launch(earlier_definition, dim=64, inputs=[a], block_dim=64, device=device)
+
+    _redefine(module, _REDEFINED_TILE_SOURCE)
 
     wp.launch(earlier_definition, dim=256, inputs=[a], block_dim=256, device=device)
     assert_np_equal(a.numpy(), np.full(256, 1.0))
 
-    wp.launch(module.tile_kernel, dim=64, inputs=[a], block_dim=64, device=device)
-    assert_np_equal(a.numpy()[:64], np.full(64, 2.0))
+
+_HELPER_SOURCE = """\
+import warp as wp
+
+@wp.func
+def helper():
+    return 3.0
+
+@wp.kernel
+def uses_helper(a: wp.array[float]):
+    i = wp.tid()
+    a[i] = helper() + 0.5
+"""
+
+
+def test_repaired_helper_restores_earlier_definition(test, device):
+    """Verify an earlier definition works again once a helper it calls is repaired.
+
+    An earlier definition that built stays in the module, so a helper change
+    that breaks it fails the module, and repairing the helper fixes both.
+    """
+    module = _import_module(_HELPER_SOURCE)
+    a = wp.zeros(4, dtype=float, device=device)
+
+    wp.launch(module.uses_helper, dim=4, inputs=[a], device=device)
+    assert_np_equal(a.numpy(), np.full(4, 3.5))
+
+    earlier_definition = module.uses_helper
+    _redefine(module, "@wp.kernel\ndef uses_helper(a: wp.array[float]):\n    i = wp.tid()\n    a[i] = 1.0\n")
+
+    # An int helper breaks the earlier definition, which still adds 0.5.
+    _redefine(module, "@wp.func\ndef helper():\n    return 3\n")
+    with test.assertRaisesRegex(RuntimeError, 'Error while parsing function "uses_helper"'):
+        wp.launch(module.uses_helper, dim=4, inputs=[a], device=device)
+
+    _redefine(module, "@wp.func\ndef helper():\n    return 3.0\n")
+    wp.launch(earlier_definition, dim=4, inputs=[a], device=device)
+    assert_np_equal(a.numpy(), np.full(4, 3.5))
+
+
+_GENERIC_SOURCE = """\
+import warp as wp
+from typing import Any
+
+@wp.kernel
+def generic_exercise(a: wp.array[Any]):
+    i = wp.tid()
+    a[i] = None  # unfinished, fails codegen
+"""
+
+
+def test_new_overload_of_replaced_generic_definition_reports_its_error(test, device):
+    """Verify a new overload of a replaced generic definition reports the definition's own error."""
+    module = _import_module(_GENERIC_SOURCE)
+    earlier_definition = module.generic_exercise
+    _redefine(module, "@wp.kernel\ndef generic_exercise(a: wp.array[Any]):\n    i = wp.tid()\n    a[i] = a.dtype(1)\n")
+
+    for dtype in (float, int):
+        a = wp.zeros(4, dtype=dtype, device=device)
+        with test.assertRaisesRegex(wp.WarpCodegenTypeError, 'Error while parsing function "generic_exercise"'):
+            wp.launch(earlier_definition, dim=4, inputs=[a], device=device)
 
 
 _CLOSURE_SOURCE = """\
@@ -379,8 +444,109 @@ def test_failed_closure_is_not_replaced_by_another_closure(test, device):
         wp.launch(fill_two, dim=4, inputs=[a], device=device)
 
 
-class TestModuleContamination(unittest.TestCase):
+_RECORDED_SOURCE = """\
+import warp as wp
+
+@wp.kernel
+def recorded_kernel(a: wp.array[float]):
     pass
+"""
+
+
+def test_recorded_launch_of_replaced_definition_resizes(test, device):
+    """Verify a recorded launch resizes after a redefinition sets its kernel aside.
+
+    Resizing past the ``wp.tid()`` extent limit reads the kernel's build
+    metadata, which returns the set-aside definition to the module.
+    """
+    module = _import_module(_RECORDED_SOURCE)
+    a = wp.zeros(4, dtype=float, device=device)
+    cmd = wp.launch(module.recorded_kernel, dim=4, inputs=[a], device=device, record_cmd=True)
+
+    # A failing sibling puts the recorded kernel in a failed build.
+    _redefine(module, "@wp.kernel\ndef failing_kernel(a: wp.array[float]):\n    i = wp.tid()\n    a[i] = None\n")
+    with test.assertRaises(wp.WarpCodegenTypeError):
+        wp.launch(module.failing_kernel, dim=4, inputs=[a], device=device)
+
+    _redefine(module, "@wp.kernel\ndef recorded_kernel(a: wp.array[float]):\n    a[0] = 1.0\n")
+
+    # The recorded kernel does not use wp.tid(), so it accepts extents past the limit.
+    cmd.set_dim(2**32)
+    test.assertEqual(cmd.bounds.size, 2**32)
+
+
+_DEFERRED_STATIC_SOURCE = """\
+import warp as wp
+
+values = [{value}]
+
+@wp.func
+def helper():
+    return 3
+
+@wp.kernel
+def deferred_static_kernel(a: wp.array[float]):
+    x = helper() + 0.5  # an int helper fails the build before the loop
+    for i in range(1):
+        a[i] = wp.static(values[i])
+"""
+
+
+def _launch_restored_deferred_static(value: float) -> float:
+    """Return what a restored definition writes from a ``wp.static()`` that depends on a loop variable.
+
+    The definition fails to build before its static is resolved, and its
+    replacement then builds without it. The module name is fixed, so processes
+    that share a kernel cache build the same module.
+    """
+    module = _import_module(
+        _DEFERRED_STATIC_SOURCE.format(value=value), name="_test_module_contamination_deferred_static"
+    )
+    a = wp.zeros(1, dtype=float, device="cpu")
+
+    try:
+        wp.launch(module.deferred_static_kernel, dim=1, inputs=[a], device="cpu")
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("Expected the int helper to fail the build")
+
+    earlier_definition = module.deferred_static_kernel
+    _redefine(module, "@wp.kernel\ndef deferred_static_kernel(a: wp.array[float]):\n    a[0] = 1.0\n")
+    wp.launch(module.deferred_static_kernel, dim=1, inputs=[a], device="cpu")
+
+    _redefine(module, "@wp.func\ndef helper():\n    return 3.0\n")
+    wp.launch(earlier_definition, dim=1, inputs=[a], device="cpu")
+    return float(a.numpy()[0])
+
+
+class TestModuleContamination(unittest.TestCase):
+    @unittest.skipUnless(wp.is_cpu_available(), "Requires CPU support")
+    def test_restored_definition_does_not_reuse_other_static_values(self):
+        """Verify a restored definition does not reuse a binary built for different ``wp.static()`` values.
+
+        Each value runs in a fresh process, and the processes share a new kernel cache.
+        """
+        with tempfile.TemporaryDirectory() as cache_path:
+            env = os.environ.copy()
+            env["WARP_CACHE_PATH"] = cache_path
+            for value in (10.0, 20.0):
+                result = subprocess.run(
+                    [
+                        sys.executable,
+                        "-c",
+                        "from warp.tests.test_module_contamination import _launch_restored_deferred_static; "
+                        f"print(_launch_restored_deferred_static({value}))",
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=180,
+                )
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.splitlines()[-1], str(value))
 
 
 devices = get_test_devices()
@@ -391,10 +557,13 @@ for _func in (
     test_validation_failure_repeats_on_relaunch,
     test_native_failure_fails_the_module,
     test_redefinition_recovers_failed_module,
-    test_replaced_failed_definition_fails_on_its_own,
+    test_replaced_failed_definition_reports_its_error,
     test_failing_redefinition_fails_the_module,
     test_redefining_failed_kernels_together_recovers,
+    test_repaired_helper_restores_earlier_definition,
+    test_new_overload_of_replaced_generic_definition_reports_its_error,
     test_failed_closure_is_not_replaced_by_another_closure,
+    test_recorded_launch_of_replaced_definition_resizes,
 ):
     add_function_test(TestModuleContamination, func=_func, name=_func.__name__, devices=devices)
 

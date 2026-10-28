@@ -1369,6 +1369,9 @@ class Kernel:
         # cache for invoke() struct types (avoids dynamic type() calls)
         self._invoke_cache = {}
 
+        # whether a later definition set this one aside, see Module._set_aside_failed_definitions()
+        self._set_aside = False
+
         if self.module:
             self.module.register_kernel(self)
 
@@ -3479,7 +3482,7 @@ class ModuleBuilder:
         self.shared_memory_bytes = {}  # map from lto symbol to shared memory requirements
 
         if hasher is None:
-            hasher = ModuleHasher(module._get_live_kernels(options["block_dim"]), options)
+            hasher = ModuleHasher(module._get_live_kernels(), options)
 
         # A different block-size variant may have changed the shared
         # Kernel.hash since this hasher was cached. Emit this variant's symbols.
@@ -3488,17 +3491,19 @@ class ModuleBuilder:
 
         # build all unique kernels
         self.kernels = hasher.get_unique_kernels()
-        for kernel in self.kernels:
-            try:
+        try:
+            for kernel in self.kernels:
                 self.build_kernel(kernel)
-            except Exception as e:
-                # Module.load() checks whether the failing kernel is an earlier definition.
-                e._warp_build_failure = (weakref.ref(kernel), self.options["block_dim"])
-                raise
 
-        # build deferred functions
-        for func in self.deferred_functions:
-            self.build_function(func)
+            # build deferred functions
+            for func in self.deferred_functions:
+                self.build_function(func)
+        except Exception:
+            # Redefining one of these kernels sets the earlier definition aside, see Module._set_aside_failed_definitions().
+            module._failed_build_kernels.update(
+                k if k.generic_parent is None else k.generic_parent for k in self.kernels
+            )
+            raise
 
         # propagate used_by_backward_kernel now that the full call graph is known
         self._propagate_used_by_backward_kernel()
@@ -3981,12 +3986,6 @@ class ModuleExec:
         """Return the kernel's symbol identity in this executable's variant."""
         name = self.kernel_names.get(kernel)
         if name is None:
-            # An earlier definition that failed to build was dropped from this block_dim variant.
-            root = kernel if kernel.generic_parent is None else kernel.generic_parent
-            replaced_error = kernel.module._replaced_failed_kernels.get(root, {}).get(self.block_dim)
-            if replaced_error is not None:
-                _raise_recorded_build_error(replaced_error)
-
             # An equivalent kernel can be registered after this executable was
             # loaded, invalidating module hashers. Resolve this variant's hash;
             # the kernel's current hash may belong to another block size.
@@ -4185,19 +4184,6 @@ def _raise_recorded_build_error(build_error: Exception) -> NoReturn:
     raise replay from None
 
 
-def _copy_build_error(build_error: Exception) -> Exception:
-    """Return a copy of a build error that does not hold its traceback.
-
-    The traceback would keep the failed kernel, and every frame on the way to
-    it, alive for as long as the error is recorded. If the type cannot be
-    rebuilt from its ``args``, fall back to a ``RuntimeError`` with its message.
-    """
-    try:
-        return type(build_error)(*build_error.args)
-    except Exception:
-        return RuntimeError(str(build_error))
-
-
 # -----------------------------------------------------
 # stores all functions and kernels for a Python module
 # creates a hash of the function to use for checking
@@ -4224,15 +4210,14 @@ class Module:
         # of each kernel in `live_kernels` and filter out duplicates for codegen.
         self._live_kernels = weakref.WeakSet()
 
+        # kernels that were part of a build that failed and have not loaded since
+        self._failed_build_kernels = weakref.WeakSet()
+
         # executable modules currently loaded
         self.execs = {}  # ((device.context, blockdim): ModuleExec)
 
         # (device context, block_dim) variants whose build failed, mapped to the error that failed it
         self.failed_builds = {}
-
-        # earlier definitions dropped from block_dim variants because they failed to build there,
-        # mapped to {block_dim: copy of the error without its traceback}
-        self._replaced_failed_kernels = weakref.WeakKeyDictionary()
 
         # hash data, including the module hash. Module may store multiple hashes (one per block_dim used)
         self.hashers = {}
@@ -4391,11 +4376,16 @@ class Module:
         self.mark_modified()
 
     def register_kernel(self, kernel):
+        previous = self.kernels.get(kernel.key)
+
         # keep a reference to the latest version
         self.kernels[kernel.key] = kernel
 
         # track all kernel objects, even if they are duplicates
         self._live_kernels.add(kernel)
+
+        if previous is not None and previous.adj.source != kernel.adj.source and self._failed_build_kernels:
+            self._set_aside_failed_definitions(kernel)
 
         # Check for unresolved static expressions in the kernel.
         if kernel.adj.has_unresolved_static_expressions:
@@ -4405,6 +4395,45 @@ class Module:
             self._find_references(kernel.adj)
 
         # for a reload of module on next launch
+        self.mark_modified()
+
+    def _set_aside_failed_definitions(self, kernel) -> None:
+        """Leave earlier definitions of ``kernel`` that were part of a failed build out of this module's builds.
+
+        A module builds every live kernel, and a kernel that fails to build fails
+        the module. An earlier definition can outlive its redefinition through
+        references the user does not control: IPython keeps the last exception for
+        ``%debug``, and its traceback references every kernel in the build that
+        failed. Without this, fixing kernels in a notebook cell and running the
+        cell again would keep failing the module until the interpreter restarted.
+
+        Only definitions that were part of a failed build, and have not loaded
+        since, are set aside. Other earlier definitions stay in the module, for
+        preloading and ahead-of-time compilation as before. Launching a set-aside
+        definition, or reading its build metadata, returns it to the module first,
+        so it builds or fails exactly as it would have without the redefinition.
+        Kernels that a function creates on each call share its source, so they are
+        not redefinitions.
+        """
+        for live in self._get_live_kernels():
+            if live.key == kernel.key and live.adj.source != kernel.adj.source and live in self._failed_build_kernels:
+                self._live_kernels.discard(live)
+                for definition in (live, *live.overloads.values()):
+                    definition._set_aside = True
+
+    def _restore_set_aside(self, kernel) -> None:
+        """Return a set-aside definition to this module's builds before it is launched."""
+        root = kernel if kernel.generic_parent is None else kernel.generic_parent
+        for definition in (root, *root.overloads.values()):
+            definition._set_aside = False
+
+            # builds without this definition may have resolved the module's other deferred statics
+            if definition.adj.has_unresolved_static_expressions:
+                self.has_unresolved_static_expressions = True
+
+        self._live_kernels.add(root)
+
+        # like adding a generic overload, this is not coordinated with another thread's load of this module
         self.mark_modified()
 
     def register_function(self, func, scope_locals, skip_adding_overload=False):
@@ -4470,9 +4499,8 @@ class Module:
         # for a reload of module on next launch
         self.mark_modified()
 
-    def _get_live_kernels(self, block_dim: int | None = None):
-        # Return a list of kernels that still have references, leaving out earlier
-        # definitions dropped from the given block_dim variant.
+    def _get_live_kernels(self):
+        # Return a list of kernels that still have references.
         # We return a regular list instead of the WeakSet to avoid undesirable issues
         # if kernels are garbage collected before the caller is done using this list.
         # Note that we should avoid retaining strong references to kernels unnecessarily
@@ -4481,54 +4509,7 @@ class Module:
         # but this can have undesirable consequences (e.g., GC during graph capture),
         # so we should avoid it as a general rule.  Instead, we rely on Python's
         # reference counting GC to collect kernels that have gone out of scope.
-        if block_dim is None or not self._replaced_failed_kernels:
-            return list(self._live_kernels)
-
-        return [k for k in self._live_kernels if block_dim not in self._replaced_failed_kernels.get(k, ())]
-
-    def _drop_failed_earlier_definition(self, build_error: Exception) -> bool:
-        """Drop the kernel that failed a build from its block_dim variant if it has since been redefined.
-
-        A module builds every live kernel, and a kernel that fails to build fails
-        the module. An earlier definition can outlive its redefinition through
-        references the user does not control: IPython keeps the last exception for
-        ``%debug``, and its traceback references every kernel in the build that
-        failed. Without this, fixing kernels in a notebook cell and running the
-        cell again would keep failing the module until the interpreter restarted.
-
-        Only an earlier definition that fails is dropped, and launching it replays
-        its error. Earlier definitions that build stay in the module, and a current
-        definition that fails still fails the module. Kernels that a function
-        creates on each call share its source, so they are not redefinitions.
-
-        Each block_dim builds its own variant of the module, and a kernel can build
-        at one block_dim and fail at another, so the drop applies only to the
-        block_dim whose build failed.
-
-        Returns:
-            Whether a kernel was dropped, in which case the build can be retried.
-        """
-        failure = getattr(build_error, "_warp_build_failure", None)
-        if failure is None:
-            return False
-
-        kernel_ref, block_dim = failure
-        kernel = kernel_ref()
-        if kernel is None:
-            return False
-
-        # Only drop a kernel that is still in the variant, so every retry makes progress.
-        root = kernel if kernel.generic_parent is None else kernel.generic_parent
-        current = self.kernels.get(root.key)
-        dropped = self._replaced_failed_kernels.get(root, {})
-        if root not in self._live_kernels or block_dim in dropped:
-            return False
-        if current is None or current.adj.source == root.adj.source:
-            return False
-
-        self._replaced_failed_kernels[root] = dropped | {block_dim: _copy_build_error(build_error)}
-        self.mark_modified()
-        return True
+        return list(self._live_kernels)
 
     def _detach_references(self):
         """Remove this module from the dependent sets of modules it references."""
@@ -4630,7 +4611,7 @@ class Module:
         """
         block_dim = self.options["block_dim"]
         options = self.resolve_options(warp.config)
-        self.hashers[block_dim] = ModuleHasher(self._get_live_kernels(block_dim), options)
+        self.hashers[block_dim] = ModuleHasher(self._get_live_kernels(), options)
         self.resolved_options[block_dim] = options
         return self.hashers[block_dim].get_hash()
 
@@ -4663,7 +4644,7 @@ class Module:
 
                 if block_dim not in self.hashers:
                     options = self.resolve_options(warp.config, block_dim=block_dim)
-                    self.hashers[block_dim] = ModuleHasher(self._get_live_kernels(block_dim), options)
+                    self.hashers[block_dim] = ModuleHasher(self._get_live_kernels(), options)
                     self.resolved_options[block_dim] = options
 
         return self.hashers[block_dim].get_hash()
@@ -4683,6 +4664,10 @@ class Module:
         """
         if block_dim is None:
             block_dim = self.options["block_dim"]
+
+        # recorded launches and JAX kernels can outlive a kernel's redefinition
+        if kernel._set_aside:
+            self._restore_set_aside(kernel)
 
         self.get_module_hash(block_dim)
         kernel.hash = self.hashers[block_dim].kernel_hashes[kernel]
@@ -4952,7 +4937,7 @@ class Module:
                 # redefined with the same key can leave an older *live* clustered
                 # kernel that still generates WP_CLUSTER_DIMS yet would be missed
                 # by self.kernels.values().
-                cluster_hasher = ModuleHasher(self._get_live_kernels(options["block_dim"]), options)
+                cluster_hasher = ModuleHasher(self._get_live_kernels(), options)
                 for kernel in cluster_hasher.get_unique_kernels():
                     cluster_dim = _get_kernel_cluster_dim(kernel)
                     if cluster_dim > 1:
@@ -5192,22 +5177,6 @@ class Module:
         output_arch: int | None = None,
         meta_path: os.PathLike | None = None,
     ) -> ModuleExec | None:
-        while True:
-            try:
-                return self._load(device, block_dim, binary_path, output_arch, meta_path)
-            except Exception as e:
-                # A build that an earlier definition failed can be retried without it.
-                if not self._drop_failed_earlier_definition(e):
-                    raise
-
-    def _load(
-        self,
-        device,
-        block_dim: int | None,
-        binary_path: os.PathLike | None,
-        output_arch: int | None,
-        meta_path: os.PathLike | None,
-    ) -> ModuleExec | None:
         device = runtime.get_device(device)
 
         # Resolve the active block_dim without mutating self.options.
@@ -5353,6 +5322,10 @@ class Module:
                 else:
                     module_load_timer.extra_msg = " (error)"
                     raise Exception(f"Failed to load CUDA module '{self.name}' ({module_load_diagnostics})")
+
+        if self._failed_build_kernels:
+            for kernel in self.hashers[active_block_dim].kernel_hashes.keys():
+                self._failed_build_kernels.discard(kernel if kernel.generic_parent is None else kernel.generic_parent)
 
         return module_exec
 
@@ -9610,6 +9583,8 @@ def get_cuda_max_cluster_dim(
     # observable effect on subsequent launches that don't pass ``block_dim``.
     prior_block_dim = kernel.module.options["block_dim"]
     try:
+        if kernel._set_aside:
+            kernel.module._restore_set_aside(kernel)
         module_exec = kernel.module.load(device, block_dim)
         if module_exec is None:
             return 1
@@ -11421,6 +11396,9 @@ class Launch:
     ):
         block_dim = _resolve_launch_block_dim(device, block_dim)
 
+        if kernel._set_aside:
+            kernel.module._restore_set_aside(kernel)
+
         # retain the module executable so it doesn't get unloaded
         self.module_exec = kernel.module.load(device, block_dim)
         if not self.module_exec:
@@ -12088,6 +12066,9 @@ def launch(
             fwd_types = kernel.infer_argument_types(fwd_args)
             kernel = kernel._add_normalized_overload(fwd_types)
 
+        if kernel._set_aside:
+            kernel.module._restore_set_aside(kernel)
+
         # delay load modules, including new overload if needed
         module_exec = kernel.module.load(device, block_dim)
 
@@ -12502,6 +12483,8 @@ def _resolve_cuda_kernel_forward_entry_point(kernel, device, block_dim, api_name
             raise ValueError(f"block_dim must be a positive integer, got {block_dim!r}")
 
     try:
+        if kernel._set_aside:
+            kernel.module._restore_set_aside(kernel)
         module_exec = kernel.module.load(device, resolved_block_dim)
     except Exception as error:
         raise RuntimeError(
@@ -12653,6 +12636,8 @@ def get_suggested_block_size(kernel, device: DeviceLike = None) -> tuple[int, in
         forward_smem_bytes = 0
         forward_smem_shortfall = None
     else:
+        if kernel._set_aside:
+            kernel.module._restore_set_aside(kernel)
         module_exec = kernel.module.load(device)
 
         if module_exec is None:

@@ -552,6 +552,8 @@ class FfiKernel:
 
                 # Preloading is best-effort, so the callback's actual device must
                 # load the module before reading code-generation metadata.
+                if self.kernel._set_aside:
+                    self.kernel.module._restore_set_aside(self.kernel)
                 module_exec = _load_ffi_module(self.kernel.module, device, self.block_dim)
                 block_dim = module_exec.block_dim
 

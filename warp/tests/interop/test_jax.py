@@ -20,6 +20,7 @@ import numpy as np
 import warp as wp
 from warp._src.jax import get_jax_device
 from warp._src.jax.ffi import register_ffi_callback
+from warp.tests.test_module_contamination import _import_module, _redefine
 from warp.tests.unittest_utils import *
 
 # Prevent JAX from preallocating GPU memory before any module-level version checks import it.
@@ -838,6 +839,42 @@ def test_ffi_jax_kernel_in_out(test, device):
 
     assert_np_equal(b, np.arange(1, ARRAY_SIZE + 1, dtype=np.float32))
     assert_np_equal(c, np.full(ARRAY_SIZE, 2, dtype=np.float32))
+
+
+_INT_HELPER_SOURCE = """\
+import warp as wp
+
+@wp.func
+def helper():
+    return 3
+
+@wp.kernel
+def uses_helper(a: wp.array[float]):
+    i = wp.tid()
+    a[i] = helper() + 0.5
+"""
+
+
+@unittest.skipUnless(_jax_version() >= (0, 5, 0), "Jax version too old")
+def test_ffi_jax_kernel_replaced_failed_definition(test, device):
+    """Verify an FFI kernel runs an earlier definition that a redefinition set aside after a failed build."""
+    jax = _import_jax()
+    jp = _import_jax_numpy()
+
+    module = _import_module(_INT_HELPER_SOURCE)
+    with test.assertRaisesRegex(RuntimeError, 'Error while parsing function "uses_helper"'):
+        wp.launch(module.uses_helper, dim=4, inputs=[wp.zeros(4, dtype=float, device=device)], device=device)
+
+    earlier_definition = module.uses_helper
+    _redefine(module, "@wp.kernel\ndef uses_helper(a: wp.array[float]):\n    i = wp.tid()\n    a[i] = 1.0\n")
+    _redefine(module, "@wp.func\ndef helper():\n    return 3.0\n")
+
+    jax_func = wp.jax_kernel(earlier_definition, num_outputs=1, in_out_argnames=["a"])
+
+    with jax.default_device(wp.device_to_jax(device)):
+        (a,) = jax_func(jp.zeros(4, dtype=jp.float32))
+
+    assert_np_equal(np.asarray(a), np.full(4, 3.5, dtype=np.float32))
 
 
 @unittest.skipUnless(_jax_version() >= (0, 5, 0), "Jax version too old")
@@ -3265,6 +3302,7 @@ else:
                 test_ffi_jax_kernel_sincos,
                 test_ffi_jax_kernel_diagonal,
                 test_ffi_jax_kernel_in_out,
+                test_ffi_jax_kernel_replaced_failed_definition,
                 test_ffi_jax_kernel_cache_argnames,
                 test_ffi_jax_kernel_scale_vec_constant,
                 test_ffi_jax_kernel_scale_vec_static,
