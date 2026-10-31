@@ -1203,6 +1203,17 @@ def _smem_shortfall_clause(block_dim: int, requested: int, static: int, device_m
     )
 
 
+class NVSHMEMAdjointInfo(NamedTuple):
+    """NVSHMEM traffic of a kernel's adjoint, recorded at code generation and persisted in module metadata."""
+
+    remote_access: bool = False
+    """Whether the adjoint kernel accesses remote memory, so its launches must be ordered against the other PEs."""
+    pull_builtins: tuple[str, ...] = ()
+    """Sorted keys of the pull built-ins the kernel calls, which have no adjoint."""
+    fused_shape: bool = False
+    """Whether the kernel writes to a remote PE before waiting on a signal."""
+
+
 class KernelHooks:
     def __init__(
         self,
@@ -1214,6 +1225,7 @@ class KernelHooks:
         det_launch_meta: DeterministicMeta | None = None,
         forward_smem_shortfall: str | None = None,
         backward_smem_shortfall: str | None = None,
+        nvshmem_adjoint: NVSHMEMAdjointInfo | None = None,
     ):
         self.forward = forward
         self.backward = backward
@@ -1236,6 +1248,10 @@ class KernelHooks:
         # Launch metadata for this module variant; kernel.adj.det_meta is
         # codegen scratch and may describe a different variant.
         self.det_launch_meta = det_launch_meta
+
+        # NVSHMEM records of the adjoint kernel, or None when the module does not use
+        # NVSHMEM or the kernel has no backward pass.
+        self.nvshmem_adjoint = nvshmem_adjoint
 
 
 # Hardware upper bound for the non-portable cluster range (9-16), valid on
@@ -3778,6 +3794,13 @@ class ModuleBuilder:
             meta[forward_name + "_smem_bytes"] = kernel.adj.get_total_required_shared()
             if options["enable_backward"] and options.get("entry_point_abi", "warp") == "warp":
                 meta[backward_name + "_smem_bytes"] = kernel.adj.get_total_required_shared_backward()
+                # Persisted because a kernel loaded from the cache skips code generation.
+                if self.uses_nvshmem:
+                    meta[backward_name + "_nvshmem"] = {
+                        "remote_access": kernel.adj.nvshmem_remote_access,
+                        "pull_builtins": sorted(kernel.adj.nvshmem_pull_builtins),
+                        "fused_shape": kernel.adj.nvshmem_fused_shape,
+                    }
 
         return meta
 
@@ -4117,6 +4140,17 @@ class ModuleExec:
             forward_smem_bytes = self.meta[forward_name + "_smem_bytes"]
             backward_smem_bytes = self.meta[backward_name + "_smem_bytes"] if options["enable_backward"] else 0
 
+            # only modules that use NVSHMEM record the NVSHMEM traffic of the adjoint kernels
+            nvshmem_record = self.meta.get(backward_name + "_nvshmem") if options["enable_backward"] else None
+            if nvshmem_record is not None:
+                nvshmem_adjoint = NVSHMEMAdjointInfo(
+                    remote_access=nvshmem_record["remote_access"],
+                    pull_builtins=tuple(nvshmem_record["pull_builtins"]),
+                    fused_shape=nvshmem_record["fused_shape"],
+                )
+            else:
+                nvshmem_adjoint = None
+
             # configure kernels maximum shared memory size
             max_smem_bytes = self.device.max_shared_memory_per_block
 
@@ -4194,6 +4228,7 @@ class ModuleExec:
                 det_launch_meta=self.det_launch_meta_map.get(name),
                 forward_smem_shortfall=forward_smem_shortfall,
                 backward_smem_shortfall=backward_smem_shortfall,
+                nvshmem_adjoint=nvshmem_adjoint,
             )
 
         else:
@@ -6150,6 +6185,14 @@ class Device:
 
         # maps streams to started graph captures
         self.captures = {}
+
+        self.nvshmem_adjoint_barriers: int = 0
+        """Number of NVSHMEM barriers Warp has enqueued on this device before adjoint launches of kernels whose
+        adjoint accesses remote memory.
+
+        :meth:`warp.Tape.backward` uses it to decide whether a backward pass needs a trailing barrier. Replaying a
+        captured CUDA graph does not change it.
+        """
 
         self.context_guard = ContextGuard(self)
 
@@ -8257,6 +8300,9 @@ class Runtime:
 
             self.core.wp_nvshmem_cumodule_finalize.argtypes = [ctypes.c_uint64]
             self.core.wp_nvshmem_cumodule_finalize.restype = ctypes.c_int
+
+            self.core.wp_nvshmem_is_symmetric.argtypes = [ctypes.c_uint64]
+            self.core.wp_nvshmem_is_symmetric.restype = ctypes.c_int
 
             self.core.wp_cuda_driver_version.argtypes = None
             self.core.wp_cuda_driver_version.restype = ctypes.c_int
@@ -11854,6 +11900,11 @@ class Launch:
             if stream is None:
                 stream = self.device.stream
 
+            if self.adjoint and self.hooks.nvshmem_adjoint is not None:
+                from warp._src.nvshmem_sync import before_adjoint_launch  # noqa: PLC0415
+
+                before_adjoint_launch(self.kernel, self.hooks, self.device, stream, self.fwd_args, self.adj_args)
+
             # If the stream is capturing, we retain the CUDA module so that it doesn't get unloaded
             # before the captured graph is released.
             if len(runtime.captures) > 0 and runtime.core.wp_cuda_stream_is_capturing(stream.cuda_stream):
@@ -12182,7 +12233,20 @@ def launch(
 
     dim, total_dim_size = _normalize_launch_dim(dim)
 
-    if total_dim_size > 0:
+    # A PE whose local block is empty must still arrive at the NVSHMEM barrier that the other PEs enqueue
+    # for the same adjoint launch, or they wait for it forever. That PE may never have loaded the kernel's
+    # module, so a CUDA adjoint launch with no threads goes on to load it and find out whether the kernel
+    # needs the barrier, but only in a process that has loaded NVSHMEM. All other zero-size launches skip
+    # the launch work, as before.
+    nvshmem_empty_adjoint = (
+        total_dim_size == 0
+        and adjoint
+        and device.is_cuda
+        and runtime.core.wp_is_nvshmem_enabled()
+        and runtime.core.wp_nvshmem_get_loaded_version() != 0
+    )
+
+    if total_dim_size > 0 or nvshmem_empty_adjoint:
         fwd_args = []
         fwd_args.extend(inputs)
         fwd_args.extend(outputs)
@@ -12212,6 +12276,21 @@ def launch(
 
         if not module_exec:
             return
+
+        if adjoint and device.is_cuda:
+            hooks = module_exec.get_kernel_hooks(kernel)
+            # Every PE enqueues the barrier of a flagged adjoint launch, even when its own launch has no
+            # threads, or the other PEs wait at the barrier forever. Recorded launches enqueue it in launch().
+            # Kernels of modules without NVSHMEM carry no records, and skipping them keeps the barrier
+            # module, which only loads with NVSHMEM, out of the module registry of other programs.
+            if not record_cmd and hooks.nvshmem_adjoint is not None:
+                from warp._src.nvshmem_sync import before_adjoint_launch  # noqa: PLC0415
+
+                before_adjoint_launch(
+                    kernel, hooks, device, stream if stream is not None else device.stream, fwd_args, adj_args
+                )
+            if total_dim_size == 0:
+                return
 
         if not kernel.grid_stride and not device.is_cpu:
             if max_blocks > 0:
@@ -12246,8 +12325,9 @@ def launch(
 
                 params.append(pack_arg(kernel, arg_type, arg_name, a, device, adjoint))
 
-        # late bind
-        hooks = module_exec.get_kernel_hooks(kernel)
+        # late bind; CUDA adjoint launches already looked the hooks up for the NVSHMEM barrier
+        if not (adjoint and device.is_cuda):
+            hooks = module_exec.get_kernel_hooks(kernel)
 
         pack_args(fwd_args, params, adjoint=False)
         pack_args(adj_args, params, adjoint=True)

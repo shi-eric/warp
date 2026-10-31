@@ -43,6 +43,7 @@ API
    log_level
    max_unroll
    mode
+   nvshmem_adjoint_barrier
    optimization_level
    print_launches
    ptx_target_arch

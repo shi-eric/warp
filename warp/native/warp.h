@@ -59,6 +59,7 @@ WP_API int wp_is_mathdx_enabled();
 WP_API int wp_is_nvshmem_enabled();
 WP_API uint32_t wp_nvshmem_get_loaded_version();
 WP_API int wp_nvshmem_get_host_library_path(char* buffer, size_t size);
+WP_API int wp_nvshmem_is_symmetric(uint64_t ptr);
 // whether Warp was compiled with cuBQL support
 WP_API int wp_is_cubql_enabled();
 // whether Warp was compiled with debug support

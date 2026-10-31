@@ -152,6 +152,11 @@ Default is ``warp.LOG_INFO`` (20).
 verify_autograd_array_access: bool = False
 """Enable warnings for array overwrites that may affect gradient computation."""
 
+nvshmem_adjoint_barrier: bool = True
+"""Enqueue an NVSHMEM barrier before every adjoint launch of a kernel whose adjoint accesses remote memory.
+See the differentiability guide.
+"""
+
 enable_vector_component_overwrites: bool = False
 """Allow multiple writes to vector/matrix/quaternion components.
 

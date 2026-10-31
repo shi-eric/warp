@@ -30,6 +30,12 @@ int wp_nvshmem_cumodule_finalize(uint64_t module)
     return -1;
 }
 
+int wp_nvshmem_is_symmetric(uint64_t ptr)
+{
+    (void)ptr;
+    return -1;
+}
+
 }  // extern "C"
 
 #else  // WP_ENABLE_CUDA && WP_ENABLE_NVSHMEM
@@ -44,12 +50,17 @@ typedef int (*nvshmemx_cumodule_init_fn)(void*);
 typedef int (*nvshmemx_cumodule_finalize_fn)(void*);
 typedef int (*nvshmemx_init_status_fn)();
 typedef void (*nvshmemx_vendor_get_version_info_fn)(int*, int*, int*);
+typedef void* (*nvshmem_ptr_fn)(const void*, int);
+typedef int (*nvshmem_my_pe_fn)();
 
 static void* s_nvshmem_host_lib = nullptr;
 static nvshmemx_cumodule_init_fn s_nvshmemx_cumodule_init = nullptr;
 static nvshmemx_cumodule_finalize_fn s_nvshmemx_cumodule_finalize = nullptr;
 static nvshmemx_init_status_fn s_nvshmemx_init_status = nullptr;
 static nvshmemx_vendor_get_version_info_fn s_nvshmemx_vendor_get_version_info = nullptr;
+// Optional: only wp_nvshmem_is_symmetric() uses these, and it reports "unknown" when they are missing.
+static nvshmem_ptr_fn s_nvshmem_ptr = nullptr;
+static nvshmem_my_pe_fn s_nvshmem_my_pe = nullptr;
 
 static uint32_t encode_nvshmem_version(int major, int minor, int patch)
 {
@@ -85,6 +96,10 @@ static bool ensure_nvshmem_host_loaded()
         s_nvshmem_host_lib = nullptr;
         return false;
     }
+
+    // Resolved after the required symbols, so that a missing optional one cannot replace the error reported above.
+    s_nvshmem_ptr = (nvshmem_ptr_fn)dlsym(s_nvshmem_host_lib, "nvshmem_ptr");
+    s_nvshmem_my_pe = (nvshmem_my_pe_fn)dlsym(s_nvshmem_host_lib, "nvshmem_my_pe");
 
     return true;
 }
@@ -139,6 +154,17 @@ int wp_nvshmem_cumodule_finalize(uint64_t module)
     if (s_nvshmemx_init_status() < 2)
         return -1;
     return s_nvshmemx_cumodule_finalize((void*)module);
+}
+
+int wp_nvshmem_is_symmetric(uint64_t ptr)
+{
+    if (!ensure_nvshmem_host_loaded() || !s_nvshmem_ptr || !s_nvshmem_my_pe)
+        return -1;
+    if (s_nvshmemx_init_status() < 2)
+        return -1;
+    // nvshmem_ptr() translates an address of the symmetric heap to its address on the given PE, which for the calling
+    // PE is the address itself, and returns null for an address outside the heap.
+    return s_nvshmem_ptr((const void*)ptr, s_nvshmem_my_pe()) != nullptr ? 1 : 0;
 }
 
 }  // extern "C"

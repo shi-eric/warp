@@ -46,6 +46,16 @@ options = {}
 # valid because its largest coordinate is 2**31 - 1.
 _TID_MAX_EXTENT = 2**31
 
+# NVSHMEM built-ins that leave a remote access in the adjoint kernel: the push
+# built-ins pull the destination gradient from the remote PE, and nvshmem_g is
+# replayed. Adjoint launches of kernels that call any of them need a barrier.
+_NVSHMEM_ADJOINT_REMOTE_ACCESS = frozenset({"nvshmem_p", "nvshmem_put", "nvshmem_put_signal", "nvshmem_g"})
+# NVSHMEM built-ins that read remote memory and have no adjoint.
+_NVSHMEM_PULL = frozenset({"nvshmem_g", "nvshmem_get"})
+# NVSHMEM built-ins that write remote memory. One that precedes a signal wait
+# in the same kernel forms the fused shape, which autodiff does not support.
+_NVSHMEM_REMOTE_WRITE = frozenset({"nvshmem_p", "nvshmem_put", "nvshmem_put_signal", "nvshmem_signal_op"})
+
 # Extraction products shared across Adjoints of one code object, populated
 # lazily by Adjoint.__init__ (see _SharedFunctionSource).
 # id(code object) -> (weakref to the code object, _SharedFunctionSource).
@@ -2015,6 +2025,9 @@ class Adjoint:
         # Whether this function uses warp.grad() calls. Such functions are generated in a
         # separate pass after adjoints, and don't have their own adjoints generated.
         adj.uses_grad_call = False
+        # NVSHMEM traffic of this function and its callees, recorded at call sites in
+        # source order and reset by every build (see _reset_nvshmem_records).
+        adj._reset_nvshmem_records()
 
         # extract name of source file
         adj.filename = inspect.getsourcefile(func) or "unknown source file"
@@ -2174,6 +2187,42 @@ class Adjoint:
     def get_total_required_shared_backward(adj):
         # x2: the reverse pass declares own tiles requires_grad, pairing each with an equal-sized gradient buffer
         return adj.get_own_required_shared() * 2 + adj.max_required_extra_shared_memory_backward
+
+    def _reset_nvshmem_records(adj):
+        """Clear the records of the NVSHMEM built-ins this function and its callees call."""
+        # Whether the adjoint contains a remote access (see _NVSHMEM_ADJOINT_REMOTE_ACCESS).
+        adj.nvshmem_remote_access = False
+        # Keys of the pull built-ins called, which have no adjoint.
+        adj.nvshmem_pull_builtins = set()
+        # Whether a remote write or a signal wait has been reached so far in source order.
+        adj.nvshmem_remote_write_seen = False
+        adj.nvshmem_wait_seen = False
+        # Whether a remote write precedes a signal wait in source order.
+        adj.nvshmem_fused_shape = False
+
+    def _record_nvshmem_builtin(adj, key):
+        """Record a call to the NVSHMEM built-in ``key``."""
+        if key in _NVSHMEM_ADJOINT_REMOTE_ACCESS:
+            adj.nvshmem_remote_access = True
+        if key in _NVSHMEM_PULL:
+            adj.nvshmem_pull_builtins.add(key)
+        if key == "nvshmem_signal_wait_until":
+            adj.nvshmem_wait_seen = True
+            if adj.nvshmem_remote_write_seen:
+                adj.nvshmem_fused_shape = True
+        if key in _NVSHMEM_REMOTE_WRITE:
+            adj.nvshmem_remote_write_seen = True
+
+    def _merge_nvshmem_records(adj, callee_adj):
+        """Merge the NVSHMEM records of a built user function into this function at its call site."""
+        # A remote write here followed by a wait inside the callee is also the fused shape.
+        adj.nvshmem_fused_shape |= callee_adj.nvshmem_fused_shape or (
+            adj.nvshmem_remote_write_seen and callee_adj.nvshmem_wait_seen
+        )
+        adj.nvshmem_remote_access |= callee_adj.nvshmem_remote_access
+        adj.nvshmem_remote_write_seen |= callee_adj.nvshmem_remote_write_seen
+        adj.nvshmem_wait_seen |= callee_adj.nvshmem_wait_seen
+        adj.nvshmem_pull_builtins |= callee_adj.nvshmem_pull_builtins
 
     @staticmethod
     def extract_function_source(func: Callable) -> tuple[str, int, ast.Module]:
@@ -2366,6 +2415,9 @@ class Adjoint:
         # Exact launch metadata derived from calls reached by this build.
         adj.uses_tid = False
         adj.uses_scalar_tid = False
+        # Rebuilds must not inherit the previous build's records: the fused shape
+        # depends on the order in which this build reaches the NVSHMEM calls.
+        adj._reset_nvshmem_records()
 
         # wp.ref[T] callees lacking a manual adjoint; rejected post-build, once used_by_backward_kernel is final
         adj.unvalidated_ref_calls = []
@@ -3033,6 +3085,9 @@ class Adjoint:
                 if func.custom_replay_func:
                     adj.builder.deferred_functions.append(func.custom_replay_func)
 
+            # The callee is built by now, here or at an earlier call site in this module.
+            adj._merge_nvshmem_records(func.adj)
+
             adj.deterministic.include_function_call(func, bound_args)
 
         # Resolve the return value based on the types and values of the given arguments.
@@ -3116,8 +3171,10 @@ class Adjoint:
 
         # Builtins that call into NVSHMEM declare it on their registration; the module
         # that uses them is linked with the NVSHMEM device library.
-        if func.is_builtin() and func.requires_nvshmem and adj.builder is not None:
-            adj.builder.uses_nvshmem = True
+        if func.is_builtin() and func.requires_nvshmem:
+            if adj.builder is not None:
+                adj.builder.uses_nvshmem = True
+            adj._record_nvshmem_builtin(func.key)
 
         fwd_args = []
         reverse_adj_args = []

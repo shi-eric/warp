@@ -20635,6 +20635,9 @@ for _index_count in range(1, 5):
     The write is guaranteed to be complete only after ``wp.nvshmem_quiet()`` or a barrier. Elements wider than
     8 bytes are written as several parts, so the element is not written atomically.
 
+    Differentiable: the adjoint pulls the gradient of ``dest`` from ``pe`` into the gradient of the value, so
+    ``dest.grad`` must be symmetric memory on every processing element.
+
     Args:
         dest: Symmetric array to write on the remote processing element.
 {_index_args_doc}
@@ -20642,7 +20645,7 @@ for _index_count in range(1, 5):
         pe: Index of the destination processing element.""",
         group="NVSHMEM",
         requires_nvshmem=True,
-        is_differentiable=False,
+        is_differentiable=True,
         skip_replay=True,
     )
 
@@ -20679,13 +20682,16 @@ for _ndim in range(1, 5):
         arrays to transfer part of them. Arrays may have up to four dimensions. The copy is guaranteed to be
         complete only after ``wp.nvshmem_quiet()`` or a barrier.
 
+        Differentiable: the adjoint pulls the gradient of ``dest`` from ``pe`` into ``source.grad``, so
+        ``dest.grad`` must be symmetric memory on every processing element.
+
         Args:
             dest: Symmetric destination array on the remote processing element.
             source: Local source array with the same dtype and shape as ``dest``.
             pe: Index of the destination processing element.""",
         group="NVSHMEM",
         requires_nvshmem=True,
-        is_differentiable=False,
+        is_differentiable=True,
         skip_replay=True,
     )
 
@@ -20731,6 +20737,9 @@ for _ndim in range(1, 5):
         The signal update ``signals[signal_index]`` on ``pe`` is delivered after the data, so a consumer that waits on
         the signal with ``wp.nvshmem_signal_wait_until()`` observes the complete copy.
 
+        Differentiable: the adjoint pulls the gradient of ``dest`` from ``pe`` into ``source.grad``, so
+        ``dest.grad`` must be symmetric memory on every processing element.
+
         Args:
             dest: Symmetric destination array on the remote processing element.
             source: Local source array with the same dtype and shape as ``dest``.
@@ -20741,7 +20750,7 @@ for _ndim in range(1, 5):
             pe: Index of the destination processing element.""",
         group="NVSHMEM",
         requires_nvshmem=True,
-        is_differentiable=False,
+        is_differentiable=True,
         skip_replay=True,
     )
 

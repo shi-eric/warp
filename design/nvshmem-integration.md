@@ -879,3 +879,4 @@ For Warp:
 - Expand builtin coverage in the order of the [Coverage Plan](#coverage-plan), starting with the two prerequisites it
   names.
 - Add a cooperative launch option to `wp.launch` before the collectives batch.
+- Differentiate the built-ins; see [NVSHMEM Automatic Differentiation](nvshmem-autodiff.md).

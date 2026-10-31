@@ -23,4 +23,9 @@ WP_API int wp_nvshmem_get_host_library_path(char* buffer, size_t size);
 WP_API int wp_nvshmem_cumodule_init(uint64_t module);
 WP_API int wp_nvshmem_cumodule_finalize(uint64_t module);
 
+// Whether `ptr` is an address in the NVSHMEM symmetric heap of the calling PE. Returns 1 when it is, 0 when it is
+// not, or -1 when this cannot be determined: no host library is loaded, NVSHMEM is not initialized, or the host
+// library lacks nvshmem_ptr() or nvshmem_my_pe().
+WP_API int wp_nvshmem_is_symmetric(uint64_t ptr);
+
 }  // extern "C"

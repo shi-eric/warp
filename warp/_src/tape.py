@@ -118,6 +118,15 @@ class Tape:
                     # ensure we can capture this backward pass in a CUDA graph
                     a.grad.assign(g)
 
+        # Count the NVSHMEM adjoint barriers on every CUDA device, including those that only a recorded function
+        # launches on. Devices are not hashable, and keying by alias rather than context leaves the contexts of
+        # unused devices unacquired.
+        recorded_devices = (launch[5] for launch in self.launches if not callable(launch))
+        barriers_before = {}
+        for device in (*wp._src.context.get_cuda_devices(), *recorded_devices):
+            if device.is_cuda:
+                barriers_before.setdefault(device.alias, (device, device.nvshmem_adjoint_barriers))
+
         # run launches backwards
         for launch in reversed(self.launches):
             if callable(launch):
@@ -169,6 +178,15 @@ class Tape:
                         max_blocks=max_blocks,
                         block_dim=_ResolvedBlockDim(block_dim),
                     )
+
+        # A device whose adjoint launches were preceded by NVSHMEM barriers gets one more after the last of them,
+        # so that no PE starts its next forward pass, or zeroes or frees its gradients, while the adjoint kernels
+        # of another PE still read that memory.
+        for device, count in barriers_before.values():
+            if device.nvshmem_adjoint_barriers != count:
+                from warp._src.nvshmem_sync import launch_adjoint_barrier  # noqa: PLC0415
+
+                launch_adjoint_barrier(device, device.stream)
 
         # reads are consumed; see the Note in the docstring
         if wp.config.verify_autograd_array_access:
