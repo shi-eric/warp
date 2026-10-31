@@ -260,36 +260,52 @@ class TestNVSHMEMDeviceLibrary(unittest.TestCase):
         self.assertEqual((record["path"], record["kind"], record["sha256"]), (path, "ltoir", digest))
 
 
+def run_distributed_script(test_case, script_name, n_pes=2, env=None, timeout=120):
+    """Run a script from ``warp/tests/distributed/`` through ``mpirun`` and return its standard output.
+
+    Skips ``test_case`` when ``mpirun``, NVSHMEM support, or nvshmem4py and mpi4py are unavailable, and
+    fails it when ``mpirun`` exits with a nonzero status.
+
+    Args:
+        test_case: The :class:`unittest.TestCase` to skip or fail.
+        script_name: File name of the script in ``warp/tests/distributed/``.
+        n_pes: Number of processing elements to launch.
+        env: Environment for ``mpirun``. Inherits the current environment when ``None``.
+        timeout: Seconds to wait for ``mpirun`` to finish.
+    """
+    mpirun = shutil.which("mpirun")
+    if mpirun is None:
+        test_case.skipTest("mpirun not found in PATH")
+
+    if not wp.is_nvshmem_enabled():
+        test_case.skipTest("NVSHMEM not enabled in this build.")
+    if not _is_nvshmem_device_library_available():
+        test_case.skipTest("NVSHMEM device library not embedded in this build.")
+    if not _is_module_installed("nvshmem") or not _is_module_installed("mpi4py"):
+        test_case.skipTest("nvshmem4py and mpi4py are required.")
+
+    script = os.path.join(_DISTRIBUTED_DIR, script_name)
+    result = subprocess.run(
+        [mpirun, "-np", str(n_pes), sys.executable, script],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+        env=env,
+    )
+    if result.returncode != 0:
+        test_case.fail(
+            f"mpirun failed with return code {result.returncode}\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+    return result.stdout
+
+
 class TestNVSHMEMMultiPE(unittest.TestCase):
     """Multi-PE tests launched in subprocesses."""
 
     def _run_distributed(self, script_name, n_pes=2, env=None):
         """Run a script from warp/tests/distributed/ via mpirun."""
-        mpirun = shutil.which("mpirun")
-        if mpirun is None:
-            self.skipTest("mpirun not found in PATH")
-
-        if not wp.is_nvshmem_enabled():
-            self.skipTest("NVSHMEM not enabled in this build.")
-        if not _is_nvshmem_device_library_available():
-            self.skipTest("NVSHMEM device library not embedded in this build.")
-        if not _is_module_installed("nvshmem") or not _is_module_installed("mpi4py"):
-            self.skipTest("nvshmem4py and mpi4py are required.")
-
-        script = os.path.join(_DISTRIBUTED_DIR, script_name)
-        result = subprocess.run(
-            [mpirun, "-np", str(n_pes), sys.executable, script],
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-            env=env,
-        )
-        if result.returncode != 0:
-            self.fail(
-                f"mpirun failed with return code {result.returncode}\nstdout: {result.stdout}\nstderr: {result.stderr}"
-            )
-        return result.stdout
+        return run_distributed_script(self, script_name, n_pes=n_pes, env=env)
 
     def _run_uid_distributed(self, script_name, n_pes=2):
         """Run a local P2P test through NVSHMEM's Hydra launcher and UID bootstrap."""

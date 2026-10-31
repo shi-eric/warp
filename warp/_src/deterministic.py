@@ -2452,6 +2452,11 @@ def _deterministic_launch_class():
             if stream is None:
                 stream = self.device.stream
 
+            if self.adjoint and self.hooks.nvshmem_adjoint is not None:
+                from warp._src.nvshmem_sync import before_adjoint_launch  # noqa: PLC0415
+
+                before_adjoint_launch(self.kernel, self.hooks, self.device, stream, self.fwd_args, self.adj_args)
+
             launch_deterministic(
                 self.kernel,
                 self.hooks,

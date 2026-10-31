@@ -165,6 +165,18 @@ template <typename T> inline CUDA_CALLABLE_DEVICE void assert_same_shape(const a
     }
 }
 
+// The gradient of `a` as an array: the adjoint `adj` when the caller passed one, otherwise `a.grad` with the
+// layout of `a`, as for a view sliced inside the kernel. Its data is null when `a` has no gradient.
+template <typename T> inline CUDA_CALLABLE_DEVICE array_t<T> gradient_of(const array_t<T>& a, const array_t<T>& adj)
+{
+    if (adj.data) {
+        return adj;
+    }
+    array_t<T> grad = a;
+    grad.data = a.grad;
+    return grad;
+}
+
 }  // namespace nvshmem_detail
 
 inline CUDA_CALLABLE_DEVICE int32 nvshmem_my_pe() { return ::nvshmem_my_pe(); }
@@ -306,6 +318,139 @@ template <typename S>
 inline CUDA_CALLABLE_DEVICE uint64 nvshmem_signal_wait_until(const array_t<uint64>& signals, int i, int32 cmp, S value)
 {
     return ::nvshmem_signal_wait_until(&index(signals, i), cmp, uint64(value));
+}
+
+// Adjoints of the push built-ins. A push copies local values into `dest` on `pe`, so its adjoint pulls the
+// gradient of `dest` from `pe` and adds it to the gradient of the local values. The gradient of `dest` must
+// therefore be symmetric memory. The gradient is read without being consumed, and the integer arguments
+// receive no adjoint.
+
+template <typename T>
+inline CUDA_CALLABLE_DEVICE void adj_nvshmem_p(
+    const array_t<T>& dest, int i, T value, int pe, const array_t<T>& adj_dest, int adj_i, T& adj_value, int adj_pe
+)
+{
+    if (adj_dest.data) {
+        adj_value += nvshmem_detail::get_element(&index(adj_dest, i), pe);
+    } else if (dest.grad) {
+        adj_value += nvshmem_detail::get_element(&index_grad(dest, i), pe);
+    }
+}
+
+template <typename T>
+inline CUDA_CALLABLE_DEVICE void adj_nvshmem_p(
+    const array_t<T>& dest,
+    int i,
+    int j,
+    T value,
+    int pe,
+    const array_t<T>& adj_dest,
+    int adj_i,
+    int adj_j,
+    T& adj_value,
+    int adj_pe
+)
+{
+    if (adj_dest.data) {
+        adj_value += nvshmem_detail::get_element(&index(adj_dest, i, j), pe);
+    } else if (dest.grad) {
+        adj_value += nvshmem_detail::get_element(&index_grad(dest, i, j), pe);
+    }
+}
+
+template <typename T>
+inline CUDA_CALLABLE_DEVICE void adj_nvshmem_p(
+    const array_t<T>& dest,
+    int i,
+    int j,
+    int k,
+    T value,
+    int pe,
+    const array_t<T>& adj_dest,
+    int adj_i,
+    int adj_j,
+    int adj_k,
+    T& adj_value,
+    int adj_pe
+)
+{
+    if (adj_dest.data) {
+        adj_value += nvshmem_detail::get_element(&index(adj_dest, i, j, k), pe);
+    } else if (dest.grad) {
+        adj_value += nvshmem_detail::get_element(&index_grad(dest, i, j, k), pe);
+    }
+}
+
+template <typename T>
+inline CUDA_CALLABLE_DEVICE void adj_nvshmem_p(
+    const array_t<T>& dest,
+    int i,
+    int j,
+    int k,
+    int l,
+    T value,
+    int pe,
+    const array_t<T>& adj_dest,
+    int adj_i,
+    int adj_j,
+    int adj_k,
+    int adj_l,
+    T& adj_value,
+    int adj_pe
+)
+{
+    if (adj_dest.data) {
+        adj_value += nvshmem_detail::get_element(&index(adj_dest, i, j, k, l), pe);
+    } else if (dest.grad) {
+        adj_value += nvshmem_detail::get_element(&index_grad(dest, i, j, k, l), pe);
+    }
+}
+
+// Pulls one element at a time, because a bulk get would overwrite the local gradient instead of accumulating
+// into it. The accumulation is atomic because other threads may add to the same source gradient, and like
+// Warp's other array adjoints it skips integer dtypes.
+template <typename T>
+inline CUDA_CALLABLE_DEVICE void adj_nvshmem_put(
+    const array_t<T>& dest,
+    const array_t<T>& source,
+    int pe,
+    const array_t<T>& adj_dest,
+    const array_t<T>& adj_source,
+    int adj_pe
+)
+{
+    const array_t<T> dest_grad = nvshmem_detail::gradient_of(dest, adj_dest);
+    const array_t<T> source_grad = nvshmem_detail::gradient_of(source, adj_source);
+    if (!dest_grad.data || !source_grad.data) {
+        return;
+    }
+
+    const size_t count = nvshmem_detail::element_count(source);
+    for (size_t n = 0; n < count; ++n) {
+        const T g = nvshmem_detail::get_element(nvshmem_detail::element_at(dest_grad, n), pe);
+        adj_atomic_add(nvshmem_detail::element_at(source_grad, n), g);
+    }
+}
+
+template <typename T, typename S>
+inline CUDA_CALLABLE_DEVICE void adj_nvshmem_put_signal(
+    const array_t<T>& dest,
+    const array_t<T>& source,
+    const array_t<uint64>& signals,
+    int signal_index,
+    S signal,
+    int32 signal_op,
+    int pe,
+    const array_t<T>& adj_dest,
+    const array_t<T>& adj_source,
+    const array_t<uint64>& adj_signals,
+    int adj_signal_index,
+    S adj_signal,
+    int32 adj_signal_op,
+    int adj_pe
+)
+{
+    adj_nvshmem_put(dest, source, pe, adj_dest, adj_source, adj_pe);
 }
 
 }  // namespace wp

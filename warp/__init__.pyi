@@ -12252,6 +12252,9 @@ def nvshmem_p(dest: Array[Any], i: Int, value: Any, pe: Int) -> None:
     The write is guaranteed to be complete only after ``wp.nvshmem_quiet()`` or a barrier. Elements wider than
     8 bytes are written as several parts, so the element is not written atomically.
 
+    Differentiable: the adjoint pulls the gradient of ``dest`` from ``pe`` into the gradient of the value, so
+    ``dest.grad`` must be symmetric memory on every processing element.
+
     Args:
         dest: Symmetric array to write on the remote processing element.
         i: Index along dimension 0 of the array.
@@ -12265,6 +12268,9 @@ def nvshmem_p(dest: Array[Any], i: Int, j: Int, value: Any, pe: Int) -> None:
 
     The write is guaranteed to be complete only after ``wp.nvshmem_quiet()`` or a barrier. Elements wider than
     8 bytes are written as several parts, so the element is not written atomically.
+
+    Differentiable: the adjoint pulls the gradient of ``dest`` from ``pe`` into the gradient of the value, so
+    ``dest.grad`` must be symmetric memory on every processing element.
 
     Args:
         dest: Symmetric array to write on the remote processing element.
@@ -12281,6 +12287,9 @@ def nvshmem_p(dest: Array[Any], i: Int, j: Int, k: Int, value: Any, pe: Int) -> 
     The write is guaranteed to be complete only after ``wp.nvshmem_quiet()`` or a barrier. Elements wider than
     8 bytes are written as several parts, so the element is not written atomically.
 
+    Differentiable: the adjoint pulls the gradient of ``dest`` from ``pe`` into the gradient of the value, so
+    ``dest.grad`` must be symmetric memory on every processing element.
+
     Args:
         dest: Symmetric array to write on the remote processing element.
         i: Index along dimension 0 of the array.
@@ -12296,6 +12305,9 @@ def nvshmem_p(dest: Array[Any], i: Int, j: Int, k: Int, l: Int, value: Any, pe: 
 
     The write is guaranteed to be complete only after ``wp.nvshmem_quiet()`` or a barrier. Elements wider than
     8 bytes are written as several parts, so the element is not written atomically.
+
+    Differentiable: the adjoint pulls the gradient of ``dest`` from ``pe`` into the gradient of the value, so
+    ``dest.grad`` must be symmetric memory on every processing element.
 
     Args:
         dest: Symmetric array to write on the remote processing element.
@@ -12372,6 +12384,9 @@ def nvshmem_put(dest: Array[Any], source: Array[Any], pe: Int) -> None:
         arrays to transfer part of them. Arrays may have up to four dimensions. The copy is guaranteed to be
         complete only after ``wp.nvshmem_quiet()`` or a barrier.
 
+        Differentiable: the adjoint pulls the gradient of ``dest`` from ``pe`` into ``source.grad``, so
+        ``dest.grad`` must be symmetric memory on every processing element.
+
         Args:
             dest: Symmetric destination array on the remote processing element.
             source: Local source array with the same dtype and shape as ``dest``.
@@ -12404,6 +12419,9 @@ def nvshmem_put_signal(
 
         The signal update ``signals[signal_index]`` on ``pe`` is delivered after the data, so a consumer that waits on
         the signal with ``wp.nvshmem_signal_wait_until()`` observes the complete copy.
+
+        Differentiable: the adjoint pulls the gradient of ``dest`` from ``pe`` into ``source.grad``, so
+        ``dest.grad`` must be symmetric memory on every processing element.
 
         Args:
             dest: Symmetric destination array on the remote processing element.
