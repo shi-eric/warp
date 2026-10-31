@@ -690,6 +690,12 @@ def build_dll_for_arch(
         libmathdx_includes = ""
         mathdx_enabled = "WP_ENABLE_MATHDX=0"
 
+    # NVSHMEM device code is linked into kernels at runtime from the installed NVSHMEM, which needs
+    # nvJitLink and the host library's dlopen path. Both exist only on Linux CUDA builds.
+    nvshmem_enabled = (
+        "WP_ENABLE_NVSHMEM=1" if (cu_paths is not None and sys.platform.startswith("linux")) else "WP_ENABLE_NVSHMEM=0"
+    )
+
     if os.name == "nt":
         cuda_lib_arch = "arm64" if arch == "aarch64" else "x64"
 
@@ -714,7 +720,7 @@ def build_dll_for_arch(
             iter_dbg = "_ITERATOR_DEBUG_LEVEL=2"
             debug = "_DEBUG"
 
-        cpp_flags = f'/nologo /std:c++17 /GR- /EHsc {runtime} /D "WP_BUILD_DLL" /D "{debug}" /D "{cuda_enabled}" /D "{mathdx_enabled}" /D "{cuda_compat_enabled}" /D "{iter_dbg}" /I"{native_dir}" {includes} '
+        cpp_flags = f'/nologo /std:c++17 /GR- /EHsc {runtime} /D "WP_BUILD_DLL" /D "{debug}" /D "{cuda_enabled}" /D "{mathdx_enabled}" /D "{nvshmem_enabled}" /D "{cuda_compat_enabled}" /D "{iter_dbg}" /I"{native_dir}" {includes} '
 
         if args.mode == "debug":
             cpp_flags += "/FS /Zi /Od /D WP_ENABLE_DEBUG=1"
@@ -772,9 +778,9 @@ def build_dll_for_arch(
                     ]
 
                     if mode == "debug":
-                        cuda_cmd = f'{nvcc_cmd} --std=c++17 --compiler-options=/MT,/Zi,/Od -g -G -O0 -DNDEBUG -D_ITERATOR_DEBUG_LEVEL=0 -I"{native_dir}" -line-info {" ".join(_nvcc_opts)} -DWP_ENABLE_CUDA=1 -D{mathdx_enabled} {libmathdx_includes} -o "{cu_out}" -c "{cu_path}"'
+                        cuda_cmd = f'{nvcc_cmd} --std=c++17 --compiler-options=/MT,/Zi,/Od -g -G -O0 -DNDEBUG -D_ITERATOR_DEBUG_LEVEL=0 -I"{native_dir}" -line-info {" ".join(_nvcc_opts)} -DWP_ENABLE_CUDA=1 -D{mathdx_enabled} -D{nvshmem_enabled} {libmathdx_includes} -o "{cu_out}" -c "{cu_path}"'
                     elif mode == "release":
-                        cuda_cmd = f'{nvcc_cmd} --std=c++17 -O3 {" ".join(_nvcc_opts)} -I"{native_dir}" -DNDEBUG -DWP_ENABLE_CUDA=1 -D{mathdx_enabled} {libmathdx_includes} -o "{cu_out}" -c "{cu_path}"'
+                        cuda_cmd = f'{nvcc_cmd} --std=c++17 -O3 {" ".join(_nvcc_opts)} -I"{native_dir}" -DNDEBUG -DWP_ENABLE_CUDA=1 -D{mathdx_enabled} -D{nvshmem_enabled} {libmathdx_includes} -o "{cu_out}" -c "{cu_path}"'
 
                     cuda_cmds.append(cuda_cmd)
 
@@ -843,7 +849,7 @@ def build_dll_for_arch(
             else:
                 version = ""
 
-        cpp_flags = f'-Werror -Wuninitialized {version} --std=c++17 -fno-rtti -DWP_BUILD_DLL -D{cuda_enabled} -D{mathdx_enabled} -D{cuda_compat_enabled} -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -D_GLIBCXX_USE_CXX11_ABI=0 -I"{native_dir}" {includes} '
+        cpp_flags = f'-Werror -Wuninitialized {version} --std=c++17 -fno-rtti -DWP_BUILD_DLL -D{cuda_enabled} -D{mathdx_enabled} -D{nvshmem_enabled} -D{cuda_compat_enabled} -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -D_GLIBCXX_USE_CXX11_ABI=0 -I"{native_dir}" {includes} '
 
         if mode == "debug":
             cpp_flags += "-Og -g -D_DEBUG -DWP_ENABLE_DEBUG=1"
@@ -891,15 +897,15 @@ def build_dll_for_arch(
 
                     if cuda_compiler == "nvcc":
                         if mode == "debug":
-                            cuda_cmd = f'{nvcc_cmd} --std=c++17 -g -G -O0 --compiler-options -fPIC,-fvisibility=hidden,-fvisibility-inlines-hidden,-D_GLIBCXX_USE_CXX11_ABI=0 -D_DEBUG -D_ITERATOR_DEBUG_LEVEL=0 -line-info {" ".join(_nvcc_opts)} -DWP_ENABLE_CUDA=1 -I"{native_dir}" -D{mathdx_enabled} {libmathdx_includes} -o "{cu_out}" -c "{cu_path}"'
+                            cuda_cmd = f'{nvcc_cmd} --std=c++17 -g -G -O0 --compiler-options -fPIC,-fvisibility=hidden,-fvisibility-inlines-hidden,-D_GLIBCXX_USE_CXX11_ABI=0 -D_DEBUG -D_ITERATOR_DEBUG_LEVEL=0 -line-info {" ".join(_nvcc_opts)} -DWP_ENABLE_CUDA=1 -I"{native_dir}" -D{mathdx_enabled} -D{nvshmem_enabled} {libmathdx_includes} -o "{cu_out}" -c "{cu_path}"'
                         elif mode == "release":
-                            cuda_cmd = f'{nvcc_cmd} --std=c++17 -O3 --compiler-options -fPIC,-fvisibility=hidden,-fvisibility-inlines-hidden,-D_GLIBCXX_USE_CXX11_ABI=0 {" ".join(_nvcc_opts)} -DNDEBUG -DWP_ENABLE_CUDA=1 -I"{native_dir}" -D{mathdx_enabled} {libmathdx_includes} -o "{cu_out}" -c "{cu_path}"'
+                            cuda_cmd = f'{nvcc_cmd} --std=c++17 -O3 --compiler-options -fPIC,-fvisibility=hidden,-fvisibility-inlines-hidden,-D_GLIBCXX_USE_CXX11_ABI=0 {" ".join(_nvcc_opts)} -DNDEBUG -DWP_ENABLE_CUDA=1 -I"{native_dir}" -D{mathdx_enabled} -D{nvshmem_enabled} {libmathdx_includes} -o "{cu_out}" -c "{cu_path}"'
                     else:
                         # Use Clang compiler
                         if mode == "debug":
-                            cuda_cmd = f'clang++ -Werror -Wuninitialized -Wno-unknown-cuda-version -Wno-openmp-target {" ".join(clang_opts)} -g -O0 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -D_DEBUG -D_ITERATOR_DEBUG_LEVEL=0 -DWP_ENABLE_CUDA=1 -I"{native_dir}" -D{mathdx_enabled} {libmathdx_includes} -o "{cu_out}" -c "{cu_path}"'
+                            cuda_cmd = f'clang++ -Werror -Wuninitialized -Wno-unknown-cuda-version -Wno-openmp-target {" ".join(clang_opts)} -g -O0 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -D_DEBUG -D_ITERATOR_DEBUG_LEVEL=0 -DWP_ENABLE_CUDA=1 -I"{native_dir}" -D{mathdx_enabled} -D{nvshmem_enabled} {libmathdx_includes} -o "{cu_out}" -c "{cu_path}"'
                         elif mode == "release":
-                            cuda_cmd = f'clang++ -Werror -Wuninitialized -Wno-unknown-cuda-version -Wno-openmp-target {" ".join(clang_opts)} -O3 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -DNDEBUG -DWP_ENABLE_CUDA=1 -I"{native_dir}" -D{mathdx_enabled} {libmathdx_includes} -o "{cu_out}" -c "{cu_path}"'
+                            cuda_cmd = f'clang++ -Werror -Wuninitialized -Wno-unknown-cuda-version -Wno-openmp-target {" ".join(clang_opts)} -O3 -fPIC -fvisibility=hidden -fvisibility-inlines-hidden -DNDEBUG -DWP_ENABLE_CUDA=1 -I"{native_dir}" -D{mathdx_enabled} -D{nvshmem_enabled} {libmathdx_includes} -o "{cu_out}" -c "{cu_path}"'
 
                     cuda_cmds.append(cuda_cmd)
 
@@ -914,11 +920,14 @@ def build_dll_for_arch(
                         f'-L"{cuda_home}/lib64" -lcudart_static -lnvrtc_static -lnvrtc-builtins_static -lnvptxcompiler_static -lpthread -ldl -lrt'
                     )
 
+                if args.libmathdx_path or nvshmem_enabled == "WP_ENABLE_NVSHMEM=1":
+                    ld_inputs.append("-lnvJitLink" if args.use_dynamic_cuda else "-lnvJitLink_static")
+
                 if args.libmathdx_path:
                     if args.use_dynamic_cuda:
-                        ld_inputs.append(f"-lnvJitLink -L{quote(args.libmathdx_path + '/lib')} -lmathdx")
+                        ld_inputs.append(f"-L{quote(args.libmathdx_path + '/lib')} -lmathdx")
                     else:
-                        ld_inputs.append(f"-lnvJitLink_static -L{quote(args.libmathdx_path + '/lib')} -lmathdx_static")
+                        ld_inputs.append(f"-L{quote(args.libmathdx_path + '/lib')} -lmathdx_static")
 
             if args.jobs <= 1:
                 with ScopedTimer("build_cuda", active=args.verbose):

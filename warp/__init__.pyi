@@ -90,6 +90,7 @@ from warp._src.context import init as init
 from warp._src.context import is_cpu_available as is_cpu_available
 from warp._src.context import is_cubql_available as is_cubql_available
 from warp._src.context import is_cuda_available as is_cuda_available
+from warp._src.context import is_nvshmem_enabled as is_nvshmem_enabled
 from warp._src.build import clear_kernel_cache as clear_kernel_cache
 from warp._src.build import clear_lto_cache as clear_lto_cache
 from warp._src.context import get_cpu_kernel_cache_key as get_cpu_kernel_cache_key
@@ -308,6 +309,17 @@ element methods, and :mod:`warp.sparse` for sparse linear algebra.
 # Skipped: from warp._src.types import tile_stack as tile_stack (kernel builtin stubs preferred)
 
 # Skipped: from warp._src.context import zeros as zeros (merged stubs generated below)
+
+from warp._src.builtins import (
+    NVSHMEM_CMP_EQ as NVSHMEM_CMP_EQ,
+    NVSHMEM_CMP_GE as NVSHMEM_CMP_GE,
+    NVSHMEM_CMP_GT as NVSHMEM_CMP_GT,
+    NVSHMEM_CMP_LE as NVSHMEM_CMP_LE,
+    NVSHMEM_CMP_LT as NVSHMEM_CMP_LT,
+    NVSHMEM_CMP_NE as NVSHMEM_CMP_NE,
+    NVSHMEM_SIGNAL_ADD as NVSHMEM_SIGNAL_ADD,
+    NVSHMEM_SIGNAL_SET as NVSHMEM_SIGNAL_SET,
+)
 
 if _TYPE_CHECKING:
     from warp._src.geometry.marching_cubes import IsoSurfaceMarchingCubes as _IsoSurfaceMarchingCubes
@@ -11831,5 +11843,228 @@ def cast(a: Any, dtype: Any) -> Any:
 
 
             wp.launch(compute, dim=1)"""
+    ...
+
+def nvshmem_my_pe() -> int32:
+    """Return the index of the calling processing element (PE).
+
+    Returns:
+        The PE index, from 0 to ``wp.nvshmem_n_pes() - 1``."""
+    ...
+
+def nvshmem_n_pes() -> int32:
+    """Return the number of processing elements (PEs) in the NVSHMEM job.
+
+    Returns:
+        The number of PEs."""
+    ...
+
+@over
+def nvshmem_p(dest: Array[Any], i: Int, value: Any, pe: Int) -> None:
+    """Write ``value`` to ``dest[i]`` on processing element ``pe``.
+
+    The write is guaranteed to be complete only after ``wp.nvshmem_quiet()`` or a barrier. Elements wider than
+    8 bytes are written as several parts, so the element is not written atomically.
+
+    Args:
+        dest: Symmetric array to write on the remote processing element.
+        i: Index along dimension 0 of the array.
+        value: Value to write. Its type must match the array dtype.
+        pe: Index of the destination processing element."""
+    ...
+
+@over
+def nvshmem_p(dest: Array[Any], i: Int, j: Int, value: Any, pe: Int) -> None:
+    """Write ``value`` to ``dest[i, j]`` on processing element ``pe``.
+
+    The write is guaranteed to be complete only after ``wp.nvshmem_quiet()`` or a barrier. Elements wider than
+    8 bytes are written as several parts, so the element is not written atomically.
+
+    Args:
+        dest: Symmetric array to write on the remote processing element.
+        i: Index along dimension 0 of the array.
+        j: Index along dimension 1 of the array.
+        value: Value to write. Its type must match the array dtype.
+        pe: Index of the destination processing element."""
+    ...
+
+@over
+def nvshmem_p(dest: Array[Any], i: Int, j: Int, k: Int, value: Any, pe: Int) -> None:
+    """Write ``value`` to ``dest[i, j, k]`` on processing element ``pe``.
+
+    The write is guaranteed to be complete only after ``wp.nvshmem_quiet()`` or a barrier. Elements wider than
+    8 bytes are written as several parts, so the element is not written atomically.
+
+    Args:
+        dest: Symmetric array to write on the remote processing element.
+        i: Index along dimension 0 of the array.
+        j: Index along dimension 1 of the array.
+        k: Index along dimension 2 of the array.
+        value: Value to write. Its type must match the array dtype.
+        pe: Index of the destination processing element."""
+    ...
+
+@over
+def nvshmem_p(dest: Array[Any], i: Int, j: Int, k: Int, l: Int, value: Any, pe: Int) -> None:
+    """Write ``value`` to ``dest[i, j, k, l]`` on processing element ``pe``.
+
+    The write is guaranteed to be complete only after ``wp.nvshmem_quiet()`` or a barrier. Elements wider than
+    8 bytes are written as several parts, so the element is not written atomically.
+
+    Args:
+        dest: Symmetric array to write on the remote processing element.
+        i: Index along dimension 0 of the array.
+        j: Index along dimension 1 of the array.
+        k: Index along dimension 2 of the array.
+        l: Index along dimension 3 of the array.
+        value: Value to write. Its type must match the array dtype.
+        pe: Index of the destination processing element."""
+    ...
+
+@over
+def nvshmem_g(source: Array[Any], i: Int, pe: Int) -> Any:
+    """Read ``source[i]`` from processing element ``pe``.
+
+    Args:
+        source: Symmetric array to read on the remote processing element.
+        i: Index along dimension 0 of the array.
+        pe: Index of the processing element to read from.
+
+    Returns:
+        The element value on processing element ``pe``."""
+    ...
+
+@over
+def nvshmem_g(source: Array[Any], i: Int, j: Int, pe: Int) -> Any:
+    """Read ``source[i, j]`` from processing element ``pe``.
+
+    Args:
+        source: Symmetric array to read on the remote processing element.
+        i: Index along dimension 0 of the array.
+        j: Index along dimension 1 of the array.
+        pe: Index of the processing element to read from.
+
+    Returns:
+        The element value on processing element ``pe``."""
+    ...
+
+@over
+def nvshmem_g(source: Array[Any], i: Int, j: Int, k: Int, pe: Int) -> Any:
+    """Read ``source[i, j, k]`` from processing element ``pe``.
+
+    Args:
+        source: Symmetric array to read on the remote processing element.
+        i: Index along dimension 0 of the array.
+        j: Index along dimension 1 of the array.
+        k: Index along dimension 2 of the array.
+        pe: Index of the processing element to read from.
+
+    Returns:
+        The element value on processing element ``pe``."""
+    ...
+
+@over
+def nvshmem_g(source: Array[Any], i: Int, j: Int, k: Int, l: Int, pe: Int) -> Any:
+    """Read ``source[i, j, k, l]`` from processing element ``pe``.
+
+    Args:
+        source: Symmetric array to read on the remote processing element.
+        i: Index along dimension 0 of the array.
+        j: Index along dimension 1 of the array.
+        k: Index along dimension 2 of the array.
+        l: Index along dimension 3 of the array.
+        pe: Index of the processing element to read from.
+
+    Returns:
+        The element value on processing element ``pe``."""
+    ...
+
+def nvshmem_put(dest: Array[Any], source: Array[Any], pe: Int) -> None:
+    """Copy the local array ``source`` into the array ``dest`` on processing element ``pe``.
+
+        The calling thread copies the whole array, so launch this from a single thread per transfer. Slice the
+        arrays to transfer part of them. Arrays may have up to four dimensions. The copy is guaranteed to be
+        complete only after ``wp.nvshmem_quiet()`` or a barrier.
+
+        Args:
+            dest: Symmetric destination array on the remote processing element.
+            source: Local source array with the same dtype and shape as ``dest``.
+            pe: Index of the destination processing element."""
+    ...
+
+def nvshmem_get(dest: Array[Any], source: Array[Any], pe: Int) -> None:
+    """Copy the array ``source`` on processing element ``pe`` into the local array ``dest``.
+
+        The calling thread copies the whole array, so launch this from a single thread per transfer. Slice the
+        arrays to transfer part of them. Arrays may have up to four dimensions. The copy is complete when the
+        call returns.
+
+        Args:
+            dest: Local destination array with the same dtype and shape as ``source``.
+            source: Symmetric source array on the remote processing element.
+            pe: Index of the processing element to read from."""
+    ...
+
+def nvshmem_put_signal(
+    dest: Array[Any],
+    source: Array[Any],
+    signals: Array[uint64],
+    signal_index: Int,
+    signal: Int,
+    signal_op: Int,
+    pe: Int,
+) -> None:
+    """Copy the local array ``source`` into ``dest`` on processing element ``pe``, then update a signal there.
+
+        The signal update ``signals[signal_index]`` on ``pe`` is delivered after the data, so a consumer that waits on
+        the signal with ``wp.nvshmem_signal_wait_until()`` observes the complete copy.
+
+        Args:
+            dest: Symmetric destination array on the remote processing element.
+            source: Local source array with the same dtype and shape as ``dest``.
+            signals: Symmetric array of signal words.
+            signal_index: Index of the signal word to update.
+            signal: Value applied to the signal word.
+            signal_op: ``wp.NVSHMEM_SIGNAL_SET`` or ``wp.NVSHMEM_SIGNAL_ADD``.
+            pe: Index of the destination processing element."""
+    ...
+
+def nvshmem_signal_op(signals: Array[uint64], i: Int, signal: Int, signal_op: Int, pe: Int) -> None:
+    """Update the signal word ``signals[i]`` on processing element ``pe``.
+
+    Args:
+        signals: Symmetric array of signal words.
+        i: Index of the signal word to update.
+        signal: Value applied to the signal word.
+        signal_op: ``wp.NVSHMEM_SIGNAL_SET`` or ``wp.NVSHMEM_SIGNAL_ADD``.
+        pe: Index of the destination processing element."""
+    ...
+
+def nvshmem_signal_wait_until(signals: Array[uint64], i: Int, cmp: Int, value: Int) -> uint64:
+    """Wait until the local signal word ``signals[i]`` satisfies a comparison with ``value``.
+
+    Args:
+        signals: Symmetric array of signal words.
+        i: Index of the signal word to wait on.
+        cmp: Comparison constant, such as ``wp.NVSHMEM_CMP_EQ`` or ``wp.NVSHMEM_CMP_GE``.
+        value: Value to compare the signal word against.
+
+    Returns:
+        The signal word value that satisfied the comparison."""
+    ...
+
+def nvshmem_quiet() -> None:
+    """Wait until all NVSHMEM operations issued by the calling thread are complete."""
+    ...
+
+def nvshmem_fence() -> None:
+    """Order the NVSHMEM operations issued by the calling thread to each processing element.
+
+    Operations before the fence are delivered to a given processing element before operations after it, without
+    waiting for completion."""
+    ...
+
+def nvshmem_barrier_all() -> None:
+    """Wait until all processing elements reach the barrier and their prior NVSHMEM operations are complete."""
     ...
 

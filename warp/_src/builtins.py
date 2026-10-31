@@ -20496,3 +20496,327 @@ add_builtin(
     hidden=True,
     is_differentiable=False,
 )
+
+
+# -----------------------------------------------
+# NVSHMEM builtins
+#
+# Native implementations live in warp/native/nvshmem_device.h. Calls are only valid in CUDA kernels of
+# modules loaded after NVSHMEM is initialized, and their array arguments must be NVSHMEM symmetric memory
+# (for example from nvshmem4py's nvshmem.core.buffer()) wrapped as Warp arrays.
+
+NVSHMEM_SIGNAL_SET = constant(9)
+"""Signal operation that sets the signal word to the signal value."""
+
+NVSHMEM_SIGNAL_ADD = constant(10)
+"""Signal operation that adds the signal value to the signal word."""
+
+NVSHMEM_CMP_EQ = constant(0)
+"""Signal comparison that waits until the signal word equals the comparison value."""
+
+NVSHMEM_CMP_NE = constant(1)
+"""Signal comparison that waits until the signal word differs from the comparison value."""
+
+NVSHMEM_CMP_GT = constant(2)
+"""Signal comparison that waits until the signal word is greater than the comparison value."""
+
+NVSHMEM_CMP_LE = constant(3)
+"""Signal comparison that waits until the signal word is less than or equal to the comparison value."""
+
+NVSHMEM_CMP_LT = constant(4)
+"""Signal comparison that waits until the signal word is less than the comparison value."""
+
+NVSHMEM_CMP_GE = constant(5)
+"""Signal comparison that waits until the signal word is greater than or equal to the comparison value."""
+
+_NVSHMEM_INDEX_NAMES = "ijkl"
+
+
+def _nvshmem_index_types(arg_types: Mapping[str, Any]) -> tuple:
+    return tuple(arg_types[name] for name in _NVSHMEM_INDEX_NAMES if arg_types.get(name) is not None)
+
+
+def nvshmem_p_constraint(arg_types: Mapping[str, Any]) -> bool:
+    return arg_types["dest"].ndim == len(_nvshmem_index_types(arg_types))
+
+
+def nvshmem_g_constraint(arg_types: Mapping[str, Any]) -> bool:
+    return arg_types["source"].ndim == len(_nvshmem_index_types(arg_types))
+
+
+def nvshmem_p_value_func(arg_types: Mapping[str, type], arg_values: Mapping[str, Any]):
+    if arg_types is None:
+        return None
+
+    dest_type = arg_types["dest"]
+    if not types_equal(dest_type.dtype, arg_types["value"]):
+        raise RuntimeError(
+            f"nvshmem_p() value argument type ({type_repr(arg_types['value'])}) must match the array dtype "
+            f"({type_repr(dest_type.dtype)})"
+        )
+    return None
+
+
+def nvshmem_g_value_func(arg_types: Mapping[str, type], arg_values: Mapping[str, Any]):
+    if arg_types is None:
+        return Any
+    return arg_types["source"].dtype
+
+
+def create_nvshmem_transfer_value_func(name: str):
+    def fn(arg_types: Mapping[str, type], arg_values: Mapping[str, Any]):
+        if arg_types is None:
+            return None
+
+        dest_type = arg_types["dest"]
+        source_type = arg_types["source"]
+        if not types_equal(dest_type.dtype, source_type.dtype):
+            raise RuntimeError(
+                f"{name}() requires arrays with the same dtype, got {type_repr(dest_type.dtype)} and "
+                f"{type_repr(source_type.dtype)}"
+            )
+        return None
+
+    return fn
+
+
+def nvshmem_get_dispatch_func(input_types: Mapping[str, type], return_type: Any, args: Mapping[str, Var]):
+    # nvshmem_get() writes the local destination array
+    if warp._src.codegen.options.get("verify_autograd_array_access", False):
+        args["dest"].mark_write()
+
+    return (tuple(args.values()), ())
+
+
+add_builtin(
+    "nvshmem_my_pe",
+    input_types={},
+    value_type=int32,
+    export=False,
+    doc="""Return the index of the calling processing element (PE).
+
+    Returns:
+        The PE index, from 0 to ``wp.nvshmem_n_pes() - 1``.""",
+    group="NVSHMEM",
+    requires_nvshmem=True,
+    is_differentiable=False,
+)
+
+add_builtin(
+    "nvshmem_n_pes",
+    input_types={},
+    value_type=int32,
+    export=False,
+    doc="""Return the number of processing elements (PEs) in the NVSHMEM job.
+
+    Returns:
+        The number of PEs.""",
+    group="NVSHMEM",
+    requires_nvshmem=True,
+    is_differentiable=False,
+)
+
+for _index_count in range(1, 5):
+    _index_names = _NVSHMEM_INDEX_NAMES[:_index_count]
+    _index_inputs = dict.fromkeys(_index_names, Int)
+    _index_expr = ", ".join(_index_names)
+    _index_args_doc = "\n".join(
+        f"        {name}: Index along dimension {d} of the array." for d, name in enumerate(_index_names)
+    )
+
+    add_builtin(
+        "nvshmem_p",
+        input_types={"dest": array(dtype=Any, ndim=_index_count), **_index_inputs, "value": Any, "pe": Int},
+        constraint=nvshmem_p_constraint,
+        value_func=nvshmem_p_value_func,
+        export=False,
+        doc=f"""Write ``value`` to ``dest[{_index_expr}]`` on processing element ``pe``.
+
+    The write is guaranteed to be complete only after ``wp.nvshmem_quiet()`` or a barrier. Elements wider than
+    8 bytes are written as several parts, so the element is not written atomically.
+
+    Args:
+        dest: Symmetric array to write on the remote processing element.
+{_index_args_doc}
+        value: Value to write. Its type must match the array dtype.
+        pe: Index of the destination processing element.""",
+        group="NVSHMEM",
+        requires_nvshmem=True,
+        is_differentiable=False,
+        skip_replay=True,
+    )
+
+    add_builtin(
+        "nvshmem_g",
+        input_types={"source": array(dtype=Any, ndim=_index_count), **_index_inputs, "pe": Int},
+        constraint=nvshmem_g_constraint,
+        value_func=nvshmem_g_value_func,
+        export=False,
+        doc=f"""Read ``source[{_index_expr}]`` from processing element ``pe``.
+
+    Args:
+        source: Symmetric array to read on the remote processing element.
+{_index_args_doc}
+        pe: Index of the processing element to read from.
+
+    Returns:
+        The element value on processing element ``pe``.""",
+        group="NVSHMEM",
+        requires_nvshmem=True,
+        is_differentiable=False,
+    )
+
+for _ndim in range(1, 5):
+    add_builtin(
+        "nvshmem_put",
+        input_types={"dest": array(dtype=Any, ndim=_ndim), "source": array(dtype=Any, ndim=_ndim), "pe": Int},
+        value_func=create_nvshmem_transfer_value_func("nvshmem_put"),
+        export=False,
+        hidden=_ndim > 1,
+        doc="""Copy the local array ``source`` into the array ``dest`` on processing element ``pe``.
+
+        The calling thread copies the whole array, so launch this from a single thread per transfer. Slice the
+        arrays to transfer part of them. Arrays may have up to four dimensions. The copy is guaranteed to be
+        complete only after ``wp.nvshmem_quiet()`` or a barrier.
+
+        Args:
+            dest: Symmetric destination array on the remote processing element.
+            source: Local source array with the same dtype and shape as ``dest``.
+            pe: Index of the destination processing element.""",
+        group="NVSHMEM",
+        requires_nvshmem=True,
+        is_differentiable=False,
+        skip_replay=True,
+    )
+
+    add_builtin(
+        "nvshmem_get",
+        input_types={"dest": array(dtype=Any, ndim=_ndim), "source": array(dtype=Any, ndim=_ndim), "pe": Int},
+        value_func=create_nvshmem_transfer_value_func("nvshmem_get"),
+        dispatch_func=nvshmem_get_dispatch_func,
+        export=False,
+        hidden=_ndim > 1,
+        doc="""Copy the array ``source`` on processing element ``pe`` into the local array ``dest``.
+
+        The calling thread copies the whole array, so launch this from a single thread per transfer. Slice the
+        arrays to transfer part of them. Arrays may have up to four dimensions. The copy is complete when the
+        call returns.
+
+        Args:
+            dest: Local destination array with the same dtype and shape as ``source``.
+            source: Symmetric source array on the remote processing element.
+            pe: Index of the processing element to read from.""",
+        group="NVSHMEM",
+        requires_nvshmem=True,
+        is_differentiable=False,
+        skip_replay=True,
+    )
+
+    add_builtin(
+        "nvshmem_put_signal",
+        input_types={
+            "dest": array(dtype=Any, ndim=_ndim),
+            "source": array(dtype=Any, ndim=_ndim),
+            "signals": array(dtype=uint64),
+            "signal_index": Int,
+            "signal": Int,
+            "signal_op": Int,
+            "pe": Int,
+        },
+        value_func=create_nvshmem_transfer_value_func("nvshmem_put_signal"),
+        export=False,
+        hidden=_ndim > 1,
+        doc="""Copy the local array ``source`` into ``dest`` on processing element ``pe``, then update a signal there.
+
+        The signal update ``signals[signal_index]`` on ``pe`` is delivered after the data, so a consumer that waits on
+        the signal with ``wp.nvshmem_signal_wait_until()`` observes the complete copy.
+
+        Args:
+            dest: Symmetric destination array on the remote processing element.
+            source: Local source array with the same dtype and shape as ``dest``.
+            signals: Symmetric array of signal words.
+            signal_index: Index of the signal word to update.
+            signal: Value applied to the signal word.
+            signal_op: ``wp.NVSHMEM_SIGNAL_SET`` or ``wp.NVSHMEM_SIGNAL_ADD``.
+            pe: Index of the destination processing element.""",
+        group="NVSHMEM",
+        requires_nvshmem=True,
+        is_differentiable=False,
+        skip_replay=True,
+    )
+
+
+add_builtin(
+    "nvshmem_signal_op",
+    input_types={"signals": array(dtype=uint64), "i": Int, "signal": Int, "signal_op": Int, "pe": Int},
+    export=False,
+    doc="""Update the signal word ``signals[i]`` on processing element ``pe``.
+
+    Args:
+        signals: Symmetric array of signal words.
+        i: Index of the signal word to update.
+        signal: Value applied to the signal word.
+        signal_op: ``wp.NVSHMEM_SIGNAL_SET`` or ``wp.NVSHMEM_SIGNAL_ADD``.
+        pe: Index of the destination processing element.""",
+    group="NVSHMEM",
+    requires_nvshmem=True,
+    is_differentiable=False,
+    skip_replay=True,
+)
+
+add_builtin(
+    "nvshmem_signal_wait_until",
+    input_types={"signals": array(dtype=uint64), "i": Int, "cmp": Int, "value": Int},
+    value_type=uint64,
+    export=False,
+    doc="""Wait until the local signal word ``signals[i]`` satisfies a comparison with ``value``.
+
+    Args:
+        signals: Symmetric array of signal words.
+        i: Index of the signal word to wait on.
+        cmp: Comparison constant, such as ``wp.NVSHMEM_CMP_EQ`` or ``wp.NVSHMEM_CMP_GE``.
+        value: Value to compare the signal word against.
+
+    Returns:
+        The signal word value that satisfied the comparison.""",
+    group="NVSHMEM",
+    requires_nvshmem=True,
+    is_differentiable=False,
+    skip_replay=True,
+)
+
+add_builtin(
+    "nvshmem_quiet",
+    input_types={},
+    export=False,
+    doc="""Wait until all NVSHMEM operations issued by the calling thread are complete.""",
+    group="NVSHMEM",
+    requires_nvshmem=True,
+    is_differentiable=False,
+    skip_replay=True,
+)
+
+add_builtin(
+    "nvshmem_fence",
+    input_types={},
+    export=False,
+    doc="""Order the NVSHMEM operations issued by the calling thread to each processing element.
+
+    Operations before the fence are delivered to a given processing element before operations after it, without
+    waiting for completion.""",
+    group="NVSHMEM",
+    requires_nvshmem=True,
+    is_differentiable=False,
+    skip_replay=True,
+)
+
+add_builtin(
+    "nvshmem_barrier_all",
+    input_types={},
+    export=False,
+    doc="""Wait until all processing elements reach the barrier and their prior NVSHMEM operations are complete.""",
+    group="NVSHMEM",
+    requires_nvshmem=True,
+    is_differentiable=False,
+    skip_replay=True,
+)

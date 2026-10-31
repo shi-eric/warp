@@ -3114,6 +3114,11 @@ class Adjoint:
         parameter_types = func.input_types if not func.is_builtin() else {}
         func_has_ref_params = any(is_reference(t) for t in parameter_types.values())
 
+        # Builtins that call into NVSHMEM declare it on their registration; the module
+        # that uses them is linked with the NVSHMEM device library.
+        if func.is_builtin() and func.requires_nvshmem and adj.builder is not None:
+            adj.builder.uses_nvshmem = True
+
         fwd_args = []
         reverse_adj_args = []
         reverse_prelude = []

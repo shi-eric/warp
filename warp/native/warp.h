@@ -55,6 +55,10 @@ WP_API int wp_is_cuda_enabled();
 WP_API int wp_is_cuda_compatibility_enabled();
 // whether Warp was compiled with MathDx support
 WP_API int wp_is_mathdx_enabled();
+// whether this build can link NVSHMEM device code into kernels (Linux CUDA builds)
+WP_API int wp_is_nvshmem_enabled();
+WP_API uint32_t wp_nvshmem_get_loaded_version();
+WP_API int wp_nvshmem_get_host_library_path(char* buffer, size_t size);
 // whether Warp was compiled with cuBQL support
 WP_API int wp_is_cubql_enabled();
 // whether Warp was compiled with debug support

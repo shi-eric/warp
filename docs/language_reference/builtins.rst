@@ -436,3 +436,24 @@ Code Generation
    :template: warp_function.rst
 
    static
+
+NVSHMEM
+-------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: _generated
+   :template: warp_function.rst
+
+   nvshmem_barrier_all
+   nvshmem_fence
+   nvshmem_g
+   nvshmem_get
+   nvshmem_my_pe
+   nvshmem_n_pes
+   nvshmem_p
+   nvshmem_put
+   nvshmem_put_signal
+   nvshmem_quiet
+   nvshmem_signal_op
+   nvshmem_signal_wait_until

@@ -2917,4 +2917,5 @@ inline CUDA_CALLABLE void expect_near(const vec3& actual, const vec3& expected, 
 #include "tile_reduce.h"
 #include "tile_scan.h"
 #include "tile_radix_sort.h"
+#include "nvshmem_device.h"
 // clang-format on
