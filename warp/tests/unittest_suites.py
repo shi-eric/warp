@@ -122,6 +122,7 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
     from warp.tests.deterministic.test_deterministic_graph_capture import TestDeterministicGraph
     from warp.tests.deterministic.test_deterministic_options import TestDeterministicOptions
     from warp.tests.deterministic.test_deterministic_scatter import TestDeterministicScatter
+    from warp.tests.distributed.test_nvshmem import TestNVSHMEMCodegen, TestNVSHMEMDeviceLibrary, TestNVSHMEMMultiPE
     from warp.tests.fem.test_fem_constrained_space import TestFemConstrainedSpace
     from warp.tests.fem.test_fem_dirichlet import TestFemDirichlet
     from warp.tests.fem.test_fem_energy_differentiation import TestFemEnergyDifferentiation
@@ -489,6 +490,9 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
         TestModuleVariants,
         TestMultiGPU,
         TestNoise,
+        TestNVSHMEMCodegen,
+        TestNVSHMEMDeviceLibrary,
+        TestNVSHMEMMultiPE,
         TestOccupancy,
         TestOperators,
         TestOptions,

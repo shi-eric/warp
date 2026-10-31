@@ -3348,6 +3348,11 @@ class Adjoint:
         if external_builtin and func_has_ref_params:
             adj.unvalidated_ref_calls.append(func)
 
+        # Builtins that call into NVSHMEM declare it on their registration; the module
+        # that uses them is linked with the NVSHMEM device library.
+        if func_is_builtin and func.requires_nvshmem and adj.builder is not None:
+            adj.builder.uses_nvshmem = True
+
         fwd_args = []
         reverse_adj_args = []
         reverse_prelude = []

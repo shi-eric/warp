@@ -21,6 +21,8 @@
 #include <libcufftdx.h>
 #include <libcusolverdx.h>
 #include <libmathdx.h>
+#endif
+#if WP_ENABLE_MATHDX || WP_ENABLE_NVSHMEM
 #include <nvJitLink.h>
 #endif
 
@@ -4734,7 +4736,7 @@ static size_t ptx_size_without_nul(const char* ptx, size_t size)
     return (size > 0 && ptx[size - 1] == '\0') ? size - 1 : size;
 }
 
-#if WP_ENABLE_MATHDX
+#if WP_ENABLE_MATHDX || WP_ENABLE_NVSHMEM
 bool check_nvjitlink_result(nvJitLinkHandle handle, nvJitLinkResult result, const char* file, int line)
 {
     if (result != NVJITLINK_SUCCESS) {
@@ -4754,7 +4756,7 @@ bool check_nvjitlink_result(nvJitLinkHandle handle, nvJitLinkResult result, cons
     }
 }
 
-// Link Warp's NVRTC LTO-IR with the MathDx inputs. On success, `output` holds
+// Link Warp's NVRTC LTO-IR with the MathDx and NVSHMEM inputs. On success, `output` holds
 // the linked PTX or CUBIN instead of the LTO-IR. With `quiet_nvvm_error`, an
 // NVVM failure in nvJitLinkComplete() is returned without printing its log, so
 // the caller can retry with other options.
@@ -5102,12 +5104,14 @@ size_t wp_cuda_compile_program(
         get_output_data = nvrtcGetLTOIR;
         output_mode = "wb";
     } else if (num_ltoirs > 0) {
-#if WP_ENABLE_MATHDX
+#if WP_ENABLE_MATHDX || WP_ENABLE_NVSHMEM
         get_output_size = nvrtcGetLTOIRSize;
         get_output_data = nvrtcGetLTOIR;
         output_mode = "wb";
 #else
-        fprintf(stderr, "Warp error: num_ltoirs > 0 but Warp was not built with MathDx support\n");
+        fprintf(
+            stderr, "Warp error: link inputs were provided but Warp was not built with MathDx or NVSHMEM support\n"
+        );
         return size_t(-1);
 #endif
     } else if (use_ptx) {
@@ -5130,10 +5134,10 @@ size_t wp_cuda_compile_program(
 
             // LTOIR case - need an extra step
             if (num_ltoirs > 0) {
-#if WP_ENABLE_MATHDX
+#if WP_ENABLE_MATHDX || WP_ENABLE_NVSHMEM
                 if (ltoir_input_types == nullptr || ltoirs == nullptr || ltoir_sizes == nullptr) {
                     fprintf(
-                        stderr, "Warp error: num_ltoirs > 0 but ltoir_input_types, ltoirs or ltoir_sizes are NULL\n"
+                        stderr, "Warp error: external link inputs were provided without data, sizes, or input types\n"
                     );
                     return size_t(-1);
                 }
@@ -5205,7 +5209,10 @@ size_t wp_cuda_compile_program(
                     res = nvrtcResult(-1);
                 }
 #else
-                fprintf(stderr, "Warp error: num_ltoirs > 0 but Warp was not built with MathDx support\n");
+                fprintf(
+                    stderr,
+                    "Warp error: link inputs were provided but Warp was not built with MathDx or NVSHMEM support\n"
+                );
                 return size_t(-1);
 #endif
             }
