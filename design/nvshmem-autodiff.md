@@ -618,9 +618,11 @@ NVSHMEM's module registration performs synchronous device writes whose interacti
 capture is not something this design can settle from documentation. The first version takes the
 conservative route: when the barrier module is not yet loaded and the launch stream is capturing, Warp
 raises an error that tells the user to run one backward pass before capturing. That matches the
-warm-up iteration most Warp graph-capture code already performs. Whether registration can run safely
-under a relaxed capture mode is an open question to settle on hardware; if it can, the error becomes a
-mid-capture load and no user code changes.
+warm-up iteration most Warp graph-capture code already performs. On hardware, registration during a
+capture fails in the default and the relaxed capture modes alike: NVSHMEM reports `operation would make
+the legacy stream depend on a capturing blocking stream` and the process exits, so the error stays. User
+kernels avoid the failure by loading their module before the capture, with an eager warm-up or
+`wp.ScopedCapture(force_module_load=True)`.
 
 #### Assumptions and their failure modes
 

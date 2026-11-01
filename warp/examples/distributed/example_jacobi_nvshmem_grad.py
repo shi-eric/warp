@@ -6,8 +6,11 @@ Each PE runs a fixed number of Jacobi steps on its block of rows and pushes its 
 rows of its neighbors with ``wp.nvshmem_p()``. The steps are recorded on a tape, and the backward pass computes the
 gradient of the sum of squares of the final field's interior, over all PEs, with respect to the initial field.
 
+See the automatic differentiation guide:
+https://nvidia.github.io/warp/stable/user_guide/distributed/nvshmem_autodiff.html
+
 Launch:
-    mpirun -np 2 uv run --with mpi4py --with nvshmem4py-cu13 \
+    mpirun -np 2 uv run --with mpi4py --with nvshmem4py-cu13 --with "nvidia-nvshmem-cu13>=3.9" \
         python -m warp.examples.distributed.example_jacobi_nvshmem_grad
 """
 

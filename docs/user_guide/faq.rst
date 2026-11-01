@@ -431,25 +431,11 @@ Multi-GPU Warp programs usually follow one of these execution models:
   normally appears as ``cuda:0`` inside the process. The CUDA Programming
   Guide's `CUDA Environment Variables
   <https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/environment-variables.html>`__
-  chapter explains device visibility and enumeration. For new GPU-native
-  distributed applications, prefer `NCCL4Py
-  <https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/nccl4py.html>`__
-  for collective and point-to-point communication, or `NVSHMEM4Py
-  <https://docs.nvidia.com/nvshmem/api/api/language_bindings/python/index.html>`__
-  for symmetric-memory and one-sided communication. NCCL4Py accepts Warp arrays
-  through DLPack or the CUDA Array Interface. NVSHMEM4Py allocations can be
-  wrapped by Warp through DLPack.
-* The Message Passing Interface (MPI) remains useful when the application
-  already uses it. GPU buffers passed through `mpi4py
-  <https://mpi4py.readthedocs.io/en/stable/install.html#building-from-sources>`__
-  require a CUDA-aware MPI implementation. Installing mpi4py from PyPI or
-  conda-forge does not by itself provide a CUDA-aware MPI stack. One way to
-  produce a CUDA-aware mpi4py installation is to download `NVIDIA HPC-X
-  <https://developer.nvidia.com/networking/hpc-x>`__ and build mpi4py from
-  source against its ``mpicc``. Call :func:`wp.synchronize_device()
-  <warp.synchronize_device>` before passing a GPU buffer to MPI because mpi4py
-  cannot synchronize GPU work for you. See the `distributed Jacobi example
-  <https://github.com/NVIDIA/warp/blob/main/warp/examples/distributed/example_jacobi_mpi.py>`__.
+  chapter explains device visibility and enumeration. See
+  :doc:`/user_guide/distributed/communication_layers` for choosing a
+  communication library and passing Warp arrays to it.
+* The :doc:`/user_guide/distributed/communication_layers` page covers using MPI
+  with Warp arrays, including the CUDA-aware build that GPU buffers need.
 * In a `PyTorch Distributed
   <https://docs.pytorch.org/docs/stable/distributed.html>`__ or JAX application,
   let the framework manage processes, devices, and communication. Warp runs the

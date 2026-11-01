@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="404" viewBox="0 0 640 404" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="ah-primary" viewBox="0 0 15 15" refX="11" refY="7.5" markerWidth="3.75" markerHeight="3.75" orient="auto"><path d="M 0 0 L 15 7.5 L 0 15 z" fill="#76b900"/></marker>
+  </defs>
+  <text x="320" y="24" text-anchor="middle" font-size="13" fill="#eeeeee">Row slabs: each PE stores its owned rows plus two ghost rows</text>
+  <rect x="158" y="68" width="150" height="22" fill="#1a1a1a" stroke="#48566b"/>
+  <rect x="158" y="90" width="150" height="22" fill="#1a1a1a" stroke="#48566b"/>
+  <rect x="158" y="112" width="150" height="22" fill="#1a1a1a" stroke="#48566b"/>
+  <rect x="158" y="258" width="150" height="22" fill="#1a1a1a" stroke="#48566b"/>
+  <rect x="158" y="280" width="150" height="22" fill="#1a1a1a" stroke="#48566b"/>
+  <rect x="158" y="302" width="150" height="22" fill="#1a1a1a" stroke="#48566b"/>
+  <rect x="158" y="134" width="150" height="22" fill="#76b900" fill-opacity="0.25" stroke="#76b900"/>
+  <rect x="158" y="236" width="150" height="22" fill="#76b900" fill-opacity="0.25" stroke="#76b900"/>
+  <rect x="158" y="46" width="150" height="22" fill="#1a1a1a" stroke="#999999" stroke-dasharray="4 3"/>
+  <rect x="158" y="156" width="150" height="22" fill="#1a1a1a" stroke="#999999" stroke-dasharray="4 3"/>
+  <rect x="158" y="214" width="150" height="22" fill="#1a1a1a" stroke="#999999" stroke-dasharray="4 3"/>
+  <rect x="158" y="324" width="150" height="22" fill="#1a1a1a" stroke="#999999" stroke-dasharray="4 3"/>
+  <text x="146" y="116.32" text-anchor="end" font-size="12" fill="#eeeeee">PE 0</text>
+  <text x="146" y="284.32" text-anchor="end" font-size="12" fill="#eeeeee">PE 1</text>
+  <text x="300" y="60.78" text-anchor="end" font-size="10.5" fill="#999999">ghost</text>
+  <text x="300" y="148.78" text-anchor="end" font-size="10.5" fill="#eeeeee">last owned row</text>
+  <text x="300" y="170.78" text-anchor="end" font-size="10.5" fill="#999999">ghost</text>
+  <text x="300" y="228.78" text-anchor="end" font-size="10.5" fill="#999999">ghost</text>
+  <text x="300" y="250.78" text-anchor="end" font-size="10.5" fill="#eeeeee">first owned row</text>
+  <text x="300" y="338.78" text-anchor="end" font-size="10.5" fill="#999999">ghost</text>
+  <path d="M 308 145 L 498 145 L 498 225 L 311.6 225" fill="none" stroke="#76b900" stroke-width="1.6" marker-end="url(#ah-primary)"/>
+  <path d="M 308 247 L 520 247 L 520 167 L 311.6 167" fill="none" stroke="#76b900" stroke-width="1.6" marker-end="url(#ah-primary)"/>
+  <text x="403" y="138" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#76b900">wp.nvshmem_put(..., pe + 1)</text>
+  <text x="414" y="263" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#76b900">wp.nvshmem_put(..., pe - 1)</text>
+  <text x="320" y="369" text-anchor="middle" font-size="10.5" fill="#999999">A put copies a boundary row into the neighbor's ghost row.</text>
+  <text x="320" y="387" text-anchor="middle" font-size="10.5" fill="#999999">That ghost row is a slice of the same symmetric array, at an offset known to both PEs.</text>
+</svg>

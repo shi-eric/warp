@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="300" viewBox="0 0 800 300" font-family="Arial, Helvetica, sans-serif">
+  <text x="400" y="24" text-anchor="middle" font-size="13" fill="#eeeeee">What each call guarantees about the operations this thread has issued</text>
+  <path d="M 70 84 L 788 84" fill="none" stroke="#999999" stroke-width="1"/>
+  <text x="62" y="88.32" text-anchor="end" font-size="12" fill="#eeeeee">thread</text>
+  <rect x="84" y="59" width="132" height="24" rx="3" fill="#1a1a1a"/>
+  <rect x="84" y="59" width="132" height="24" rx="3" fill="#76b900" fill-opacity="0.25" stroke="#76b900"/>
+  <text x="150" y="74.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">wp.nvshmem_put(A)</text>
+  <rect x="188" y="85" width="138" height="24" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="257" y="100.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">wp.nvshmem_fence()</text>
+  <rect x="292" y="59" width="132" height="24" rx="3" fill="#1a1a1a"/>
+  <rect x="292" y="59" width="132" height="24" rx="3" fill="#76b900" fill-opacity="0.25" stroke="#76b900"/>
+  <text x="358" y="74.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">wp.nvshmem_put(B)</text>
+  <rect x="396" y="85" width="138" height="24" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="465" y="100.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">wp.nvshmem_quiet()</text>
+  <rect x="500" y="59" width="182" height="24" rx="3" fill="#1a1a1a"/>
+  <rect x="500" y="59" width="182" height="24" rx="3" fill="#76b900" fill-opacity="0.25" stroke="#76b900"/>
+  <text x="591" y="74.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">wp.nvshmem_signal_op(...)</text>
+  <rect x="604" y="85" width="176" height="24" rx="3" fill="#1a1a1a"/>
+  <rect x="604" y="85" width="176" height="24" rx="3" fill="#777777" fill-opacity="0.25" stroke="#777777"/>
+  <text x="692" y="100.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">wp.nvshmem_barrier_all()</text>
+  <path d="M 84 130 L 84 134 L 358 134 L 358 130" fill="none" stroke="#999999" stroke-width="0.8"/>
+  <path d="M 358 83 L 358 130" fill="none" stroke="#999999" stroke-width="0.8" stroke-dasharray="3 3"/>
+  <text x="84" y="149" font-size="10.5" fill="#999999">wp.nvshmem_fence() orders A before B at the same PE</text>
+  <path d="M 84 166 L 84 170 L 465 170 L 465 166" fill="none" stroke="#999999" stroke-width="0.8"/>
+  <path d="M 465 109 L 465 166" fill="none" stroke="#999999" stroke-width="0.8" stroke-dasharray="3 3"/>
+  <text x="84" y="185" font-size="10.5" fill="#999999">wp.nvshmem_quiet(): A and B are complete and visible at their targets</text>
+  <path d="M 84 202 L 84 206 L 591 206 L 591 202" fill="none" stroke="#999999" stroke-width="0.8"/>
+  <path d="M 591 83 L 591 202" fill="none" stroke="#999999" stroke-width="0.8" stroke-dasharray="3 3"/>
+  <text x="84" y="221" font-size="10.5" fill="#999999">Writing a flag after wp.nvshmem_quiet(), or with wp.nvshmem_put_signal(...), publishes the data</text>
+  <path d="M 84 238 L 84 242 L 692 242 L 692 238" fill="none" stroke="#999999" stroke-width="0.8"/>
+  <path d="M 692 109 L 692 238" fill="none" stroke="#999999" stroke-width="0.8" stroke-dasharray="3 3"/>
+  <text x="84" y="257" font-size="10.5" fill="#999999">wp.nvshmem_barrier_all(): every PE arrived and all prior operations are complete</text>
+  <text x="400" y="283" text-anchor="middle" font-size="10.5" fill="#999999">Kernel completion does not imply remote completion.</text>
+</svg>

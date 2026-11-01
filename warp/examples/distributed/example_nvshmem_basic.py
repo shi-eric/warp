@@ -1,7 +1,11 @@
 """Basic NVSHMEM smoke test: PE queries, symmetric buffer, nvshmem_p.
 
+See the NVSHMEM in Warp Kernels guide:
+https://nvidia.github.io/warp/stable/user_guide/distributed/nvshmem.html
+
 Launch:
-    mpirun -np 2 python -m warp.examples.distributed.example_nvshmem_basic
+    mpirun -np 2 uv run --with mpi4py --with nvshmem4py-cu13 --with "nvidia-nvshmem-cu13>=3.9" \
+        python -m warp.examples.distributed.example_nvshmem_basic
 """
 
 import os

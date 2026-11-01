@@ -154,7 +154,7 @@ verify_autograd_array_access: bool = False
 
 nvshmem_adjoint_barrier: bool = True
 """Enqueue an NVSHMEM barrier before every adjoint launch of a kernel whose adjoint accesses remote memory.
-See the differentiability guide.
+See :doc:`/user_guide/distributed/nvshmem_autodiff`.
 """
 
 enable_vector_component_overwrites: bool = False

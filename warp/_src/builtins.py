@@ -20687,7 +20687,8 @@ for _ndim in range(1, 5):
 
         Args:
             dest: Symmetric destination array on the remote processing element.
-            source: Local source array with the same dtype and shape as ``dest``.
+            source: Local source array with the same dtype and shape as ``dest``, in symmetric memory or
+                registered with NVSHMEM.
             pe: Index of the destination processing element.""",
         group="NVSHMEM",
         requires_nvshmem=True,
@@ -20709,7 +20710,8 @@ for _ndim in range(1, 5):
         call returns.
 
         Args:
-            dest: Local destination array with the same dtype and shape as ``source``.
+            dest: Local destination array with the same dtype and shape as ``source``, in symmetric memory or
+                registered with NVSHMEM.
             source: Symmetric source array on the remote processing element.
             pe: Index of the processing element to read from.""",
         group="NVSHMEM",
@@ -20742,7 +20744,8 @@ for _ndim in range(1, 5):
 
         Args:
             dest: Symmetric destination array on the remote processing element.
-            source: Local source array with the same dtype and shape as ``dest``.
+            source: Local source array with the same dtype and shape as ``dest``, in symmetric memory or
+                registered with NVSHMEM.
             signals: Symmetric array of signal words.
             signal_index: Index of the signal word to update.
             signal: Value applied to the signal word.

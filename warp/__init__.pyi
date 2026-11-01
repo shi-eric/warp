@@ -12003,7 +12003,8 @@ def nvshmem_put(dest: Array[Any], source: Array[Any], pe: Int) -> None:
 
         Args:
             dest: Symmetric destination array on the remote processing element.
-            source: Local source array with the same dtype and shape as ``dest``.
+            source: Local source array with the same dtype and shape as ``dest``, in symmetric memory or
+                registered with NVSHMEM.
             pe: Index of the destination processing element."""
     ...
 
@@ -12015,7 +12016,8 @@ def nvshmem_get(dest: Array[Any], source: Array[Any], pe: Int) -> None:
         call returns.
 
         Args:
-            dest: Local destination array with the same dtype and shape as ``source``.
+            dest: Local destination array with the same dtype and shape as ``source``, in symmetric memory or
+                registered with NVSHMEM.
             source: Symmetric source array on the remote processing element.
             pe: Index of the processing element to read from."""
     ...
@@ -12039,7 +12041,8 @@ def nvshmem_put_signal(
 
         Args:
             dest: Symmetric destination array on the remote processing element.
-            source: Local source array with the same dtype and shape as ``dest``.
+            source: Local source array with the same dtype and shape as ``dest``, in symmetric memory or
+                registered with NVSHMEM.
             signals: Symmetric array of signal words.
             signal_index: Index of the signal word to update.
             signal: Value applied to the signal word.

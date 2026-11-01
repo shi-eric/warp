@@ -123,6 +123,7 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
     from warp.tests.deterministic.test_deterministic_scatter import TestDeterministicScatter
     from warp.tests.distributed.test_nvshmem import TestNVSHMEMCodegen, TestNVSHMEMDeviceLibrary, TestNVSHMEMMultiPE
     from warp.tests.distributed.test_nvshmem_autodiff import TestNVSHMEMAutodiff
+    from warp.tests.distributed.test_nvshmem_halo import TestNVSHMEMHaloExchange
     from warp.tests.fem.test_fem_examples import TestFemDiffusionExamples, TestFemExamples
     from warp.tests.fem.test_fem_field import TestFemField
     from warp.tests.fem.test_fem_fp64 import TestFemFp64
@@ -447,6 +448,7 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
         TestNVSHMEMAutodiff,
         TestNVSHMEMCodegen,
         TestNVSHMEMDeviceLibrary,
+        TestNVSHMEMHaloExchange,
         TestNVSHMEMMultiPE,
         TestOccupancy,
         TestOperators,

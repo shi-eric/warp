@@ -233,6 +233,7 @@ warp/examples/tile
     user_guide/programming_model
     user_guide/interoperability
     user_guide/execution_and_performance
+    user_guide/distributed
     user_guide/configuration
     user_guide/debugging
     user_guide/limitations

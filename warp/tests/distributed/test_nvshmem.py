@@ -260,6 +260,35 @@ class TestNVSHMEMDeviceLibrary(unittest.TestCase):
         self.assertEqual((record["path"], record["kind"], record["sha256"]), (path, "ltoir", digest))
 
 
+def _skip_unless_distributed(test_case):
+    """Skip ``test_case`` when ``mpirun``, NVSHMEM support, or nvshmem4py and mpi4py are unavailable.
+
+    Returns:
+        The path of ``mpirun``.
+    """
+    mpirun = shutil.which("mpirun")
+    if mpirun is None:
+        test_case.skipTest("mpirun not found in PATH")
+
+    if not wp.is_nvshmem_enabled():
+        test_case.skipTest("NVSHMEM not enabled in this build.")
+    if not _is_nvshmem_device_library_available():
+        test_case.skipTest("NVSHMEM device library not embedded in this build.")
+    if not _is_module_installed("nvshmem") or not _is_module_installed("mpi4py"):
+        test_case.skipTest("nvshmem4py and mpi4py are required.")
+    return mpirun
+
+
+def _run_mpirun(test_case, command, env, timeout):
+    """Run ``command`` and return its standard output, failing ``test_case`` on a nonzero exit status."""
+    result = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False, env=env)
+    if result.returncode != 0:
+        test_case.fail(
+            f"mpirun failed with return code {result.returncode}\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+    return result.stdout
+
+
 def run_distributed_script(test_case, script_name, n_pes=2, env=None, timeout=120):
     """Run a script from ``warp/tests/distributed/`` through ``mpirun`` and return its standard output.
 
@@ -273,31 +302,28 @@ def run_distributed_script(test_case, script_name, n_pes=2, env=None, timeout=12
         env: Environment for ``mpirun``. Inherits the current environment when ``None``.
         timeout: Seconds to wait for ``mpirun`` to finish.
     """
-    mpirun = shutil.which("mpirun")
-    if mpirun is None:
-        test_case.skipTest("mpirun not found in PATH")
-
-    if not wp.is_nvshmem_enabled():
-        test_case.skipTest("NVSHMEM not enabled in this build.")
-    if not _is_nvshmem_device_library_available():
-        test_case.skipTest("NVSHMEM device library not embedded in this build.")
-    if not _is_module_installed("nvshmem") or not _is_module_installed("mpi4py"):
-        test_case.skipTest("nvshmem4py and mpi4py are required.")
-
+    mpirun = _skip_unless_distributed(test_case)
     script = os.path.join(_DISTRIBUTED_DIR, script_name)
-    result = subprocess.run(
-        [mpirun, "-np", str(n_pes), sys.executable, script],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-        env=env,
-    )
-    if result.returncode != 0:
-        test_case.fail(
-            f"mpirun failed with return code {result.returncode}\nstdout: {result.stdout}\nstderr: {result.stderr}"
-        )
-    return result.stdout
+    return _run_mpirun(test_case, [mpirun, "-np", str(n_pes), sys.executable, script], env, timeout)
+
+
+def run_distributed_module(test_case, module_name, args=(), n_pes=2, env=None, timeout=120):
+    """Run a Python module through ``mpirun`` with ``python -m`` and return its standard output.
+
+    Skips ``test_case`` when ``mpirun``, NVSHMEM support, or nvshmem4py and mpi4py are unavailable, and
+    fails it when ``mpirun`` exits with a nonzero status.
+
+    Args:
+        test_case: The :class:`unittest.TestCase` to skip or fail.
+        module_name: Dotted name of the module, such as ``warp.examples.distributed.example_nvshmem_basic``.
+        args: Command-line arguments for the module.
+        n_pes: Number of processing elements to launch.
+        env: Environment for ``mpirun``. Inherits the current environment when ``None``.
+        timeout: Seconds to wait for ``mpirun`` to finish.
+    """
+    mpirun = _skip_unless_distributed(test_case)
+    command = [mpirun, "-np", str(n_pes), sys.executable, "-m", module_name, *args]
+    return _run_mpirun(test_case, command, env, timeout)
 
 
 class TestNVSHMEMMultiPE(unittest.TestCase):

@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="384" viewBox="0 0 640 384" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="ah-muted" viewBox="0 0 15 15" refX="11" refY="7.5" markerWidth="3.75" markerHeight="3.75" orient="auto"><path d="M 0 0 L 15 7.5 L 0 15 z" fill="#999999"/></marker>
+    <marker id="ah-primary" viewBox="0 0 15 15" refX="11" refY="7.5" markerWidth="3.75" markerHeight="3.75" orient="auto"><path d="M 0 0 L 15 7.5 L 0 15 z" fill="#76b900"/></marker>
+  </defs>
+  <text x="320" y="24" text-anchor="middle" font-size="13" fill="#eeeeee">How a Warp kernel reaches NVSHMEM</text>
+  <rect x="8" y="40" width="624" height="290" fill="none" stroke="#999999" stroke-dasharray="4 3"/>
+  <text x="320" y="56" text-anchor="middle" font-size="10.5" fill="#999999">one PE (process)</text>
+  <text x="26" y="80" font-size="12" fill="#eeeeee">Host (Python)</text>
+  <text x="350" y="80" font-size="12" fill="#eeeeee">Warp, on first launch</text>
+  <rect x="26" y="94" width="106" height="28" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="79" y="111.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">mpirun / srun</text>
+  <rect x="26" y="142" width="138" height="28" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="95" y="159.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">wp.set_device(...)</text>
+  <path d="M 66 122 L 66 138.8" fill="none" stroke="#999999" stroke-width="1.2" marker-end="url(#ah-muted)"/>
+  <rect x="26" y="190" width="132" height="28" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="92" y="207.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">nvshmem.init(...)</text>
+  <path d="M 66 170 L 66 186.8" fill="none" stroke="#999999" stroke-width="1.2" marker-end="url(#ah-muted)"/>
+  <rect x="26" y="238" width="270" height="28" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="161" y="255.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">nvshmem.buffer(...) → wp.array(ptr=...)</text>
+  <path d="M 66 218 L 66 234.8" fill="none" stroke="#999999" stroke-width="1.2" marker-end="url(#ah-muted)"/>
+  <rect x="26" y="286" width="113" height="28" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="82.5" y="303.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">wp.launch(...)</text>
+  <path d="M 66 266 L 66 282.8" fill="none" stroke="#999999" stroke-width="1.2" marker-end="url(#ah-muted)"/>
+  <rect x="350" y="94" width="228" height="28" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="464" y="112.32" text-anchor="middle" font-size="12" fill="#eeeeee">code generation → NVRTC (LTO)</text>
+  <rect x="350" y="142" width="240" height="28" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="470" y="160.32" text-anchor="middle" font-size="12" fill="#eeeeee">link libnvshmem_device (nvJitLink)</text>
+  <path d="M 390 122 L 390 138.8" fill="none" stroke="#999999" stroke-width="1.2" marker-end="url(#ah-muted)"/>
+  <rect x="350" y="190" width="163" height="28" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="431.5" y="207.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#999999">nvshmemx_cumodule_init</text>
+  <path d="M 390 170 L 390 186.8" fill="none" stroke="#999999" stroke-width="1.2" marker-end="url(#ah-muted)"/>
+  <rect x="350" y="238" width="252" height="28" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="476" y="256.32" text-anchor="middle" font-size="12" fill="#eeeeee">kernel runs; built-ins call NVSHMEM</text>
+  <path d="M 390 218 L 390 234.8" fill="none" stroke="#999999" stroke-width="1.2" marker-end="url(#ah-muted)"/>
+  <path d="M 139 300 L 326 300 L 326 108 L 346.4 108" fill="none" stroke="#76b900" stroke-width="1.6" marker-end="url(#ah-primary)"/>
+  <path d="M 158 204 L 346.8 204" fill="none" stroke="#999999" stroke-width="1.2" marker-end="url(#ah-muted)"/>
+  <text x="242" y="195" text-anchor="middle" font-size="10.5" fill="#999999">host library already loaded</text>
+  <text x="320" y="349" text-anchor="middle" font-size="10.5" fill="#999999">Warp reuses the host library that the application loaded; the device library comes from</text>
+  <text x="320" y="367" text-anchor="middle" font-size="10.5" fill="#999999">the installed NVSHMEM wheel (3.9 or newer) or from WARP_NVSHMEM_DEVICE_LIBRARY.</text>
+</svg>
