@@ -1254,23 +1254,23 @@ add_function_test(
     TestFemMultiEnv,
     "test_nanogrid_multi_env_cell_boundary_lookup",
     test_nanogrid_multi_env_cell_boundary_lookup,
-    devices=cuda_devices,
+    devices=devices,
 )
-add_function_test(TestFemMultiEnv, "test_nanogrid_multi_env", test_nanogrid_multi_env, devices=cuda_devices)
+add_function_test(TestFemMultiEnv, "test_nanogrid_multi_env", test_nanogrid_multi_env, devices=devices)
 add_function_test(
-    TestFemMultiEnv, "test_nanogrid_multi_env_rebuildable", test_nanogrid_multi_env_rebuildable, devices=cuda_devices
+    TestFemMultiEnv, "test_nanogrid_multi_env_rebuildable", test_nanogrid_multi_env_rebuildable, devices=devices
 )
 add_function_test(
     TestFemMultiEnv,
     "test_sparse_grid_multi_env_invalid_point_envs",
     test_sparse_grid_multi_env_invalid_point_envs,
-    devices=cuda_devices,
+    devices=devices,
 )
 add_function_test(
     TestFemMultiEnv,
     "test_nanogrid_multi_env_rebuildable_invalid_point_envs",
     test_nanogrid_multi_env_rebuildable_invalid_point_envs,
-    devices=cuda_devices,
+    devices=devices,
 )
 add_function_test(
     TestFemMultiEnv,
@@ -1279,7 +1279,7 @@ add_function_test(
     devices=cuda_devices_with_mempool,
 )
 add_function_test(
-    TestFemMultiEnv, "test_adaptive_nanogrid_multi_env", test_adaptive_nanogrid_multi_env, devices=cuda_devices
+    TestFemMultiEnv, "test_adaptive_nanogrid_multi_env", test_adaptive_nanogrid_multi_env, devices=devices
 )
 add_function_test(
     TestFemMultiEnv,
