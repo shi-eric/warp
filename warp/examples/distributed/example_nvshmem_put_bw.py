@@ -7,8 +7,11 @@ message sizes. PE 0 puts data to PE 1 using parallel scalar puts (one
 thread per element). A separate single-thread kernel handles the
 quiet + barrier between iterations.
 
+See the NVSHMEM in Warp Kernels guide:
+https://nvidia.github.io/warp/stable/user_guide/distributed/nvshmem.html
+
 Launch:
-    mpirun -np 2 uv run --with mpi4py --with nvshmem4py-cu13 \
+    mpirun -np 2 uv run --with mpi4py --with nvshmem4py-cu13 --with "nvidia-nvshmem-cu13>=3.9" \
         python -m warp.examples.distributed.example_nvshmem_put_bw
 """
 
@@ -24,7 +27,7 @@ rank = comm.Get_rank()
 import warp as wp  # noqa: E402
 
 wp.config.cuda_output = "cubin"
-wp.config.quiet = True
+wp.config.log_level = wp.LOG_WARNING
 
 local_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
 local_rank = local_comm.Get_rank()

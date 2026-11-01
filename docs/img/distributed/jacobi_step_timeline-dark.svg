@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="556" viewBox="0 0 800 556" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="ah-muted" viewBox="0 0 15 15" refX="11" refY="7.5" markerWidth="3.75" markerHeight="3.75" orient="auto"><path d="M 0 0 L 15 7.5 L 0 15 z" fill="#999999"/></marker>
+    <marker id="ah-primary" viewBox="0 0 15 15" refX="11" refY="7.5" markerWidth="3.75" markerHeight="3.75" orient="auto"><path d="M 0 0 L 15 7.5 L 0 15 z" fill="#76b900"/></marker>
+  </defs>
+  <text x="400" y="24" text-anchor="middle" font-size="13" fill="#eeeeee">One Jacobi step as launches on each PE's streams</text>
+  <rect x="8" y="40" width="784" height="276" rx="4" fill="#1a1a1a" stroke="#48566b"/>
+  <text x="400" y="60" text-anchor="middle" font-size="12" fill="#eeeeee">pipelined, two streams</text>
+  <text x="20" y="80" font-size="12" fill="#eeeeee">PE 0</text>
+  <path d="M 164 104 L 784 104" fill="none" stroke="#999999" stroke-width="1"/>
+  <text x="156" y="108.32" text-anchor="end" font-size="12" fill="#eeeeee">compute stream</text>
+  <path d="M 164 152 L 784 152" fill="none" stroke="#999999" stroke-width="1"/>
+  <text x="156" y="156.32" text-anchor="end" font-size="12" fill="#eeeeee">communication stream</text>
+  <rect x="172" y="92" width="87" height="24" rx="3" fill="#1a1a1a"/>
+  <rect x="172" y="92" width="87" height="24" rx="3" fill="#f0a742" fill-opacity="0.25" stroke="#f0a742"/>
+  <text x="215.5" y="107.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">wait flags</text>
+  <rect x="259" y="92" width="106" height="24" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="312" y="107.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">boundary rows</text>
+  <rect x="583" y="92" width="87" height="24" rx="3" fill="#1a1a1a"/>
+  <rect x="583" y="92" width="87" height="24" rx="3" fill="#f0a742" fill-opacity="0.25" stroke="#f0a742"/>
+  <text x="626.5" y="107.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">wait flags</text>
+  <rect x="670" y="92" width="106" height="24" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="723" y="107.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">boundary rows</text>
+  <rect x="377" y="92" width="194" height="24" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="474" y="107.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">interior rows</text>
+  <rect x="377" y="140" width="138" height="24" rx="3" fill="#1a1a1a"/>
+  <rect x="377" y="140" width="138" height="24" rx="3" fill="#76b900" fill-opacity="0.25" stroke="#76b900"/>
+  <text x="446" y="155.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">push rows + signal</text>
+  <rect x="515" y="140" width="56" height="24" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="543" y="155.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">quiet</text>
+  <path d="M 371 104 L 371 150.8" fill="none" stroke="#999999" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ah-muted)"/>
+  <text x="365" y="131.78" text-anchor="end" font-size="10.5" fill="#999999">event</text>
+  <path d="M 577 152 L 577 105.2" fill="none" stroke="#999999" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ah-muted)"/>
+  <text x="571" y="131.78" text-anchor="end" font-size="10.5" fill="#999999">event</text>
+  <text x="20" y="192" font-size="12" fill="#eeeeee">PE 1</text>
+  <path d="M 164 264 L 784 264" fill="none" stroke="#999999" stroke-width="1"/>
+  <text x="156" y="268.32" text-anchor="end" font-size="12" fill="#eeeeee">compute stream</text>
+  <path d="M 164 216 L 784 216" fill="none" stroke="#999999" stroke-width="1"/>
+  <text x="156" y="220.32" text-anchor="end" font-size="12" fill="#eeeeee">communication stream</text>
+  <rect x="172" y="252" width="87" height="24" rx="3" fill="#1a1a1a"/>
+  <rect x="172" y="252" width="87" height="24" rx="3" fill="#f0a742" fill-opacity="0.25" stroke="#f0a742"/>
+  <text x="215.5" y="267.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">wait flags</text>
+  <rect x="259" y="252" width="106" height="24" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="312" y="267.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">boundary rows</text>
+  <rect x="583" y="252" width="87" height="24" rx="3" fill="#1a1a1a"/>
+  <rect x="583" y="252" width="87" height="24" rx="3" fill="#f0a742" fill-opacity="0.25" stroke="#f0a742"/>
+  <text x="626.5" y="267.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">wait flags</text>
+  <rect x="670" y="252" width="106" height="24" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="723" y="267.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">boundary rows</text>
+  <rect x="377" y="252" width="194" height="24" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="474" y="267.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">interior rows</text>
+  <rect x="377" y="204" width="138" height="24" rx="3" fill="#1a1a1a"/>
+  <rect x="377" y="204" width="138" height="24" rx="3" fill="#76b900" fill-opacity="0.25" stroke="#76b900"/>
+  <text x="446" y="219.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">push rows + signal</text>
+  <rect x="515" y="204" width="56" height="24" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="543" y="219.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">quiet</text>
+  <path d="M 371 264 L 371 217.2" fill="none" stroke="#999999" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ah-muted)"/>
+  <text x="365" y="243.78" text-anchor="end" font-size="10.5" fill="#999999">event</text>
+  <path d="M 577 216 L 577 262.8" fill="none" stroke="#999999" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#ah-muted)"/>
+  <text x="571" y="243.78" text-anchor="end" font-size="10.5" fill="#999999">event</text>
+  <path d="M 479 164 L 479 176 L 612.5 176 L 612.5 248.4" fill="none" stroke="#76b900" stroke-width="1.6" marker-end="url(#ah-primary)"/>
+  <path d="M 499 204 L 499 192 L 640.5 192 L 640.5 119.6" fill="none" stroke="#76b900" stroke-width="1.6" marker-end="url(#ah-primary)"/>
+  <path d="M 377 282 L 377 286 L 571 286 L 571 282" fill="none" stroke="#999999" stroke-width="0.8"/>
+  <text x="474" y="302" text-anchor="middle" font-size="10.5" fill="#999999">communication overlaps the interior stencil</text>
+  <rect x="8" y="328" width="784" height="174" rx="4" fill="#1a1a1a" stroke="#48566b"/>
+  <text x="400" y="348" text-anchor="middle" font-size="12" fill="#eeeeee">one stream, barrier per step</text>
+  <text x="20" y="368" font-size="12" fill="#eeeeee">PE 0</text>
+  <path d="M 164 392 L 784 392" fill="none" stroke="#999999" stroke-width="1"/>
+  <text x="156" y="396.32" text-anchor="end" font-size="12" fill="#eeeeee">stream</text>
+  <rect x="172" y="380" width="300" height="24" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="322" y="395.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">stencil + element puts</text>
+  <rect x="484" y="380" width="114" height="24" rx="3" fill="#1a1a1a"/>
+  <rect x="484" y="380" width="114" height="24" rx="3" fill="#777777" fill-opacity="0.25" stroke="#777777"/>
+  <text x="541" y="395.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">barrier_all</text>
+  <rect x="610" y="380" width="166" height="24" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="693" y="395.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">stencil + element puts</text>
+  <text x="20" y="432" font-size="12" fill="#eeeeee">PE 1</text>
+  <path d="M 164 456 L 784 456" fill="none" stroke="#999999" stroke-width="1"/>
+  <text x="156" y="460.32" text-anchor="end" font-size="12" fill="#eeeeee">stream</text>
+  <rect x="172" y="444" width="320" height="24" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="332" y="459.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">stencil + element puts</text>
+  <rect x="504" y="444" width="94" height="24" rx="3" fill="#1a1a1a"/>
+  <rect x="504" y="444" width="94" height="24" rx="3" fill="#777777" fill-opacity="0.25" stroke="#777777"/>
+  <text x="551" y="459.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">barrier_all</text>
+  <rect x="610" y="444" width="166" height="24" rx="3" fill="#1a1a1a" stroke="#999999"/>
+  <text x="693" y="459.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#eeeeee">stencil + element puts</text>
+  <path d="M 586 404 L 586 444" fill="none" stroke="#999999" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <text x="172" y="490" font-size="10.5" fill="#999999">Each barrier_all is a one-thread kernel; every PE waits in it for the slowest.</text>
+  <text x="400" y="521" text-anchor="middle" font-size="10.5" fill="#999999">Box widths show order and overlap, not measured durations. The two-stream form needs a second stream and two events per step.</text>
+  <text x="400" y="539" text-anchor="middle" font-size="10.5" fill="#999999">The barrier loop captures after an eager warm-up; the two-stream loop also needs the step number on the device to replay.</text>
+</svg>

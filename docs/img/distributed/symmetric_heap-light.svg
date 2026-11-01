@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="345" viewBox="0 0 640 345" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="ah-muted" viewBox="0 0 15 15" refX="11" refY="7.5" markerWidth="3.75" markerHeight="3.75" orient="auto"><path d="M 0 0 L 15 7.5 L 0 15 z" fill="#666666"/></marker>
+    <marker id="ah-primary" viewBox="0 0 15 15" refX="11" refY="7.5" markerWidth="3.75" markerHeight="3.75" orient="auto"><path d="M 0 0 L 15 7.5 L 0 15 z" fill="#004831"/></marker>
+  </defs>
+  <text x="320" y="24" text-anchor="middle" font-size="13" fill="#1a1a1a">One collective allocation: u lives at the same offset in every PE's symmetric heap</text>
+  <path d="M 12 118 L 628 118" fill="none" stroke="#004831" stroke-width="0.8" stroke-dasharray="3 3"/>
+  <path d="M 12 154 L 628 154" fill="none" stroke="#004831" stroke-width="0.8" stroke-dasharray="3 3"/>
+  <rect x="25" y="40" width="180" height="242" rx="4" fill="#f7f7f7" stroke="#d1d5da"/>
+  <text x="115" y="60" text-anchor="middle" font-size="12" fill="#1a1a1a">PE 0 · GPU 0</text>
+  <rect x="40" y="72" width="150" height="128" fill="none" stroke="#666666" stroke-dasharray="4 3"/>
+  <text x="115" y="88" text-anchor="middle" font-size="10.5" fill="#666666">symmetric heap</text>
+  <rect x="40" y="118" width="150" height="36" fill="#76b900" fill-opacity="0.22" stroke="#76b900"/>
+  <text x="115" y="140.32" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#1a1a1a">u</text>
+  <rect x="235" y="40" width="180" height="242" rx="4" fill="#f7f7f7" stroke="#d1d5da"/>
+  <text x="325" y="60" text-anchor="middle" font-size="12" fill="#1a1a1a">PE 1 · GPU 1</text>
+  <rect x="250" y="72" width="150" height="128" fill="none" stroke="#666666" stroke-dasharray="4 3"/>
+  <text x="325" y="88" text-anchor="middle" font-size="10.5" fill="#666666">symmetric heap</text>
+  <rect x="250" y="118" width="150" height="36" fill="#76b900" fill-opacity="0.22" stroke="#76b900"/>
+  <text x="325" y="140.32" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#1a1a1a">u</text>
+  <rect x="445" y="40" width="180" height="242" rx="4" fill="#f7f7f7" stroke="#d1d5da"/>
+  <text x="535" y="60" text-anchor="middle" font-size="12" fill="#1a1a1a">PE 2 · GPU 2</text>
+  <rect x="460" y="72" width="150" height="128" fill="none" stroke="#666666" stroke-dasharray="4 3"/>
+  <text x="535" y="88" text-anchor="middle" font-size="10.5" fill="#666666">symmetric heap</text>
+  <rect x="460" y="118" width="150" height="36" fill="#76b900" fill-opacity="0.22" stroke="#76b900"/>
+  <text x="535" y="140.32" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#1a1a1a">u</text>
+  <rect x="70" y="216" width="90" height="26" rx="3" fill="#f7f7f7" stroke="#666666"/>
+  <text x="115" y="232.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#1a1a1a">kernel</text>
+  <text x="115" y="260" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#004831">wp.nvshmem_put(</text>
+  <text x="115" y="274" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#004831">u, u[i:j], pe=1)</text>
+  <path d="M 160 229 L 220 229 L 220 136 L 246.4 136" fill="none" stroke="#004831" stroke-width="1.6" marker-end="url(#ah-primary)"/>
+  <path d="M 535 210 L 535 157.2" fill="none" stroke="#666666" stroke-width="1.2" marker-end="url(#ah-muted)"/>
+  <text x="535" y="228" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#004831">wp.array(ptr=buf.handle)</text>
+  <text x="535" y="244" text-anchor="middle" font-size="10.5" fill="#666666">this PE's copy of u</text>
+  <text x="320" y="310" text-anchor="middle" font-size="10.5" fill="#666666">Every PE allocates u with the same collective call, and Warp wraps the local copy as a non-owning array.</text>
+  <text x="320" y="328" text-anchor="middle" font-size="10.5" fill="#666666">A kernel names the copy on another PE by its PE index; the dashed lines mark the shared offset.</text>
+</svg>

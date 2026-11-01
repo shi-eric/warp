@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="268" viewBox="0 0 640 268" font-family="Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="ah-primary" viewBox="0 0 15 15" refX="11" refY="7.5" markerWidth="3.75" markerHeight="3.75" orient="auto"><path d="M 0 0 L 15 7.5 L 0 15 z" fill="#004831"/></marker>
+  </defs>
+  <text x="320" y="24" text-anchor="middle" font-size="13" fill="#1a1a1a">Moving one row from PE 0 to PE 1, two-sided and one-sided</text>
+  <rect x="8" y="40" width="292" height="190" rx="4" fill="#f7f7f7" stroke="#d1d5da"/>
+  <text x="154" y="60" text-anchor="middle" font-size="12" fill="#1a1a1a">Two-sided (MPI)</text>
+  <path d="M 60 96 L 288 96" fill="none" stroke="#666666" stroke-width="1"/>
+  <text x="52" y="100.32" text-anchor="end" font-size="12" fill="#1a1a1a">PE 0</text>
+  <path d="M 60 160 L 288 160" fill="none" stroke="#666666" stroke-width="1"/>
+  <text x="52" y="164.32" text-anchor="end" font-size="12" fill="#1a1a1a">PE 1</text>
+  <text x="154" y="202" text-anchor="middle" font-size="10.5" fill="#666666">Both sides post an operation;</text>
+  <text x="154" y="218" text-anchor="middle" font-size="10.5" fill="#666666">the receive gives the buffer.</text>
+  <rect x="312" y="40" width="320" height="190" rx="4" fill="#f7f7f7" stroke="#d1d5da"/>
+  <text x="472" y="60" text-anchor="middle" font-size="12" fill="#1a1a1a">One-sided (NVSHMEM)</text>
+  <path d="M 364 96 L 620 96" fill="none" stroke="#666666" stroke-width="1"/>
+  <text x="356" y="100.32" text-anchor="end" font-size="12" fill="#1a1a1a">PE 0</text>
+  <path d="M 364 160 L 620 160" fill="none" stroke="#666666" stroke-width="1"/>
+  <text x="356" y="164.32" text-anchor="end" font-size="12" fill="#1a1a1a">PE 1</text>
+  <text x="472" y="202" text-anchor="middle" font-size="10.5" fill="#666666">Only the origin moves data;</text>
+  <text x="472" y="218" text-anchor="middle" font-size="10.5" fill="#666666">the target waits on a flag.</text>
+  <rect x="76" y="84" width="56" height="24" rx="3" fill="#f7f7f7"/>
+  <rect x="76" y="84" width="56" height="24" rx="3" fill="#004831" fill-opacity="0.22" stroke="#004831"/>
+  <text x="104" y="99.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#1a1a1a">Isend</text>
+  <rect x="196" y="84" width="50" height="24" rx="3" fill="#f7f7f7"/>
+  <rect x="196" y="84" width="50" height="24" rx="3" fill="#b35c00" fill-opacity="0.22" stroke="#b35c00"/>
+  <text x="221" y="99.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#1a1a1a">Wait</text>
+  <rect x="76" y="148" width="56" height="24" rx="3" fill="#f7f7f7"/>
+  <rect x="76" y="148" width="56" height="24" rx="3" fill="#004831" fill-opacity="0.22" stroke="#004831"/>
+  <text x="104" y="163.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#1a1a1a">Irecv</text>
+  <rect x="196" y="148" width="50" height="24" rx="3" fill="#f7f7f7"/>
+  <rect x="196" y="148" width="50" height="24" rx="3" fill="#b35c00" fill-opacity="0.22" stroke="#b35c00"/>
+  <text x="221" y="163.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#1a1a1a">Wait</text>
+  <path d="M 104 108 L 104 144.4" fill="none" stroke="#004831" stroke-width="1.6" marker-end="url(#ah-primary)"/>
+  <rect x="372" y="148" width="232" height="24" rx="3" fill="#f7f7f7"/>
+  <rect x="372" y="148" width="232" height="24" rx="3" fill="#b35c00" fill-opacity="0.22" stroke="#b35c00"/>
+  <text x="488" y="163.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#1a1a1a">wp.nvshmem_signal_wait_until(...)</text>
+  <rect x="396" y="84" width="188" height="24" rx="3" fill="#f7f7f7"/>
+  <rect x="396" y="84" width="188" height="24" rx="3" fill="#004831" fill-opacity="0.22" stroke="#004831"/>
+  <text x="490" y="99.78" text-anchor="middle" font-family="SFMono-Regular, Menlo, Consolas, monospace" font-size="10.5" fill="#1a1a1a">wp.nvshmem_put_signal(...)</text>
+  <path d="M 562 108 L 562 144.4" fill="none" stroke="#004831" stroke-width="1.6" marker-end="url(#ah-primary)"/>
+  <text x="320" y="251" text-anchor="middle" font-size="10.5" fill="#666666">The signal arrives after the data, so a target that sees it reads the complete copy.</text>
+</svg>
