@@ -903,6 +903,44 @@ def new_int32_shared_tile():
     return wp.tile_empty(shape=(3,), dtype=wp.int32, storage="shared")
 
 
+@wp.func
+def cholesky_func(a: wp.tile[wp.float64, TILE_M, TILE_M]):
+    return wp.tile_cholesky(a)
+
+
+@wp.kernel(module="unique")
+def tile_cholesky_func_register_tile_kernel(gA: wp.array2d[wp.float64], gL: wp.array2d[wp.float64]):
+    a = wp.tile_load(gA, shape=(TILE_M, TILE_M), storage="register")
+    wp.tile_store(gL, cholesky_func(a))
+
+
+def test_tile_cholesky_func_register_tile(test, device):
+    """Factor a register tile in a user function and check the gradient."""
+    rng = np.random.default_rng(42)
+    M = rng.random((TILE_M, TILE_M))
+    A_np = M.T @ M + 8.0 * np.eye(TILE_M)
+    L_np = np.linalg.cholesky(A_np)
+    adj_L = rng.standard_normal((TILE_M, TILE_M))
+
+    A_wp = wp.array(A_np, dtype=wp.float64, requires_grad=True, device=device)
+    L_wp = wp.zeros((TILE_M, TILE_M), dtype=wp.float64, requires_grad=True, device=device)
+
+    with wp.Tape() as tape:
+        wp.launch_tiled(
+            tile_cholesky_func_register_tile_kernel,
+            dim=[1, 1],
+            inputs=[A_wp],
+            outputs=[L_wp],
+            block_dim=TILE_DIM,
+            device=device,
+        )
+
+    np.testing.assert_allclose(L_wp.numpy(), L_np)
+
+    tape.backward(grads={L_wp: wp.array(adj_L, dtype=wp.float64, device=device)})
+    np.testing.assert_allclose(A_wp.grad.numpy(), cholesky_adjoint_numpy_lower(L_np, adj_L), atol=1e-8)
+
+
 all_devices = get_test_devices()
 cuda_devices = get_cuda_test_devices()
 
@@ -1036,6 +1074,12 @@ add_function_test(
     TestTileCholesky,
     "test_tile_cholesky_solve_upper_multiple_rhs_inplace",
     test_tile_cholesky_solve_upper_multiple_rhs_inplace,
+    devices=all_devices,
+)
+add_function_test(
+    TestTileCholesky,
+    "test_tile_cholesky_func_register_tile",
+    test_tile_cholesky_func_register_tile,
     devices=all_devices,
 )
 

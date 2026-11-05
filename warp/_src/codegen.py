@@ -2246,8 +2246,10 @@ class Adjoint:
 
             _validate_array_parameter_annotation(type, f"Argument '{name}' of '{adj.fun_name}'")
 
-            # add variable for argument
-            arg = Var(name, type, requires_grad=False)
+            # add variable for argument; builtins may switch a tile parameter to shared
+            # storage by updating its type, so give each tile parameter its own type rather
+            # than the annotation object, which other functions might share
+            arg = Var(name, shallowcopy(type) if is_tile(type) else type, requires_grad=False)
             arg.is_parameter = True
             adj.args.append(arg)
 
@@ -3260,6 +3262,8 @@ class Adjoint:
             elif func not in adj.builder.functions:
                 adj.builder.build_function(func)
 
+            adj.promote_tile_args_to_shared(func, bound_args)
+
             adj.deterministic.include_function_call(func, bound_args)
 
         # Resolve the return value based on the types and values of the given arguments.
@@ -3535,6 +3539,24 @@ class Adjoint:
         adj.alloc_shared_extra_backward(extra_shared_memory * 2)
 
         return return_value(output)
+
+    @staticmethod
+    def promote_tile_args_to_shared(func, bound_args):
+        """Move a call's tile arguments to shared memory where the callee requires it.
+
+        Builtins that need shared memory tiles (e.g. ``tile_cholesky()``, ``tile_matmul()``,
+        ``tile_transpose()``) switch their tile argument to shared storage by updating the
+        argument's type. When that argument is a parameter of a user function, the update
+        lands on the parameter, but the native tile type is deduced from the caller's
+        variable, so apply the same promotion to the caller's variable here.
+        """
+        for param in func.adj.args:
+            if not is_tile(param.type) or param.type.storage != "shared":
+                continue
+
+            arg = bound_args.get(param.label)
+            if isinstance(arg, Var) and is_tile(arg.type):
+                arg.type.storage = "shared"
 
     def add_builtin_call(adj, func_name, args, min_outputs=None, return_value_used=True):
         func = warp._src.context.builtin_functions[func_name]

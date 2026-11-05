@@ -62,6 +62,24 @@ def modify_tile_no_return(t: wp.tile[float, TILE_M, TILE_N]):
     t += wp.tile_ones(dtype=float, shape=(TILE_M, TILE_N), storage="register") * 5.0
 
 
+@wp.func
+def matmul_func(a: wp.tile[float, TILE_M, TILE_N], b: wp.tile[float, TILE_N, TILE_M]):
+    """Multiply two tiles; ``tile_matmul()`` needs its operands in shared memory."""
+    return wp.tile_matmul(a, b)
+
+
+@wp.func
+def matmul_outer_func(a: wp.tile[float, TILE_M, TILE_N], b: wp.tile[float, TILE_N, TILE_M]):
+    """Forward the tile parameters to another function that needs them in shared memory."""
+    return matmul_func(a, b)
+
+
+@wp.func
+def read_elements_func(t: wp.tile[float, TILE_M, TILE_N]):
+    """Combine two elements of a tile; reading elements needs the tile in shared memory."""
+    return t[1, 2] * 2.0 + t[3, 0]
+
+
 # ---- Forward tests ----
 
 
@@ -441,6 +459,76 @@ def test_native_func_inplace_modify_tile(test, device):
     test.assertAlmostEqual(result[0, 1], 5.0)  # unchanged
 
 
+# ---- Builtins that need shared memory tiles, called on register tile parameters ----
+
+
+def test_register_tile_func_matmul(test, device):
+    """Multiply register tiles in a user function, called directly and through another user function."""
+
+    @wp.kernel(module="unique")
+    def compute(a: wp.array2d[float], b: wp.array2d[float], c: wp.array2d[float], d: wp.array2d[float]):
+        # Load separate register tiles for each call so that each one is checked on its own
+        a0 = wp.tile_load(a, shape=(TILE_M, TILE_N), storage="register")
+        b0 = wp.tile_load(b, shape=(TILE_N, TILE_M), storage="register")
+        wp.tile_store(c, matmul_func(a0, b0))
+
+        a1 = wp.tile_load(a, shape=(TILE_M, TILE_N), storage="register")
+        b1 = wp.tile_load(b, shape=(TILE_N, TILE_M), storage="register")
+        wp.tile_store(d, matmul_outer_func(a1, b1))
+
+    rng = np.random.default_rng(42)
+    a_np = rng.standard_normal((TILE_M, TILE_N)).astype(np.float32)
+    b_np = rng.standard_normal((TILE_N, TILE_M)).astype(np.float32)
+    adj_c = rng.standard_normal((TILE_M, TILE_M)).astype(np.float32)
+    adj_d = rng.standard_normal((TILE_M, TILE_M)).astype(np.float32)
+
+    a = wp.array(a_np, requires_grad=True, device=device)
+    b = wp.array(b_np, requires_grad=True, device=device)
+    c = wp.zeros((TILE_M, TILE_M), dtype=float, requires_grad=True, device=device)
+    d = wp.zeros((TILE_M, TILE_M), dtype=float, requires_grad=True, device=device)
+
+    with wp.Tape() as tape:
+        wp.launch_tiled(compute, dim=[1], inputs=[a, b], outputs=[c, d], block_dim=BLOCK_DIM, device=device)
+
+    np.testing.assert_allclose(c.numpy(), a_np @ b_np, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(d.numpy(), a_np @ b_np, rtol=1e-5, atol=1e-5)
+
+    tape.backward(grads={c: wp.array(adj_c, device=device), d: wp.array(adj_d, device=device)})
+    adj_out = adj_c + adj_d
+    np.testing.assert_allclose(a.grad.numpy(), adj_out @ b_np.T, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(b.grad.numpy(), a_np.T @ adj_out, rtol=1e-5, atol=1e-5)
+
+
+def test_register_tile_func_element_read(test, device):
+    """Read elements of a register tile in a user function and check the gradient."""
+
+    @wp.kernel(module="unique")
+    def compute(x: wp.array2d[float], out: wp.array1d[float]):
+        _, lane = wp.tid()
+        t = wp.tile_load(x, shape=(TILE_M, TILE_N), storage="register")
+        s = read_elements_func(t)
+        # Every thread holds the result; store it from one thread so that only one passes a gradient back
+        if lane == 0:
+            out[0] = s
+
+    rng = np.random.default_rng(42)
+    x_np = rng.standard_normal((TILE_M, TILE_N)).astype(np.float32)
+
+    x = wp.array(x_np, requires_grad=True, device=device)
+    out = wp.zeros(1, dtype=float, requires_grad=True, device=device)
+
+    with wp.Tape() as tape:
+        wp.launch_tiled(compute, dim=[1], inputs=[x], outputs=[out], block_dim=BLOCK_DIM, device=device)
+
+    np.testing.assert_allclose(out.numpy(), [x_np[1, 2] * 2.0 + x_np[3, 0]], rtol=1e-6)
+
+    tape.backward(loss=out)
+    expected_grad = np.zeros_like(x_np)
+    expected_grad[1, 2] = 2.0
+    expected_grad[3, 0] = 1.0
+    np.testing.assert_allclose(x.grad.numpy(), expected_grad)
+
+
 devices = get_test_devices()
 
 
@@ -464,6 +552,13 @@ add_function_test(TestTileFuncArg, "test_register_tile_func_grad", test_register
 add_function_test(TestTileFuncArg, "test_mixed_storage_func_grad", test_mixed_storage_func_grad, devices=devices)
 add_function_test(TestTileFuncArg, "test_nested_func_calls_grad", test_nested_func_calls_grad, devices=devices)
 add_function_test(TestTileFuncArg, "test_inplace_modify_func_grad", test_inplace_modify_func_grad, devices=devices)
+add_function_test(TestTileFuncArg, "test_register_tile_func_matmul", test_register_tile_func_matmul, devices=devices)
+add_function_test(
+    TestTileFuncArg,
+    "test_register_tile_func_element_read",
+    test_register_tile_func_element_read,
+    devices=get_cuda_test_devices(),
+)
 add_function_test(
     TestTileFuncArg, "test_native_func_shared_tile", test_native_func_shared_tile, devices=get_cuda_test_devices()
 )
