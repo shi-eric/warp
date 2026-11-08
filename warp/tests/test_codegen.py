@@ -1722,12 +1722,87 @@ def test_augassign_slot_target_before_rhs(test, device):
 
 
 def test_array_slot_augassign_uses_user_operator(test, device):
-    """Preserve user operator dispatch for attribute and indexed array slots."""
-    values = wp.array([wp.vec3(3.0)], dtype=wp.vec3, device=device)
+    """Preserve user operator dispatch for local attributes and array slots."""
+    for kernel in (slot_operators.overloaded_slot_augassign, slot_operators.overloaded_local_attribute_augassign):
+        values = wp.array([wp.vec3(3.0)], dtype=wp.vec3, device=device)
 
-    wp.launch(slot_operators.overloaded_slot_augassign, dim=1, inputs=[values, 2.0], device=device)
+        wp.launch(kernel, dim=1, inputs=[values, 2.0], device=device)
 
-    np.testing.assert_array_equal(values.numpy(), np.array([[1.0, 1.0, 6.0]], dtype=np.float32))
+        np.testing.assert_array_equal(values.numpy(), np.array([[1.0, 1.0, 6.0]], dtype=np.float32))
+
+
+@wp.func
+def mutate_augassign_vec(value: wp.ref[wp.vec3]):
+    value.x = 10.0
+    value.z = 20.0
+    return 2.0
+
+
+@wp.func
+def mutate_augassign_translation(value: wp.ref[wp.transform]):
+    value = wp.transform(wp.vec3(10.0), wp.quat(20.0, 20.0, 20.0, 20.0))
+    return wp.vec3(2.0)
+
+
+@wp.func
+def mutate_augassign_rotation(value: wp.ref[wp.transform]):
+    value = wp.transform(wp.vec3(20.0), wp.quat(10.0, 10.0, 10.0, 10.0))
+    return wp.quat(2.0, 2.0, 2.0, 2.0)
+
+
+def test_attribute_augassign_rhs_mutates_target(test, device):
+    def make_kernel(dtype, component, mutate, wrap):
+        @wp.func
+        def update(value: dtype):
+            if wp.static(component == "x"):
+                if wp.static(wrap):
+                    value.x += wp.float32(mutate(value))
+                else:
+                    value.x += mutate(value)
+            elif wp.static(component == "p"):
+                if wp.static(wrap):
+                    value.p += wp.vec3(mutate(value))
+                else:
+                    value.p += mutate(value)
+            else:
+                if wp.static(wrap):
+                    value.q += wp.quat(mutate(value))
+                else:
+                    value.q += mutate(value)
+            return value
+
+        @wp.kernel(module="unique", enable_backward=False)
+        def kernel(initial: wp.array[dtype], out: wp.array[dtype]):
+            # Helpers retain copy-on-write even when their caller is forward-only.
+            out[0] = update(initial[0])
+
+        return kernel
+
+    cases = (
+        (wp.vec3, "x", mutate_augassign_vec, [3.0, 4.0, 5.0], [5.0, 4.0, 20.0]),
+        (
+            wp.transform,
+            "p",
+            mutate_augassign_translation,
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+            [3.0, 4.0, 5.0, 20.0, 20.0, 20.0, 20.0],
+        ),
+        (
+            wp.transform,
+            "q",
+            mutate_augassign_rotation,
+            [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+            [20.0, 20.0, 20.0, 6.0, 7.0, 8.0, 9.0],
+        ),
+    )
+    for dtype, component, mutate, initial, expected in cases:
+        for wrap in (False, True):
+            with test.subTest(component=component, wrap=wrap):
+                kernel = make_kernel(dtype, component, mutate, wrap)
+                values = wp.array([initial], dtype=dtype, device=device)
+                out = wp.empty(1, dtype=dtype, device=device)
+                wp.launch(kernel, dim=1, inputs=[values], outputs=[out], device=device)
+                np.testing.assert_allclose(out.numpy(), [expected])
 
 
 def test_overloaded_slot_update_backward_rejected(test, device):
@@ -3125,6 +3200,12 @@ add_function_test(
     TestCodeGen,
     "test_array_slot_augassign_uses_user_operator",
     test_array_slot_augassign_uses_user_operator,
+    devices=devices,
+)
+add_function_test(
+    TestCodeGen,
+    "test_attribute_augassign_rhs_mutates_target",
+    test_attribute_augassign_rhs_mutates_target,
     devices=devices,
 )
 add_function_test(

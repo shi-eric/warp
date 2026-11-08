@@ -2927,22 +2927,16 @@ add_builtin(
 
     See :func:`~warp.transform_set_translation` for a usage example.""",
 )
-# performs a copy internally if wp.config.enable_vector_component_overwrites is True
+# Copy a transform while replacing its translation.
 add_builtin(
     "transform_set_translation_copy",
     input_types={"xform": transformation(dtype=Float), "p": vector(length=3, dtype=Float)},
-    value_type=transformation(dtype=Float),
+    value_func=lambda arg_types, arg_values: transformation(dtype=float_infer_type(arg_types)),
     group="Transformations",
     doc="""Return a copy of the transform ``xform`` with its translational part set to ``p``.
 
-    Counterpart of :func:`~warp.transform_set_translation` for the copy-on-write lowering selected
-    by ``wp.config.enable_vector_component_overwrites``.
-
-    .. note::
-
-        Currently unusable: the return type is declared generic, so it never resolves to the scalar
-        type of ``xform`` and the result cannot be stored or passed on. No lowering emits this
-        built-in today.
+    Counterpart of :func:`~warp.transform_set_translation` used by the copy-on-write lowering
+    of local transform attribute addition and subtraction.
 
     Args:
         xform: Transformation to copy.
@@ -2953,18 +2947,16 @@ add_builtin(
     hidden=True,
     export=False,
 )
-# performs a copy internally if wp.config.enable_vector_component_overwrites is True
+# Copy a transform while replacing its rotation.
 add_builtin(
     "transform_set_rotation_copy",
     input_types={"xform": transformation(dtype=Float), "q": quaternion(dtype=Float)},
-    value_type=transformation(dtype=Float),
+    value_func=lambda arg_types, arg_values: transformation(dtype=float_infer_type(arg_types)),
     group="Transformations",
     doc="""Return a copy of the transform ``xform`` with its rotational part set to ``q``.
 
-    ``q`` is not normalized. Counterpart of :func:`~warp.transform_set_rotation` for the
-    copy-on-write lowering selected by ``wp.config.enable_vector_component_overwrites``, and subject
-    to the same limitation as :func:`~warp.transform_set_translation_copy`: currently unusable,
-    since its return type never resolves to the scalar type of ``xform``.
+    ``q`` is not normalized. Counterpart of :func:`~warp.transform_set_rotation` used by the
+    copy-on-write lowering of local transform attribute addition and subtraction.
 
     Args:
         xform: Transformation to copy.
@@ -16323,6 +16315,29 @@ add_builtin(
     export=False,
     group="Utility",
 )
+
+# Fused local attribute +=/-= on a copied aggregate.
+for operation in ("add", "sub"):
+    for aggregate in (vector(length=Any, dtype=Scalar), quaternion(dtype=Float)):
+        add_builtin(
+            f"{operation}_attribute_copy",
+            input_types={"a": aggregate, "i": Any, "value": Any},
+            value_func=vector_assign_copy_value_func,
+            dispatch_func=vector_assign_dispatch_func,
+            hidden=True,
+            export=False,
+            group="Utility",
+        )
+    for component in (vector(length=3, dtype=Float), quaternion(dtype=Float)):
+        add_builtin(
+            f"{operation}_attribute_copy",
+            input_types={"a": transformation(dtype=Float), "value": component},
+            value_func=vector_assign_copy_value_func,
+            hidden=True,
+            export=False,
+            group="Utility",
+        )
+
 
 # implements vector[idx] += scalar
 add_builtin(

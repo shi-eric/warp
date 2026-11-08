@@ -21,6 +21,15 @@ def overloaded_slot_augassign(values: wp.array[wp.vec3], rhs: wp.float32):
     values[0].z -= rhs
 
 
+@wp.kernel(module="unique", enable_backward=False)
+def overloaded_local_attribute_augassign(values: wp.array[wp.vec3], rhs: wp.float32):
+    value = values[0]
+    value.x += rhs
+    value.y += rhs
+    value.z -= rhs
+    values[0] = value
+
+
 @wp.kernel(module="unique")
 def update_double_components_with_float_overloads(values: wp.array[wp.vec3d], rhs: wp.array[wp.float64]):
     values[0].x += rhs[0]

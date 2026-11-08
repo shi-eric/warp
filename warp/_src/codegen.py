@@ -6269,11 +6269,12 @@ class Adjoint:
         attr_type = base.type.vars[node.attr].type
         return Var(f"{base.label}.{node.attr}", attr_type, prefix=base.prefix)
 
-    def _store_attribute(adj, lhs, aggregate, rhs):
+    def _store_attribute(adj, lhs, aggregate, rhs, *, use_copy=False):
         """Store ``rhs`` into an attribute target using pre-evaluated ``aggregate``.
 
         Shared by ``emit_Assign`` and ``emit_AugAssign`` to avoid duplicating
         the store-dispatch logic for vector/quaternion/transform/struct attributes.
+        ``use_copy`` preserves earlier primal values for local augmented updates.
         """
         aggregate_type = strip_reference(aggregate.type)
 
@@ -6285,7 +6286,7 @@ class Adjoint:
                 attr = adj.add_builtin_call("indexref", [aggregate, index])
                 adj.add_builtin_call("store", [attr, rhs])
             else:
-                if adj.builder_options.get("enable_vector_component_overwrites", False):
+                if use_copy or adj.builder_options.get("enable_vector_component_overwrites", False):
                     out = adj.add_builtin_call("assign_copy", [aggregate, index, rhs])
 
                     # re-point target symbol to out var
@@ -6303,10 +6304,15 @@ class Adjoint:
             if is_reference(aggregate.type):
                 raise WarpCodegenError(f"Error, assigning transform attribute {component} to an array element")
 
-            if component == "p":
-                return adj.add_builtin_call("transform_set_translation", [aggregate, rhs])
+            setter = "transform_set_translation" if component == "p" else "transform_set_rotation"
+            if use_copy:
+                out = adj.add_builtin_call(f"{setter}_copy", [aggregate, rhs])
+                for id in adj.symbols:
+                    if adj.symbols[id] == aggregate:
+                        adj.symbols[id] = out
+                        break
             else:
-                return adj.add_builtin_call("transform_set_rotation", [aggregate, rhs])
+                return adj.add_builtin_call(setter, [aggregate, rhs])
 
         elif isinstance(aggregate_type, Struct) and not is_reference(aggregate.type):
             attr_var = aggregate_type.vars[lhs.attr]
@@ -6565,6 +6571,29 @@ class Adjoint:
             if not adj.store_array_slot(slot, result):
                 adj._store_subscript(lhs, target, indices, result)
 
+        def simple_attribute_rhs(node) -> bool:
+            # RHS evaluation must not mutate the aggregate before its component is read.
+            # Unknown calls retain the target snapshot path.
+            if isinstance(node, (ast.Name, ast.Constant)):
+                return True
+            if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
+                base = adj.symbols.get(node.value.id)
+                indices = node.slice.elts if isinstance(node.slice, ast.Tuple) else (node.slice,)
+                return (
+                    isinstance(base, Var)
+                    and is_array(strip_reference(base.type))
+                    and all(isinstance(index, (ast.Name, ast.Constant)) for index in indices)
+                )
+            if isinstance(node, ast.Call) and not node.keywords:
+                try:
+                    constructor, _ = adj.resolve_static_expression(node.func, eval_types=False)
+                except WarpCodegenError:
+                    return False
+                return (type_is_vector(constructor) or type_is_quaternion(constructor)) and all(
+                    simple_attribute_rhs(arg) for arg in node.args
+                )
+            return False
+
         def lower_attribute_augassign() -> None:
             """Load current value of attribute target, apply op, store back."""
             aggregate = adj.resolve_attribute_store_aggregate(lhs.value)
@@ -6572,15 +6601,60 @@ class Adjoint:
             if find_user_operator() is None and adj.atomic_array_slot(slot, eval_rhs, node.op):
                 return
 
+            aggregate_type = strip_reference(aggregate.type)
+            if (
+                isinstance(lhs.value, ast.Name)
+                and slot is None
+                and not is_reference(aggregate.type)
+                and (
+                    type_is_vector(aggregate_type)
+                    or type_is_quaternion(aggregate_type)
+                    or type_is_transformation(aggregate_type)
+                )
+                # Full-gradient fusion regresses dynamic loops for wide vectors.
+                and (not type_is_vector(aggregate_type) or aggregate_type._length_ <= 4)
+                and type_is_float(type_scalar_type(aggregate_type))
+                and isinstance(node.op, (ast.Add, ast.Sub))
+                and (adj.is_user_function or adj.used_by_backward_kernel or adj.force_adjoint_codegen)
+                and find_user_operator() is None
+                and simple_attribute_rhs(node.value)
+            ):
+                scalar_type = type_scalar_type(aggregate_type)
+                args = [aggregate]
+                if type_is_transformation(aggregate_type):
+                    component = adj.transform_component(lhs.attr)
+                    expected = (
+                        vector(length=3, dtype=scalar_type) if component == "p" else quaternion(dtype=scalar_type)
+                    )
+                else:
+                    expected = scalar_type
+                    args.append(adj.vector_component_index(lhs.attr, aggregate_type))
+                rhs = eval_rhs()
+                if types_equal(strip_reference(rhs.type), expected):
+                    args.append(rhs)
+                    adj.symbols[lhs.value.id] = adj.add_builtin_call(f"{operator_name}_attribute_copy", args)
+                    return
+
             with adj.suppress_read_tracking():
                 current = adj.emit_Attribute(lhs, aggregate=aggregate)
 
-            if resolve_user_operator(current) is None and adj.atomic_array_slot(slot, eval_rhs, node.op):
+            user_operator = resolve_user_operator(current)
+            if user_operator is None and adj.atomic_array_slot(slot, eval_rhs, node.op):
                 return
             result = apply_operator(current)
             record_unsupported_slot_adjoint(result, aggregate)
             if not adj.store_array_slot(slot, result):
-                adj._store_attribute(lhs, aggregate, result)
+                # Copy the updated aggregate so the old component contributes
+                # its gradient only through `current`. This also preserves old
+                # primal values and the target snapshot taken before the RHS.
+                # Functions' backward use is propagated after their bodies are built.
+                use_copy = (
+                    user_operator is None
+                    and slot is None
+                    and isinstance(node.op, (ast.Add, ast.Sub))
+                    and (adj.is_user_function or adj.used_by_backward_kernel or adj.force_adjoint_codegen)
+                )
+                adj._store_attribute(lhs, aggregate, result, use_copy=use_copy)
 
         if isinstance(lhs, ast.Subscript):
             # wp.adjoint[var] appears in custom grad functions; handle the

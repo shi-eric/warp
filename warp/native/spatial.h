@@ -316,6 +316,90 @@ CUDA_CALLABLE inline void adj_transform_set_rotation_copy(
     adj_t.p += adj_ret.p;
 }
 
+template <typename Type>
+inline CUDA_CALLABLE transform_t<Type> add_attribute_copy(const transform_t<Type>& t, const vec_t<3, Type>& value)
+{
+    transform_t<Type> ret(t);
+    ret.p += value;
+    return ret;
+}
+
+template <typename Type>
+inline CUDA_CALLABLE void adj_add_attribute_copy(
+    const transform_t<Type>& t,
+    const vec_t<3, Type>& value,
+    transform_t<Type>& adj_t,
+    vec_t<3, Type>& adj_value,
+    const transform_t<Type>& adj_ret
+)
+{
+    adj_t += adj_ret;
+    adj_value += adj_ret.p;
+}
+
+template <typename Type>
+inline CUDA_CALLABLE transform_t<Type> add_attribute_copy(const transform_t<Type>& t, const quat_t<Type>& value)
+{
+    transform_t<Type> ret(t);
+    ret.q += value;
+    return ret;
+}
+
+template <typename Type>
+inline CUDA_CALLABLE void adj_add_attribute_copy(
+    const transform_t<Type>& t,
+    const quat_t<Type>& value,
+    transform_t<Type>& adj_t,
+    quat_t<Type>& adj_value,
+    const transform_t<Type>& adj_ret
+)
+{
+    adj_t += adj_ret;
+    adj_value += adj_ret.q;
+}
+
+template <typename Type>
+inline CUDA_CALLABLE transform_t<Type> sub_attribute_copy(const transform_t<Type>& t, const vec_t<3, Type>& value)
+{
+    transform_t<Type> ret(t);
+    ret.p -= value;
+    return ret;
+}
+
+template <typename Type>
+inline CUDA_CALLABLE void adj_sub_attribute_copy(
+    const transform_t<Type>& t,
+    const vec_t<3, Type>& value,
+    transform_t<Type>& adj_t,
+    vec_t<3, Type>& adj_value,
+    const transform_t<Type>& adj_ret
+)
+{
+    adj_t += adj_ret;
+    adj_value -= adj_ret.p;
+}
+
+template <typename Type>
+inline CUDA_CALLABLE transform_t<Type> sub_attribute_copy(const transform_t<Type>& t, const quat_t<Type>& value)
+{
+    transform_t<Type> ret(t);
+    ret.q -= value;
+    return ret;
+}
+
+template <typename Type>
+inline CUDA_CALLABLE void adj_sub_attribute_copy(
+    const transform_t<Type>& t,
+    const quat_t<Type>& value,
+    transform_t<Type>& adj_t,
+    quat_t<Type>& adj_value,
+    const transform_t<Type>& adj_ret
+)
+{
+    adj_t += adj_ret;
+    adj_value -= adj_ret.q;
+}
+
 template <typename Type> inline CUDA_CALLABLE void transform_add_inplace(transform_t<Type>& t, const vec_t<3, Type>& p)
 {
     t.p += p;

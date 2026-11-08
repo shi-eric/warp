@@ -988,6 +988,40 @@ inline CUDA_CALLABLE void adj_assign_inplace(
 }
 
 
+template <typename Aggregate, typename Type>
+inline CUDA_CALLABLE Aggregate add_attribute_copy(const Aggregate& v, int idx, Type value)
+{
+    Aggregate ret(v);
+    ret[idx] += value;
+    return ret;
+}
+
+template <typename Aggregate, typename Type>
+inline CUDA_CALLABLE void adj_add_attribute_copy(
+    const Aggregate& v, int idx, Type value, Aggregate& adj_v, int& adj_idx, Type& adj_value, const Aggregate& adj_ret
+)
+{
+    adj_v += adj_ret;
+    adj_value += adj_ret[idx];
+}
+
+template <typename Aggregate, typename Type>
+inline CUDA_CALLABLE Aggregate sub_attribute_copy(const Aggregate& v, int idx, Type value)
+{
+    Aggregate ret(v);
+    ret[idx] -= value;
+    return ret;
+}
+
+template <typename Aggregate, typename Type>
+inline CUDA_CALLABLE void adj_sub_attribute_copy(
+    const Aggregate& v, int idx, Type value, Aggregate& adj_v, int& adj_idx, Type& adj_value, const Aggregate& adj_ret
+)
+{
+    adj_v += adj_ret;
+    adj_value -= adj_ret[idx];
+}
+
 template <unsigned Length, typename Type>
 inline CUDA_CALLABLE vec_t<Length, Type> assign_copy(vec_t<Length, Type>& v, int idx, Type value)
 {

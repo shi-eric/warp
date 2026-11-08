@@ -15,6 +15,146 @@ def scalar_grad(x: wp.array[float], y: wp.array[float]):
     y[0] = x[0] ** 2.0
 
 
+def make_attribute_augassign_grad_kernel(dtype, increment_dtype, component, subtract, count):
+    @wp.kernel(module="unique")
+    def kernel(a: wp.array[dtype], b: wp.array[increment_dtype], out: wp.array[dtype]):
+        w = a[0]
+        for _ in range(wp.static(count)):
+            if wp.static(component == "y"):
+                if wp.static(subtract):
+                    w.y -= b[0]
+                else:
+                    w.y += b[0]
+            elif wp.static(component == "p"):
+                if wp.static(subtract):
+                    w.p -= b[0]
+                else:
+                    w.p += b[0]
+            else:
+                if wp.static(subtract):
+                    w.q -= b[0]
+                else:
+                    w.q += b[0]
+        out[0] = w
+
+    return kernel
+
+
+def test_attribute_augassign_grad(test, device, subtract):
+    cases = (
+        (wp.vec3, float, "y", [1.0, 2.0, 3.0], [0.5], slice(1, 2)),
+        (wp.quat, float, "y", [1.0, 2.0, 3.0, 4.0], [0.5], slice(1, 2)),
+        (wp.transform, wp.vec3, "p", [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0], [0.5, 1.0, 1.5], slice(0, 3)),
+        (wp.transform, wp.quat, "q", [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0], [0.5, 1.0, 1.5, 2.0], slice(3, 7)),
+    )
+    previous = wp.config.enable_vector_component_overwrites
+    try:
+        for overwrites in (False, True):
+            wp.config.enable_vector_component_overwrites = overwrites
+            for dtype, increment_dtype, component, initial, increment, updated in cases:
+                for count in (1, 3):
+                    with test.subTest(dtype=dtype, component=component, overwrites=overwrites, count=count):
+                        kernel = make_attribute_augassign_grad_kernel(
+                            dtype, increment_dtype, component, subtract, count
+                        )
+                        a = wp.array([initial], dtype=dtype, device=device, requires_grad=True)
+                        b = wp.array(
+                            increment if increment_dtype is float else [increment],
+                            dtype=increment_dtype,
+                            device=device,
+                            requires_grad=True,
+                        )
+                        out = wp.zeros(1, dtype=dtype, device=device, requires_grad=True)
+                        with wp.Tape() as tape:
+                            wp.launch(kernel, dim=1, inputs=[a, b], outputs=[out], device=device)
+                        tape.backward(grads={out: wp.ones_like(out)})
+
+                        # out = initial + signed_count * increment on the selected components.
+                        signed_count = -count if subtract else count
+                        expected = np.array([initial], dtype=np.float32)
+                        expected[0, updated] += signed_count * np.array(increment)
+                        np.testing.assert_allclose(out.numpy(), expected)
+                        np.testing.assert_allclose(a.grad.numpy(), np.ones_like(expected))
+                        np.testing.assert_allclose(b.grad.numpy(), np.full(b.numpy().shape, signed_count))
+    finally:
+        wp.config.enable_vector_component_overwrites = previous
+
+
+def test_attribute_augassign_preserves_primal(test, device):
+    def make_kernel(subtract):
+        @wp.kernel(module="unique")
+        def kernel(a: wp.array[wp.vec3], b: wp.array[float], out: wp.array[float]):
+            w = a[0]
+            before = wp.dot(w, w)
+            if wp.static(subtract):
+                w.y -= b[0]
+            else:
+                w.y += b[0]
+            out[0] = before + w.y
+
+        return kernel
+
+    previous = wp.config.enable_vector_component_overwrites
+    try:
+        for overwrites in (False, True):
+            wp.config.enable_vector_component_overwrites = overwrites
+            for subtract in (False, True):
+                with test.subTest(overwrites=overwrites, subtract=subtract):
+                    a = wp.array([[1.0, 2.0, 3.0]], dtype=wp.vec3, device=device, requires_grad=True)
+                    b = wp.array([0.5], dtype=float, device=device, requires_grad=True)
+                    out = wp.zeros(1, device=device, requires_grad=True)
+                    with wp.Tape() as tape:
+                        wp.launch(make_kernel(subtract), dim=1, inputs=[a, b], outputs=[out], device=device)
+                    tape.backward(out)
+
+                    np.testing.assert_allclose(out.numpy(), [15.5 if subtract else 16.5])
+                    np.testing.assert_allclose(a.grad.numpy(), [[2.0, 5.0, 6.0]])
+                    np.testing.assert_allclose(b.grad.numpy(), [-1.0 if subtract else 1.0])
+    finally:
+        wp.config.enable_vector_component_overwrites = previous
+
+
+@wp.func
+def attribute_augassign_helper(value: wp.vec3):
+    value.y += 0.5
+    value.y += 0.5
+    value.y += 0.5
+    return value.y
+
+
+@wp.kernel(module="test_attribute_augassign_helpers", enable_backward=False)
+def attribute_augassign_helper_forward(a: wp.array[wp.vec3], out: wp.array[float]):
+    out[0] = attribute_augassign_helper(a[0])
+
+
+@wp.kernel(module="test_attribute_augassign_helpers", enable_backward=True)
+def attribute_augassign_helper_backward(a: wp.array[wp.vec3], out: wp.array[float]):
+    out[0] = attribute_augassign_helper(a[0])
+
+
+@wp.kernel(module="unique", enable_backward=False)
+def attribute_augassign_helper_explicit_grad(a: wp.array[wp.vec3], out: wp.array[wp.vec3]):
+    gradient = wp.grad(attribute_augassign_helper)
+    out[0] = gradient(a[0])
+
+
+def test_attribute_augassign_helper_gradients(test, device):
+    a = wp.array([[1.0, 2.0, 3.0]], dtype=wp.vec3, device=device, requires_grad=True)
+    out = wp.zeros(1, dtype=float, device=device, requires_grad=True)
+
+    # Build the shared helper from a forward-only entry point first.
+    wp.launch(attribute_augassign_helper_forward, dim=1, inputs=[a], outputs=[out], device=device)
+    with wp.Tape() as tape:
+        wp.launch(attribute_augassign_helper_backward, dim=1, inputs=[a], outputs=[out], device=device)
+    tape.backward(out)
+    np.testing.assert_allclose(out.numpy(), [3.5])
+    np.testing.assert_allclose(a.grad.numpy(), [[0.0, 1.0, 0.0]])
+
+    gradient = wp.empty_like(a)
+    wp.launch(attribute_augassign_helper_explicit_grad, dim=1, inputs=[a], outputs=[gradient], device=device)
+    np.testing.assert_allclose(gradient.numpy(), [[0.0, 1.0, 0.0]])
+
+
 def test_scalar_grad(test, device):
     x = wp.array([3.0], dtype=float, device=device, requires_grad=True)
     y = wp.zeros_like(x)
@@ -949,6 +1089,14 @@ class TestGrad(unittest.TestCase):
 add_function_test(TestGrad, "test_for_loop_nested_for_grad", test_for_loop_nested_for_grad, devices=devices)
 add_function_test(TestGrad, "test_for_loop_sibling_reassign_grad", test_for_loop_sibling_reassign_grad, devices=devices)
 add_function_test(TestGrad, "test_scalar_grad", test_scalar_grad, devices=devices)
+add_function_test(TestGrad, "test_attribute_add_grad", test_attribute_augassign_grad, devices=devices, subtract=False)
+add_function_test(TestGrad, "test_attribute_sub_grad", test_attribute_augassign_grad, devices=devices, subtract=True)
+add_function_test(
+    TestGrad, "test_attribute_augassign_preserves_primal", test_attribute_augassign_preserves_primal, devices=devices
+)
+add_function_test(
+    TestGrad, "test_attribute_augassign_helper_gradients", test_attribute_augassign_helper_gradients, devices=devices
+)
 add_function_test(TestGrad, "test_for_loop_grad", test_for_loop_grad, devices=devices)
 add_function_test(TestGrad, "test_for_loop_strided_grad", test_for_loop_strided_grad, devices=devices)
 add_function_test(TestGrad, "test_for_loop_reversed_strided_grad", test_for_loop_reversed_strided_grad, devices=devices)
