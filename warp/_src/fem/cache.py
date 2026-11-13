@@ -437,6 +437,12 @@ class TemporaryStore:
     or can be set globally as the default store using :func:`set_default_temporary_store`.
 
     By default, there is no default temporary store, so that temporary allocations are not persisted.
+
+    Note:
+        Clearing or destroying this store invalidates arrays that still use its memory, including arrays referenced
+        by FEM objects. Retaining Python references to these arrays or objects does not preserve their storage.
+        Call ``array.detach()`` before clearing or destroying the store to transfer ownership of an array's
+        allocation to the array and preserve its validity independently of the store.
     """
 
     _default_store: ClassVar[Optional["TemporaryStore"]] = None
