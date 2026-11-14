@@ -9,7 +9,7 @@ Problems, questions, and feature requests can be opened on `GitHub Issues <https
 Unsupported Features
 --------------------
 
-To achieve good performance on GPUs some dynamic language features are not supported:
+Warp kernels and user functions do not support these Python features at runtime:
 
 * Lambda functions
 * List comprehensions
@@ -17,6 +17,10 @@ To achieve good performance on GPUs some dynamic language features are not suppo
 * Recursion
 * Runtime evaluation of expressions, e.g.: eval()
 * Dynamic structures such as lists, sets, dictionaries, etc.
+
+Python host code can use these features. Expressions evaluated by :func:`wp.static() <warp.static>`
+can also use list comprehensions, lambda calls, and dictionary lookups when their inputs are known
+at compile time and their result is a supported kernel value.
 
 Kernels and User Functions
 --------------------------
@@ -57,17 +61,16 @@ The total number of threads in a multidimensional grid may exceed :math:`2^{31}`
 within these limits. Use 64-bit arithmetic when flattening such coordinates into a linear index. See
 :ref:`large-array launch indexing <large_launch_indexing>` for an example.
 
-By default, Warp will try to process one element from the Warp grid in one CUDA thread.
-This is not always possible for kernels launched with multi-dimensional grid bounds, as there are
-`hardware limitations <https://docs.nvidia.com/cuda/cuda-programming-guide/05-appendices/compute-capabilities.html#features-and-technical-specifications>`_
-on CUDA block dimensions.
+Warp uses one-dimensional CUDA thread blocks with dimensions ``(block_dim, 1, 1)``, even when
+the logical Warp grid is multidimensional. Multidimensional CUDA thread blocks are not supported.
 
-Warp will automatically fall back to using
-`grid-stride loops <https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/>`_ when
-it is not possible for a CUDA thread to process only one element from the Warp grid.
-When this happens, some CUDA threads may process more than one element from the Warp grid.
-Users can also set the ``max_blocks`` parameter to fine-tune the grid-striding behavior of kernels, even for kernels that are otherwise
-able to process one Warp-grid element per CUDA thread. 
+By default, kernels use
+`grid-stride loops <https://developer.nvidia.com/blog/cuda-pro-tip-write-flexible-kernels-grid-stride-loops/>`_.
+A CUDA thread processes additional elements of the logical Warp grid when the launch needs more threads
+than the CUDA grid supplies. Set ``max_blocks`` to cap the number of CUDA blocks and control this behavior.
+
+Kernels compiled with ``grid_stride=False`` use no grid-stride loop. On CUDA, launching such a kernel with
+``max_blocks > 0`` raises a ``RuntimeError``. Use ``grid_stride=True`` when capping the block count.
 
 Differentiability
 -----------------
@@ -81,7 +84,10 @@ Arrays
   :math:`2^{31}-1`. As a result, one-dimensional Warp arrays cannot represent larger logical data sets; split them
   across multiple dimensions instead. See :ref:`large-array launch indexing <large_launch_indexing>` for the launch
   and indexing pattern.
-* There is currently no dedicated complex scalar type.
+* There is currently no dedicated complex scalar type. :func:`tile_fft <warp.tile_fft>` and
+  :func:`tile_ifft <warp.tile_ifft>` use ``wp.vec2f`` or ``wp.vec2d`` for complex values: the first
+  component is the real part and the second is the imaginary part. Arithmetic on these types follows
+  vector rules.
 * ``wp.config.launch_array_access_mode = wp.config.LaunchArrayAccessMode.CHECKED``
   only fully verifies cross-device :class:`wp.array <warp.array>` arguments when
   Warp can classify the pointer and prove the relevant access requirements.
@@ -109,8 +115,10 @@ Multiple Processes
 
 * A CUDA context created in the parent process cannot be used in a *forked* child process.
   Use the spawn start method instead, or avoid creating CUDA contexts in the parent process.
-* There can be issues with using same user kernel cache directory when running with multiple processes.
-  A workaround is to use a separate cache directory for every process.
+* Clearing a shared kernel or LTO cache while another process is compiling or loading kernels is unsupported
+  and can cause compilation failures, module-loading failures, or process termination.
+  If shared caches need clearing, clear them before starting workers. Use a separate cache directory
+  for each process that may clear its cache independently.
   See the :ref:`Configuration` section for how the cache directory may be changed.
 
 Scalar Math Functions
@@ -133,12 +141,13 @@ The behavior of the modulus operator in a Warp kernel follows that of C++11: The
         # Kernel-scope behavior:
         a = -3 % 2 # a is -1 
         b = 3 % -2 # b is 1
-        c = 3 % 0  # Undefined behavior
 
     # Python-scope behavior:
     a = -3 % 2 # a is 1
     b = 3 % -2 # b is -1
-    c = 3 % 0  # ZeroDivisionError
+
+For integer operands, the divisor must be nonzero. A zero divisor causes undefined behavior in Warp kernels;
+Python raises a ``ZeroDivisionError`` exception.
 
 Power Operator
 """"""""""""""
@@ -186,30 +195,13 @@ representation, including the sign bit for signed inputs. In contrast, Python's
 For example, ``wp.bit_count(wp.int8(-1))`` returns ``8``, whereas Python's ``(-1).bit_count()`` returns ``1``.
 The difference applies both in Warp kernels and when calling ``wp.bit_count()`` from Python.
 
-Variable Scope
---------------
+.. _variable-scope:
 
-When writing Warp kernels, reading uninitialized variables can behave differently than in standard Python.
-This can sometimes lead to unexpected results.
+Conditional Initialization
+--------------------------
 
-In standard Python, variables assigned inside an ``if`` block belong to the enclosing function's scope.
-Consider this example:
-
-.. code-block:: python
-
-    @wp.func
-    def foo(cond: bool):
-        if cond:
-            out = 123
-        else:
-            out = 234
-
-        print(out)
-
-This code works as expected in standard Python.
-Regardless of the value of ``cond``, ``out`` is defined before being printed.
-
-However, consider a slightly modified example:
+Warp does not check for unassigned local variables at runtime. Assign a value on every execution path
+before reading a local variable. In this function, ``out`` is uninitialized when ``cond`` is ``False``:
 
 .. code-block:: python
 
@@ -218,21 +210,30 @@ However, consider a slightly modified example:
         if cond:
             out = x + 123
 
-        print(out) # No error even when `cond` is `False`.
+        print(out)
 
-In standard Python, if ``cond`` is ``False``, the call to ``print(out)`` would raise an ``UnboundLocalError`` because
-``out`` was never assigned a value.
+Reading ``out`` when ``cond`` is ``False`` can cause undefined behavior. Python would raise an
+``UnboundLocalError``. Give ``out`` an initial value before the ``if`` statement, or assign it in both branches:
 
-In Warp, the behavior is different. The call to ``print(out)`` *will not* raise an error, even if ``cond`` is ``False``.
-Warp does not check whether ``out`` was assigned before it is read.
-However, if ``cond`` is ``False``, ``out`` will be uninitialized, leading to undefined behavior.
+.. code-block:: python
+
+    @wp.func
+    def foo(cond: bool, x: int):
+        out = 0
+        if cond:
+            out = x + 123
+
+        print(out)
+
+Literal assignments can be compiled as constants and mask missing initialization.
 
 .. _limitations-arrays-in-structs:
 
 Arrays in Structs
 -----------------
 
-Modifying flags on arrays stored in structs may not trigger an update to the underlying struct memory, e.g.:
+When you assign an array to a struct field, Warp copies the array's native descriptor into the struct.
+Changing flags on the Python array later may leave that copy unchanged:
 
 .. code-block:: python
 
@@ -245,12 +246,16 @@ Modifying flags on arrays stored in structs may not trigger an update to the und
     s = MyStruct()
     s.arr = a
 
-    # modify original array
+    # Enable gradients on the Python array without updating the struct descriptor.
     a.requires_grad = True
 
+``s.arr`` is the same Python array as ``a``, so ``s.arr.requires_grad`` is ``True``. The struct's copied
+descriptor still has no gradient pointer, so backward kernel launches may not accumulate gradients.
+Reassign the field to copy the updated descriptor into the struct:
 
-In this case, ``s.arr.requires_grad`` is ``True``, but the struct's copied array descriptor still has no gradient pointer,
-which could lead to gradients not being computed during backward kernel launches.
+.. code-block:: python
+
+    s.arr = a
 
 Tile reductions and atomics on struct-valued tiles do not accumulate the contents of array fields.
 Which array descriptor survives is unspecified. See :ref:`tile-struct-element-types` for details and an example.

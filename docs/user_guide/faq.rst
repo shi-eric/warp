@@ -296,9 +296,9 @@ or set :attr:`warp.config.kernel_cache_dir` before calling
 while building the image or follow :ref:`Ahead-of-Time Compilation Workflows
 <ahead_of_time_compilation_workflows>`.
 
-If several workers may compile at once, populate a shared cache before starting
-them or give each worker a separate writable cache directory. Multiple
-processes should not populate the same cache concurrently.
+Workers can compile concurrently into a shared cache. If shared kernel or LTO
+caches need clearing, clear them before starting workers. Use a separate
+writable cache directory for each worker that may clear its cache independently.
 :doc:`programming_model/code_generation` describes module hashing and compilation in detail.
 
 Why can't I assign individual Warp array elements from Python?
@@ -469,10 +469,12 @@ launching kernels. Do not use a CUDA context inherited through ``fork``. Use
 ``spawn`` or ``forkserver`` instead, or make sure the parent has not initialized
 CUDA before it forks.
 
-Processes that compile concurrently need separate kernel-cache directories to
-avoid cache races. Set :attr:`warp.config.kernel_cache_dir` before calling
-:func:`wp.init() <warp.init>`, or assign a distinct ``WARP_CACHE_PATH`` to each
-process. Current multiprocessing restrictions are listed in
+Workers can share a kernel cache, including during compilation. Do not clear
+shared kernel or LTO caches while another process is compiling or loading
+kernels. If workers need to clear their caches independently, give each worker
+a separate cache directory: set :attr:`warp.config.kernel_cache_dir` before
+calling :func:`wp.init() <warp.init>`, or assign a distinct ``WARP_CACHE_PATH``
+to each process. Current multiprocessing restrictions are listed in
 :doc:`limitations`.
 
 Differentiation and Interoperability
