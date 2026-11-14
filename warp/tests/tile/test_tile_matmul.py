@@ -523,40 +523,226 @@ def tile_gemm_bf16(A: wp.array2d[wp.bfloat16], B: wp.array2d[wp.bfloat16], C: wp
     wp.tile_store(C, sum, offset=(i * TILE_M, j * TILE_N))
 
 
-def test_tile_gemm_bf16(test, device):
-    M = TILE_M * 7
-    K = TILE_K * 6
-    N = TILE_N * 5
+# The module keeps the backward pass enabled, and only the kernel disables it.
+@wp.kernel(module="unique", enable_backward=False)
+def tile_gemm_bf16_kernel_backward_disabled(
+    A: wp.array2d[wp.bfloat16], B: wp.array2d[wp.bfloat16], C: wp.array2d[wp.float32]
+):
+    i, j = wp.tid()
 
+    sum = wp.tile_zeros(shape=(TILE_M, TILE_N), dtype=wp.float32)
+
+    count = int(A.shape[1] / TILE_K)
+    for k in range(0, count):
+        a = wp.tile_load(A, shape=(TILE_M, TILE_K), offset=(i * TILE_M, k * TILE_K))
+        b = wp.tile_load(B, shape=(TILE_K, TILE_N), offset=(k * TILE_K, j * TILE_N))
+        wp.tile_matmul(a, b, sum)
+
+    wp.tile_store(C, sum, offset=(i * TILE_M, j * TILE_N))
+
+
+@wp.func
+def tile_gemm_bf16_block(
+    A: wp.array2d[wp.bfloat16], B: wp.array2d[wp.bfloat16], C: wp.array2d[wp.float32], i: int, j: int
+):
+    sum = wp.tile_zeros(shape=(TILE_M, TILE_N), dtype=wp.float32)
+
+    count = int(A.shape[1] / TILE_K)
+    for k in range(0, count):
+        a = wp.tile_load(A, shape=(TILE_M, TILE_K), offset=(i * TILE_M, k * TILE_K))
+        b = wp.tile_load(B, shape=(TILE_K, TILE_N), offset=(k * TILE_K, j * TILE_N))
+        wp.tile_matmul(a, b, sum)
+
+    wp.tile_store(C, sum, offset=(i * TILE_M, j * TILE_N))
+
+
+# A @wp.func is compiled once per module, so the product in it is built without adjoint LTOs only
+# when no kernel in the module enables the backward pass. This kernel is alone in its module.
+@wp.kernel(module="unique", enable_backward=False)
+def tile_gemm_bf16_func_kernel_backward_disabled(
+    A: wp.array2d[wp.bfloat16], B: wp.array2d[wp.bfloat16], C: wp.array2d[wp.float32]
+):
+    i, j = wp.tid()
+    tile_gemm_bf16_block(A, B, C, i, j)
+
+
+def make_test_tile_gemm_bf16(kernel):
+    def test_tile_gemm_bf16(test, device):
+        """Multiply ``bfloat16`` tiles in a kernel compiled without a backward pass."""
+        M = TILE_M * 7
+        K = TILE_K * 6
+        N = TILE_N * 5
+
+        rng = np.random.default_rng(42)
+        A = rng.random((M, K), dtype=np.float32)
+        B = rng.random((K, N), dtype=np.float32)
+
+        # Convert float32 numpy data to bfloat16 on device via kernels
+        A_f32 = wp.array(A, device=device)
+        B_f32 = wp.array(B, device=device)
+        A_wp = wp.zeros((M, K), dtype=wp.bfloat16, device=device)
+        B_wp = wp.zeros((K, N), dtype=wp.bfloat16, device=device)
+        C_wp = wp.zeros((M, N), dtype=wp.float32, device=device)
+
+        wp.launch(f32_to_bf16_kernel, dim=(M, K), inputs=[A_f32, A_wp], device=device)
+        wp.launch(f32_to_bf16_kernel, dim=(K, N), inputs=[B_f32, B_wp], device=device)
+
+        wp.launch_tiled(
+            kernel,
+            dim=(int(M / TILE_M), int(N / TILE_N)),
+            inputs=[A_wp, B_wp, C_wp],
+            block_dim=TILE_DIM,
+            device=device,
+        )
+
+        # Quantize reference inputs through bfloat16 to match what the kernel sees
+        A_ref = wp.zeros((M, K), dtype=wp.float32, device=device)
+        B_ref = wp.zeros((K, N), dtype=wp.float32, device=device)
+        wp.launch(bf16_to_f32_kernel, dim=(M, K), inputs=[A_wp, A_ref], device=device)
+        wp.launch(bf16_to_f32_kernel, dim=(K, N), inputs=[B_wp, B_ref], device=device)
+
+        np.testing.assert_allclose(C_wp.numpy(), A_ref.numpy() @ B_ref.numpy(), rtol=1.0e-2)
+
+    return test_tile_gemm_bf16
+
+
+@wp.kernel(
+    module="unique",
+    module_options={"deterministic": wp.config.DeterministicMode.RUN_TO_RUN},
+    enable_backward=False,
+)
+def tile_gemm_bf16_deterministic_kernel_backward_disabled(
+    A: wp.array2d[wp.bfloat16], B: wp.array2d[wp.bfloat16], C: wp.array2d[wp.float32]
+):
+    a = wp.tile_load(A, shape=(TILE_M, TILE_K))
+    b = wp.tile_load(B, shape=(TILE_K, TILE_N))
+    c = wp.tile_zeros(shape=(TILE_M, TILE_N), dtype=wp.float32)
+    wp.tile_matmul(a, b, c)
+    wp.tile_store(C, c)
+
+
+def test_tile_gemm_bf16_kernel_backward_disabled_reload(test, device):
+    """Reload a deterministic ``bfloat16`` kernel that disables its own backward pass.
+
+    Loading a deterministic module from the kernel cache rebuilds its kernels without a module builder
+    to collect launch metadata, and that rebuild must also honor the kernel's ``enable_backward=False``.
+    """
     rng = np.random.default_rng(42)
-    A = rng.random((M, K), dtype=np.float32)
-    B = rng.random((K, N), dtype=np.float32)
+    # small integers are exact in bfloat16
+    A = rng.integers(0, 4, size=(TILE_M, TILE_K)).astype(np.float32)
+    B = rng.integers(0, 4, size=(TILE_K, TILE_N)).astype(np.float32)
 
-    # Convert float32 numpy data to bfloat16 on device via kernels
-    A_f32 = wp.array(A, device=device)
-    B_f32 = wp.array(B, device=device)
-    A_wp = wp.zeros((M, K), dtype=wp.bfloat16, device=device)
-    B_wp = wp.zeros((K, N), dtype=wp.bfloat16, device=device)
-    C_wp = wp.zeros((M, N), dtype=wp.float32, device=device)
+    A_wp = wp.array(A, dtype=wp.bfloat16, device=device)
+    B_wp = wp.array(B, dtype=wp.bfloat16, device=device)
 
-    wp.launch(f32_to_bf16_kernel, dim=(M, K), inputs=[A_f32, A_wp], device=device)
-    wp.launch(f32_to_bf16_kernel, dim=(K, N), inputs=[B_f32, B_wp], device=device)
+    kernel = tile_gemm_bf16_deterministic_kernel_backward_disabled
+    for _ in range(2):
+        C_wp = wp.zeros((TILE_M, TILE_N), dtype=wp.float32, device=device)
+        wp.launch_tiled(kernel, dim=1, inputs=[A_wp, B_wp], outputs=[C_wp], block_dim=TILE_DIM, device=device)
+        np.testing.assert_array_equal(C_wp.numpy(), A @ B)
+        # the second launch loads the module from the kernel cache
+        kernel.module.unload()
 
-    wp.launch_tiled(
-        tile_gemm_bf16,
-        dim=(int(M / TILE_M), int(N / TILE_N)),
-        inputs=[A_wp, B_wp, C_wp],
-        block_dim=TILE_DIM,
-        device=device,
+
+# The module disables the backward pass, and only the kernel enables it. The tiles are square so
+# that an adjoint product computed with the forward GEMM's shapes would stay in bounds.
+@wp.kernel(module="unique", module_options={"enable_backward": False}, enable_backward=True)
+def tile_matmul_kernel_backward_enabled(A: wp.array2d[float], B: wp.array2d[float], C: wp.array2d[float]):
+    a = wp.tile_load(A, shape=(TILE_K, TILE_K))
+    b = wp.tile_load(B, shape=(TILE_K, TILE_K))
+    c = wp.tile_zeros(shape=(TILE_K, TILE_K), dtype=float)
+    wp.tile_matmul(a, b, c)
+    wp.tile_store(C, c)
+
+
+def test_tile_matmul_kernel_backward_enabled(test, device):
+    """Differentiate ``tile_matmul()`` in a kernel that enables the backward pass its module disables."""
+    rng = np.random.default_rng(42)
+    A = rng.random((TILE_K, TILE_K), dtype=np.float32)
+    B = rng.random((TILE_K, TILE_K), dtype=np.float32)
+    adj_C = rng.random((TILE_K, TILE_K), dtype=np.float32)
+
+    A_wp = wp.array(A, requires_grad=True, device=device)
+    B_wp = wp.array(B, requires_grad=True, device=device)
+    C_wp = wp.zeros((TILE_K, TILE_K), dtype=float, requires_grad=True, device=device)
+
+    with wp.Tape() as tape:
+        wp.launch_tiled(
+            tile_matmul_kernel_backward_enabled,
+            dim=1,
+            inputs=[A_wp, B_wp],
+            outputs=[C_wp],
+            block_dim=TILE_DIM,
+            device=device,
+        )
+    tape.backward(grads={C_wp: wp.array(adj_C, device=device)})
+
+    assert_np_equal(C_wp.numpy(), A @ B, tol=1.0e-5)
+    assert_np_equal(A_wp.grad.numpy(), adj_C @ B.T, tol=1.0e-5)
+    assert_np_equal(B_wp.grad.numpy(), A.T @ adj_C, tol=1.0e-5)
+
+
+def make_tile_matmul_shared_helper_kernels(index):
+    """Return a forward-only kernel and a backward kernel that share a new generic ``tile_matmul()`` helper.
+
+    Both kernels go in one module, which builds the helper once, while building whichever of the two
+    kernels comes first in its build order. That order follows the kernels' content hashes.
+    """
+
+    @wp.func
+    def helper(A: Any, B: Any, C: Any):
+        a = wp.tile_load(A, shape=(TILE_K, TILE_K))
+        b = wp.tile_load(B, shape=(TILE_K, TILE_K))
+        wp.tile_store(C, wp.tile_matmul(a, b))
+
+    @wp.kernel(
+        module="test_tile_matmul_shared_helper",
+        enable_backward=False,
+        name=f"tile_matmul_shared_helper_forward_{index}",
     )
+    def forward_kernel(A: wp.array2d[float], B: wp.array2d[float], C: wp.array2d[float]):
+        helper(A, B, C)
 
-    # Quantize reference inputs through bfloat16 to match what the kernel sees
-    A_ref = wp.zeros((M, K), dtype=wp.float32, device=device)
-    B_ref = wp.zeros((K, N), dtype=wp.float32, device=device)
-    wp.launch(bf16_to_f32_kernel, dim=(M, K), inputs=[A_wp, A_ref], device=device)
-    wp.launch(bf16_to_f32_kernel, dim=(K, N), inputs=[B_wp, B_ref], device=device)
+    @wp.kernel(module="test_tile_matmul_shared_helper", name=f"tile_matmul_shared_helper_backward_{index}")
+    def backward_kernel(A: wp.array2d[float], B: wp.array2d[float], C: wp.array2d[float]):
+        helper(A, B, C)
 
-    np.testing.assert_allclose(C_wp.numpy(), A_ref.numpy() @ B_ref.numpy(), rtol=1.0e-2)
+    return forward_kernel, backward_kernel
+
+
+# A pair exposes a helper built without its adjoint only when its forward-only kernel is built first, so
+# several independent pairs keep the test sensitive when a change to hashed content reorders the kernels.
+tile_matmul_shared_helper_kernels = [make_tile_matmul_shared_helper_kernels(i) for i in range(4)]
+
+
+def test_tile_matmul_shared_helper_backward(test, device):
+    """Differentiate generic ``tile_matmul()`` helpers that forward-only kernels in their module also call."""
+    rng = np.random.default_rng(42)
+    A = rng.random((TILE_K, TILE_K), dtype=np.float32)
+    B = rng.random((TILE_K, TILE_K), dtype=np.float32)
+    adj_C = rng.random((TILE_K, TILE_K), dtype=np.float32)
+
+    for forward_kernel, backward_kernel in tile_matmul_shared_helper_kernels:
+        with test.subTest(kernel=backward_kernel.key):
+            A_wp = wp.array(A, requires_grad=True, device=device)
+            B_wp = wp.array(B, requires_grad=True, device=device)
+
+            C_forward = wp.zeros((TILE_K, TILE_K), dtype=float, device=device)
+            wp.launch_tiled(
+                forward_kernel, dim=1, inputs=[A_wp, B_wp], outputs=[C_forward], block_dim=TILE_DIM, device=device
+            )
+            assert_np_equal(C_forward.numpy(), A @ B, tol=1.0e-5)
+
+            C_wp = wp.zeros((TILE_K, TILE_K), dtype=float, requires_grad=True, device=device)
+            with wp.Tape() as tape:
+                wp.launch_tiled(
+                    backward_kernel, dim=1, inputs=[A_wp, B_wp], outputs=[C_wp], block_dim=TILE_DIM, device=device
+                )
+            tape.backward(grads={C_wp: wp.array(adj_C, device=device)})
+
+            assert_np_equal(C_wp.numpy(), A @ B, tol=1.0e-5)
+            assert_np_equal(A_wp.grad.numpy(), adj_C @ B.T, tol=1.0e-5)
+            assert_np_equal(B_wp.grad.numpy(), A.T @ adj_C, tol=1.0e-5)
 
 
 def test_tile_matmul_bf16_out_rejected(test, device):
@@ -1403,7 +1589,50 @@ add_function_test(
     devices=devices,
     check_output=False,
 )
-add_function_test(TestTileMatmul, "test_tile_gemm_bf16", test_tile_gemm_bf16, devices=bf16_devices, check_output=False)
+add_function_test(
+    TestTileMatmul,
+    "test_tile_gemm_bf16",
+    make_test_tile_gemm_bf16(tile_gemm_bf16),
+    devices=bf16_devices,
+    check_output=False,
+)
+add_function_test(
+    TestTileMatmul,
+    "test_tile_gemm_bf16_kernel_backward_disabled",
+    make_test_tile_gemm_bf16(tile_gemm_bf16_kernel_backward_disabled),
+    devices=bf16_devices,
+    check_output=False,
+)
+add_function_test(
+    TestTileMatmul,
+    "test_tile_gemm_bf16_func_kernel_backward_disabled",
+    make_test_tile_gemm_bf16(tile_gemm_bf16_func_kernel_backward_disabled),
+    devices=bf16_devices,
+    check_output=False,
+)
+add_function_test(
+    TestTileMatmul,
+    "test_tile_gemm_bf16_kernel_backward_disabled_reload",
+    test_tile_gemm_bf16_kernel_backward_disabled_reload,
+    devices=bf16_devices,
+    check_output=False,
+)
+add_function_test(
+    TestTileMatmul,
+    "test_tile_matmul_kernel_backward_enabled",
+    test_tile_matmul_kernel_backward_enabled,
+    devices=devices,
+    check_output=False,
+)
+# CUDA only: the CPU path has no adjoint LTOs, and a CPU build earlier in the process leaves the helper
+# marked as reached by a backward kernel, which would hide the CUDA case
+add_function_test(
+    TestTileMatmul,
+    "test_tile_matmul_shared_helper_backward",
+    test_tile_matmul_shared_helper_backward,
+    devices=cuda_devices,
+    check_output=False,
+)
 add_function_test(
     TestTileMatmul,
     "test_tile_matmul_bf16_out_rejected",

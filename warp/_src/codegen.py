@@ -3040,6 +3040,20 @@ class Adjoint:
 
         return func, bound_args, bound_arg_nodes
 
+    def lto_dispatch_options(adj):
+        """Return the options for a builtin's ``lto_dispatch_func`` called while building this code.
+
+        These are the builder options with ``enable_backward`` replaced by whether this code's
+        adjoint can be emitted, which decides whether the dispatch builds adjoint LTOs. The module
+        option alone misses a kernel's own ``enable_backward``.
+        """
+        if adj.builder is not None:
+            enable_backward = adj.builder.lto_enable_backward(adj)
+        else:
+            # builds without a module builder only infer types and metadata, and their code is not compiled
+            enable_backward = adj.used_by_backward_kernel or adj.force_adjoint_codegen
+        return adj.builder_options | {"enable_backward": enable_backward}
+
     def add_call(
         adj,
         func,
@@ -3175,7 +3189,12 @@ class Adjoint:
         func_arg_names = tuple(bound_args.keys())
         if func.lto_dispatch_func is not None:
             func_args, template_args, _ltoirs, extra_shared_memory = func.lto_dispatch_func(
-                func.input_types, return_type, output_list, bound_args, options=adj.builder_options, builder=adj.builder
+                func.input_types,
+                return_type,
+                output_list,
+                bound_args,
+                options=adj.lto_dispatch_options(),
+                builder=adj.builder,
             )
         elif func.dispatch_func is not None:
             func_args, template_args = func.dispatch_func(func.input_types, return_type, bound_args)

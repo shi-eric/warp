@@ -3646,6 +3646,22 @@ class ModuleBuilder:
                 if callback is not None:
                     self.deferred_functions.append(callback)
 
+    def lto_enable_backward(self, adj) -> bool:
+        """Return whether LTO-backed builtins called from ``adj`` need their adjoint LTOs.
+
+        A kernel's ``used_by_backward_kernel`` already merges the kernel's own ``enable_backward``
+        option (see :meth:`build_kernel`). A user function is built once per module and shared by
+        every kernel that calls it, and which kernels reach it is only final after the whole module
+        is built, so it needs the adjoint LTOs whenever any kernel in the module has the backward
+        pass enabled.
+        """
+        if adj.force_adjoint_codegen:
+            return True
+        # match kernels by identity: the overloads of a generic @wp.func do not set is_user_function
+        if any(kernel.adj is adj for kernel in self.kernels):
+            return adj.used_by_backward_kernel
+        return any((self.options | kernel.options)["enable_backward"] for kernel in self.kernels)
+
     def _propagate_used_by_backward_kernel(self):
         # build_function() memoizes, so a helper built from a forward-only path before a backward
         # kernel reaches it keeps its callees stubbed; re-propagate across the graph to a fixpoint.

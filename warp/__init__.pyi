@@ -11513,10 +11513,13 @@ def tile_matmul(
 
     ``a``, ``b``, and ``out`` may independently use ``float16``, ``float32``, or
     ``float64``. Accumulation uses the dtype of ``out``. Currently, ``a`` and ``b`` may
-    also use ``bfloat16`` when backward compilation is disabled with the module option
-    ``enable_backward=False``. Apart from the ``M``, ``N``, and ``K`` extents having to
-    agree, the shapes are unconstrained, but large tiles may exhaust shared memory or
-    fail to compile the cuBLASDx kernel.
+    also use ``bfloat16`` when the backward pass is disabled for the calling kernel, with
+    ``@wp.kernel(enable_backward=False)`` or the module option ``enable_backward=False``.
+    A ``@wp.func`` that calls ``tile_matmul()`` is compiled once for each module that
+    uses it, so it needs the backward pass disabled for every kernel in that module.
+    Apart from the ``M``, ``N``, and ``K`` extents having to agree, the shapes are
+    unconstrained, but large tiles may exhaust shared memory or fail to compile the
+    cuBLASDx kernel.
 
     Tile data is migrated to shared memory when necessary.
 

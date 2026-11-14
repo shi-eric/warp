@@ -18624,9 +18624,10 @@ def tile_matmul_lto_dispatch_func(
         raise TypeError(
             "tile_matmul() does not support bfloat16 'a' or 'b' tiles when the backward pass is enabled. "
             "Allowed accumulator dtypes are float16, float32, and float64 (the backward pass uses 'a' "
-            "and 'b' as accumulators for adjA and adjB). If gradients are not needed, set "
-            "`enable_backward=False` on the kernel's module, e.g. "
-            "`wp.set_module_options({'enable_backward': False})`."
+            "and 'b' as accumulators for adjA and adjB). If gradients are not needed, disable the backward pass "
+            "for the kernel, e.g. `@wp.kernel(enable_backward=False)`, or for its module, e.g. "
+            "`wp.set_module_options({'enable_backward': False})`. A `@wp.func` that calls tile_matmul() needs "
+            "the backward pass disabled for every kernel in each module that uses the function."
         )
 
     if (
@@ -18872,10 +18873,13 @@ add_builtin(
 
     ``a``, ``b``, and ``out`` may independently use ``float16``, ``float32``, or
     ``float64``. Accumulation uses the dtype of ``out``. Currently, ``a`` and ``b`` may
-    also use ``bfloat16`` when backward compilation is disabled with the module option
-    ``enable_backward=False``. Apart from the ``M``, ``N``, and ``K`` extents having to
-    agree, the shapes are unconstrained, but large tiles may exhaust shared memory or
-    fail to compile the cuBLASDx kernel.
+    also use ``bfloat16`` when the backward pass is disabled for the calling kernel, with
+    ``@wp.kernel(enable_backward=False)`` or the module option ``enable_backward=False``.
+    A ``@wp.func`` that calls ``tile_matmul()`` is compiled once for each module that
+    uses it, so it needs the backward pass disabled for every kernel in that module.
+    Apart from the ``M``, ``N``, and ``K`` extents having to agree, the shapes are
+    unconstrained, but large tiles may exhaust shared memory or fail to compile the
+    cuBLASDx kernel.
 
     Tile data is migrated to shared memory when necessary.
 
