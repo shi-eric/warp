@@ -849,6 +849,28 @@ inline CUDA_CALLABLE bfloat16 _wp_native_fmax(bfloat16 a, bfloat16 b)
 }
 #endif
 
+// Divisor term of the remainder adjoint: d/db fmod(a, b) = -trunc(a / b) away
+// from the discontinuities. Narrow types are promoted through the product so
+// a quotient outside their range does not overflow before it is scaled.
+inline CUDA_CALLABLE float _wp_mod_divisor_adjoint(float a, float b, float adj_ret)
+{
+    return ::truncf(a / b) * adj_ret;
+}
+inline CUDA_CALLABLE double _wp_mod_divisor_adjoint(double a, double b, double adj_ret)
+{
+    return ::trunc(a / b) * adj_ret;
+}
+inline CUDA_CALLABLE float _wp_mod_divisor_adjoint(half a, half b, half adj_ret)
+{
+    return _wp_mod_divisor_adjoint(float(a), float(b), float(adj_ret));
+}
+#ifndef WP_NO_BFLOAT16
+inline CUDA_CALLABLE float _wp_mod_divisor_adjoint(bfloat16 a, bfloat16 b, bfloat16 adj_ret)
+{
+    return _wp_mod_divisor_adjoint(float(a), float(b), float(adj_ret));
+}
+#endif
+
 // basic ops for float types
 //
 // min/max/clamp on floats follow C fmin/fmax semantics: NaN is treated as
@@ -907,7 +929,11 @@ inline CUDA_CALLABLE void adj_floordiv(T a, T b, T& adj_a, T& adj_b, T adj_ret) 
 { \
     /* MISSINGADJOINT: gradient is zero almost everywhere (subgradient at integer points) */ \
 } \
-inline CUDA_CALLABLE void adj_mod(T a, T b, T& adj_a, T& adj_b, T adj_ret){ adj_a += adj_ret; }\
+inline CUDA_CALLABLE void adj_mod(T a, T b, T& adj_a, T& adj_b, T adj_ret)\
+{\
+    adj_a += adj_ret;\
+    adj_b -= T(_wp_mod_divisor_adjoint(a, b, adj_ret));\
+}\
 inline CUDA_CALLABLE void adj_sign(T x, T adj_x, T& adj_ret) \
 { \
     /* MISSINGADJOINT: gradient is zero almost everywhere (subgradient at x = 0) */ \

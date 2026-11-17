@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import unittest
+from fractions import Fraction
 
 import numpy as np
 
@@ -428,7 +429,7 @@ def test_binary_ops(test, device, dtype, register_kernels=False):
 
             # modulus. unless at discontinuities,
             # d/dx1( x1 % x2 ) == 1
-            # d/dx2( x1 % x2 ) == 0
+            # d/dx2( x1 % x2 ) == -trunc(x1 / x2)
             tape = wp.Tape()
             with tape:
                 wp.launch(kernel, dim=1, inputs=[in1, in2], outputs=[outputs], device=device)
@@ -438,7 +439,9 @@ def test_binary_ops(test, device, dtype, register_kernels=False):
             expected = np.zeros_like(in1.numpy())
             expected[4, i] = 2.0
             assert_np_equal(tape.gradients[in1].numpy(), expected, tol=tol)
-            expected[4, i] = 0.0
+            dividend = Fraction(float(in1.numpy()[4, i]))
+            divisor = Fraction(float(in2.numpy()[4, i]))
+            expected[4, i] = -2.0 * int(dividend / divisor)
             assert_np_equal(tape.gradients[in2].numpy(), expected, tol=tol)
             tape.zero()
 
@@ -1125,6 +1128,72 @@ def test_floordiv_negative(test, device, dtype, register_kernels=False):
 
     wp.launch(kernel, dim=1, inputs=[a, b], outputs=[outputs], device=device)
     assert_np_equal(outputs.numpy(), np.floor_divide(a_np, b_np))
+
+
+def test_mod_gradients(test, device, dtype, register_kernels=False):
+    """Differentiate both remainder operands away from the discontinuities."""
+
+    def remainder(a: wp.array[wp.float64], b: wp.array[wp.float64], outputs: wp.array2d[wp.float64]):
+        i = wp.tid()
+        x = dtype(a[i])
+        y = dtype(b[i])
+        outputs[0, i] = wp.float64(wp.mod(x, y))
+        outputs[1, i] = wp.float64(x % y)
+
+    def shared_remainder(a: wp.array[wp.float64], outputs: wp.array[wp.float64]):
+        i = wp.tid()
+        x = dtype(a[i])
+        outputs[i] = wp.float64(wp.mod(x, x - dtype(1.0)))
+
+    kernel = getkernel(remainder, suffix=dtype.__name__)
+    shared_kernel = getkernel(shared_remainder, suffix=dtype.__name__)
+    if register_kernels:
+        return
+
+    precision = {wp.float16: 11, wp.bfloat16: 8, wp.float32: 24, wp.float64: 53}[dtype]
+    cases = [(11.5, 2.25, 0.5), (0.25, 2.25, -0.75), (0.0, 2.25, 1.0)]
+    # The quotient exceeds float16's range, but the seeded derivative fits.
+    cases.extend([(32752.0, 0.25, 0.125), (32752.0, 0.25, 0.0)] if dtype == wp.float16 else [])
+
+    rng = np.random.default_rng(4223)
+    # Binary fractions with at most seven significant bits are exact in every dtype.
+    for _ in range(256):
+        x = float(rng.integers(1, 121)) * 2.0 ** int(rng.integers(-5, 6))
+        y = float(rng.integers(1, 121)) * 2.0 ** int(rng.integers(-6, 1))
+        cases.append((x, y, 0.125))
+
+    cases = [(sa * x, sb * y, seed) for x, y, seed in cases for sa in (-1, 1) for sb in (-1, 1)]
+    a_np, b_np, seeds = np.array(cases, dtype=np.float64).T
+    quotients = [int(Fraction(float(x)) / Fraction(float(y))) for x, y in zip(a_np, b_np, strict=True)]
+    expected_b = np.array(
+        [-float(Fraction(q) * Fraction(float(seed))) for q, seed in zip(quotients, seeds, strict=True)]
+    )
+    a = wp.array(a_np, dtype=wp.float64, device=device, requires_grad=True)
+    b = wp.array(b_np, dtype=wp.float64, device=device, requires_grad=True)
+    outputs = wp.zeros((2, len(cases)), dtype=wp.float64, device=device, requires_grad=True)
+    tolerance = 2.0 ** (1 - precision)
+    for row in range(2):
+        with wp.Tape() as tape:
+            wp.launch(kernel, dim=len(cases), inputs=[a, b], outputs=[outputs], device=device)
+        output_seed = np.zeros((2, len(cases)), dtype=np.float64)
+        output_seed[row] = seeds
+        tape.backward(grads={outputs: wp.array(output_seed, dtype=wp.float64, device=device)})
+        np.testing.assert_allclose(a.grad.numpy(), seeds, rtol=0, atol=0)
+        np.testing.assert_allclose(b.grad.numpy(), expected_b, rtol=tolerance, atol=0)
+        tape.zero()
+
+    shared = wp.array([2.5, 3.5, -2.5, -3.5], dtype=wp.float64, device=device, requires_grad=True)
+    shared_out = wp.zeros(4, dtype=wp.float64, device=device, requires_grad=True)
+    with wp.Tape() as tape:
+        wp.launch(shared_kernel, dim=4, inputs=[shared], outputs=[shared_out], device=device)
+    tape.backward(grads={shared_out: wp.ones_like(shared_out)})
+    np.testing.assert_allclose(shared.grad.numpy(), [0.0, 0.0, 1.0, 1.0], rtol=0, atol=0)
+
+
+for dtype in (wp.float16, wp.bfloat16, wp.float32, wp.float64):
+    add_function_test_register_kernel(
+        TestArithmetic, f"test_mod_gradients_{dtype.__name__}", test_mod_gradients, devices=devices, dtype=dtype
+    )
 
 
 for dtype in np_scalar_types:

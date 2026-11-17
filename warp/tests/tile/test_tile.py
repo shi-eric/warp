@@ -383,6 +383,31 @@ for _dtype in (wp.float32, wp.float64):
     wp.overload(tile_map_builtin_original_output_func, [wp.array2d[_dtype], wp.array2d[_dtype], wp.array2d[_dtype]])
 
 
+@wp.kernel(module="unique")
+def tile_map_mod_func(a: wp.array[Any], b: wp.array[Any], out: wp.array[Any]):
+    x = wp.tile_load(a, shape=4)
+    y = wp.tile_load(b, shape=4)
+    wp.tile_store(out, wp.tile_map(wp.mod, x, y))
+
+
+for _dtype in (wp.float32, wp.float64):
+    wp.overload(tile_map_mod_func, [wp.array[_dtype], wp.array[_dtype], wp.array[_dtype]])
+
+
+def test_tile_map_mod(test, device):
+    """Differentiate remainder maps with respect to both operands."""
+    for dtype in (wp.float32, wp.float64):
+        a = wp.array([5.5, 7.5, -5.5, 0.5], dtype=dtype, device=device, requires_grad=True)
+        b = wp.array([1.5, 2.0, 1.5, 2.0], dtype=dtype, device=device, requires_grad=True)
+        out = wp.zeros(4, dtype=dtype, device=device, requires_grad=True)
+        with wp.Tape() as tape:
+            wp.launch_tiled(tile_map_mod_func, dim=1, inputs=[a, b], outputs=[out], block_dim=32, device=device)
+        tape.backward(grads={out: wp.ones_like(out)})
+        np.testing.assert_allclose(out.numpy(), [1.0, 1.5, -1.0, 0.5], rtol=0, atol=0)
+        np.testing.assert_allclose(a.grad.numpy(), np.ones(4), rtol=0, atol=0)
+        np.testing.assert_allclose(b.grad.numpy(), [-3.0, -3.0, 3.0, 0.0], rtol=0, atol=0)
+
+
 def test_tile_map_builtin_original_output(test, device):
     """Differentiate builtins whose adjoints also take the forward result."""
     rng = np.random.default_rng(42)
@@ -3002,6 +3027,7 @@ add_function_test(
 add_function_test(
     TestTile, "test_tile_map_builtin_original_output", test_tile_map_builtin_original_output, devices=devices
 )
+add_function_test(TestTile, "test_tile_map_mod", test_tile_map_mod, devices=devices)
 add_function_test(TestTile, "test_tile_binary_map_mixed_types", test_tile_binary_map_mixed_types, devices=devices)
 add_function_test(TestTile, "test_tile_n_map", test_tile_n_map, devices=devices)
 add_function_test(TestTile, "test_tile_n_map_mixed_types", test_tile_n_map_mixed_types, devices=devices)
