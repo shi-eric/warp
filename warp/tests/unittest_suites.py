@@ -261,6 +261,7 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
     from warp.tests.test_rand import TestRand
     from warp.tests.test_ref import TestRef
     from warp.tests.test_reload import TestReload
+    from warp.tests.test_remote_cache import TestRemoteCache
     from warp.tests.test_render_opengl import TestOpenGLRenderer
     from warp.tests.test_rounding import TestRounding
     from warp.tests.test_runlength_encode import TestRunlengthEncode
@@ -429,6 +430,7 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
         TestJetOps,
         TestKernelAttributes,
         TestKernelCache,
+        TestRemoteCache,
         TestLarge,
         TestLaunch,
         TestLerp,

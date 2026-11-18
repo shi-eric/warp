@@ -197,6 +197,24 @@ base path to prevent cache collisions between different Warp versions.
 Note: Subdirectories prefixed with ``wp_`` will be created in this location.
 """
 
+remote_cache_dir: str | None = None
+"""Root of the optional remote kernel cache.
+
+On a local cache miss, Warp looks for the compiled kernel module under this
+root before compiling it, and publishes the modules it does compile. The root
+is a directory, such as a network mount, with the same layout as the local
+cache directory.
+
+Set this before :func:`warp.init`. The local kernel cache remains in
+:data:`kernel_cache_dir`.
+"""
+
+remote_cache_read_only: bool = False
+"""Fetch compiled kernel modules from the remote cache without publishing new ones."""
+
+remote_cache_min_compile_time: float = 1.0
+"""Minimum compilation time in seconds for a kernel module to be published to the remote cache."""
+
 cuda_output: str | None = None
 """Preferred CUDA output format for kernel compilation.
 

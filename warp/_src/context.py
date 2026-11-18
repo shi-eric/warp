@@ -25,6 +25,7 @@ import sys
 import tempfile
 import textwrap
 import threading
+import time
 import traceback
 import types
 import weakref
@@ -62,6 +63,7 @@ import warp
 import warp._src.build
 import warp._src.codegen
 import warp._src.module_registry
+import warp._src.remote_cache
 import warp.config
 from warp._src.codegen import WarpCodegenError, WarpCodegenTypeError, _codegen_lock, synchronized
 from warp._src.logger import get_logger, log_debug, log_error, log_info, log_warning
@@ -3128,6 +3130,23 @@ def _get_host_cpu_name() -> str:
     return name_ptr.decode("utf-8") if name_ptr else "unknown"
 
 
+def _commit_remote_kernel_entry(staging_dir: Path, output_dir: Path, binary_name: str, meta_name: str) -> None:
+    """Move a restored binary and its metadata into the cache, binary first as a local compile does."""
+    warp._src.build.safe_rename(staging_dir, output_dir)
+    binary_path = output_dir / binary_name
+    meta_path = output_dir / meta_name
+    if not binary_path.exists():
+        try:
+            os.replace(staging_dir / binary_name, binary_path)
+        except OSError:
+            return
+    if not meta_path.exists():
+        try:
+            os.replace(staging_dir / meta_name, meta_path)
+        except OSError:
+            pass
+
+
 def _verify_library_version(lib, library_name: str, version_symbol: str, expected: str) -> None:
     """Verify a loaded native library's version matches the expected Warp version.
 
@@ -5059,15 +5078,45 @@ class Module:
         else:
             output_dir = os.fspath(output_dir)
 
+        meta_name = self._get_meta_name(block_dim=active_block_dim)
+        meta_path = os.path.join(output_dir, meta_name)
+
         # Skip compilation if the binary and metadata are already cached
         # (forced rebuild when verifying autograd array access)
         if (
             warp.config.cache_kernels
             and not options.get("verify_autograd_array_access", False)
             and os.path.exists(os.path.join(output_dir, output_name))
-            and os.path.exists(os.path.join(output_dir, self._get_meta_name(block_dim=active_block_dim)))
+            and os.path.exists(meta_path)
         ):
             return False
+
+        # The remote cache mirrors the local kernel cache, so it only serves builds
+        # that land there under a name that identifies the module's contents.
+        normal_cache_dir = (
+            os.path.join(warp.config.kernel_cache_dir, module_name_short)
+            if warp.config.kernel_cache_dir is not None
+            else None
+        )
+        use_remote_cache = (
+            warp.config.cache_kernels
+            and not options.get("verify_autograd_array_access", False)
+            and not self.options["strip_hash"]
+            and normal_cache_dir is not None
+            and os.path.normcase(os.path.abspath(output_dir)) == os.path.normcase(os.path.abspath(normal_cache_dir))
+            and warp._src.remote_cache.is_enabled()
+        )
+        if use_remote_cache:
+            with tempfile.TemporaryDirectory(prefix="remote-kernel-", dir=warp.config.kernel_cache_dir) as staging:
+                if warp._src.remote_cache.fetch(module_name_short, (output_name, meta_name), Path(staging)):
+                    try:
+                        _commit_remote_kernel_entry(Path(staging), Path(output_dir), output_name, meta_name)
+                    except OSError as exc:
+                        log_warning(f"Could not publish restored kernel entry locally: {exc}", once=True)
+                    if os.path.exists(os.path.join(output_dir, output_name)) and os.path.exists(meta_path):
+                        return False
+
+        compile_started = time.perf_counter()
 
         # Python codegen window -- runs serialised under ``_codegen_lock``
         # inside ``_run_codegen``. Snapshots all builder state needed by
@@ -5084,8 +5133,6 @@ class Module:
         except Exception as e:
             self._record_build_failure(device, is_cpu, active_block_dim, e)
             raise
-
-        meta_path = os.path.join(output_dir, self._get_meta_name(block_dim=active_block_dim))
 
         build_dir = os.path.normpath(output_dir) + f"_p{os.getpid()}_t{threading.get_ident()}"
 
@@ -5243,6 +5290,12 @@ class Module:
 
             # clean up build_dir used for this process regardless
             shutil.rmtree(build_dir, ignore_errors=True)
+
+        if use_remote_cache:
+            # Publish the committed files, which may be a concurrent compile's equivalent output.
+            committed = (Path(output_dir) / output_name, Path(meta_path))
+            if all(path.is_file() for path in committed):
+                warp._src.remote_cache.publish(module_name_short, committed, time.perf_counter() - compile_started)
 
         return True
 
@@ -8930,6 +8983,7 @@ class Runtime:
 
         # initialize kernel cache
         warp._src.build.init_kernel_cache(warp.config.kernel_cache_dir)
+        warp._src.remote_cache.init_remote_cache()
 
         # global tape
         self.tape = None
