@@ -31,6 +31,74 @@ See :ref:`benchmarking-cold-start-compilation` for a cold-start benchmarking
 workflow and compile-time tracing when the total module-load time does not show
 where the delay occurs.
 
+Share compiled kernels through a remote cache
+---------------------------------------------
+
+Jobs without persistent local storage can share compiled kernels through a
+remote cache. Warp checks its local cache first. On a local miss, it looks for
+the compiled module in the remote cache and compiles only if it is not there.
+Set the remote root before :func:`wp.init() <warp.init>`:
+
+.. code-block:: python
+
+    import warp as wp
+
+    wp.config.remote_cache_dir = "gs://my-bucket/warp-cache"
+    wp.init()
+
+The root can be either of the following:
+
+- A directory, such as a network mount shared by the jobs.
+- A ``gs://bucket/prefix`` URL for Google Cloud Storage. This needs an optional
+  dependency, installed with ``pip install "warp-lang[remote-cache-gcs]"``, and
+  uses the job's Application Default Credentials for reading as well as writing.
+
+A local path supplied through ``WARP_CACHE_PATH`` or
+:attr:`warp.config.kernel_cache_dir` still selects local storage; neither
+setting accepts a URL.
+
+The remote cache has the same layout as the local cache directory,
+``<root>/<Warp version>/<module directory>/<file>``, and stores each compiled
+module and its metadata file under their local names. A copy of a local cache
+directory is therefore a valid remote cache, and a copy of a remote cache is a
+valid local one. For example, a build step can fill a bucket from a machine
+that has already compiled the kernels:
+
+.. code-block:: bash
+
+    gcloud storage rsync --recursive "$WARP_CACHE_PATH" gs://my-bucket/warp-cache
+
+Warp itself publishes only compiled modules and their metadata. Generated
+source and MathDx LTO objects stay local. A cached module already contains the
+MathDx code it uses, so those objects are needed only to compile a module that
+is not in the cache.
+
+By default, Warp publishes a module only when compiling it took at least one
+second, because fetching a quickly compiled module saves little. Set
+:attr:`warp.config.remote_cache_min_compile_time` to ``0.0`` to publish every
+module, or set :attr:`warp.config.remote_cache_read_only` to ``True`` for jobs
+that should fetch but never publish. Warp never replaces or deletes a file that
+is already in the remote cache; manage retention with bucket lifecycle rules or
+your own tools. :func:`wp.clear_kernel_cache() <warp.clear_kernel_cache>`
+clears only local files.
+
+A file that is missing from the remote cache is an ordinary miss. If a read
+fails for any other reason, Warp warns once and stops using the remote cache
+for the rest of the process. If a write fails, it warns once and stops
+publishing but keeps fetching. Neither failure affects local compilation.
+
+Share a remote root only among jobs that run the same Warp build. Files are
+grouped by Warp version, so different versions never mix. Builds of one version
+for different CUDA Toolkit major versions do share files, however, and a kernel
+compiled with the newer toolkit can fail to load where the driver supports only
+the older one, so give such builds separate roots. The remote cache works with
+releases and nightly builds. A source checkout, whose version ends in
+``.dev0``, uses only the local cache, because that version does not identify
+what the checkout contains.
+
+Cached kernels are executable code. Grant write access to a remote root only to
+jobs whose compiled code you trust.
+
 Reduce compilation work
 -----------------------
 
