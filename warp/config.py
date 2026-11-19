@@ -202,8 +202,9 @@ remote_cache_dir: str | None = None
 
 On a local cache miss, Warp looks for the compiled kernel module under this
 root before compiling it, and publishes the modules it does compile. The root
-is a directory, such as a network mount, with the same layout as the local
-cache directory.
+has the same layout as the local cache directory. It can be a directory, such
+as a network mount, or a ``gs://bucket/prefix`` URL, which requires the
+``remote-cache-gcs`` extra.
 
 Set this before :func:`warp.init`. The local kernel cache remains in
 :data:`kernel_cache_dir`.

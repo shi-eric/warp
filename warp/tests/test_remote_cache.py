@@ -227,6 +227,18 @@ class TestRemoteCache(unittest.TestCase):
                 remote_cache.init_remote_cache()
                 self.assertEqual(remote_cache.is_enabled(), expected)
 
+    def test_gs_root_without_optional_package_warns_and_disables(self):
+        with (
+            _remote_cache("gs://bucket/warp-cache"),
+            # A None entry makes the import fail as it does when the extra is not installed.
+            patch.dict(sys.modules, {"warp._src.remote_cache_gcs": None}),
+            patch.object(remote_cache, "log_warning") as warn,
+        ):
+            self.assertFalse(remote_cache.fetch("wp_mod_abc1234", ["wp_mod_abc1234.o"], self.staging))
+            self.assertFalse(remote_cache.fetch("wp_mod_abc1234", ["wp_mod_abc1234.o"], self.staging))
+        self.assertEqual(warn.call_count, 1)
+        self.assertIn("warp-lang[remote-cache-gcs]", warn.call_args.args[0])
+
     def test_unsupported_root_is_disabled_with_warning(self):
         self.addCleanup(remote_cache.init_remote_cache)
         for root in ("s3://bucket/cache", "gs://", "gs:///cache"):

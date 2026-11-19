@@ -594,7 +594,9 @@ linux-x86_64 cu13 test:
     # HACK: disable P2P tests due to misbehaving agents
     - export WARP_DISABLE_P2P_TESTS=1
   script:
-    - uv run --extra dev --extra torch-cu13 --with "jax[cuda13]>=0.5" --with rmm-cu13 -m warp.tests --junit-report-xml rspec.xml --coverage --coverage-xml coverage.xml -s autodetect --failfast
+    # remote-cache-gcs installs the optional Google Cloud Storage package so the remote
+    # cache's GCS backend tests run here instead of being skipped.
+    - uv run --extra dev --extra torch-cu13 --extra remote-cache-gcs --with "jax[cuda13]>=0.5" --with rmm-cu13 -m warp.tests --junit-report-xml rspec.xml --coverage --coverage-xml coverage.xml -s autodetect --failfast
 
 # A temporary job for testing on Blackwell until more runners are available
 linux-x86_64 cu13 blackwell test:

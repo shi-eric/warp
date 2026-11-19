@@ -70,8 +70,18 @@ class DirectoryRemoteStore:
             partial.unlink(missing_ok=True)
 
 
+def _create_gcs_store(root: str) -> RemoteStore:
+    try:
+        from warp._src.remote_cache_gcs import GCSRemoteStore  # noqa: PLC0415
+    except ImportError as exc:
+        raise RuntimeError(
+            'gs:// remote caches need the optional Google Cloud Storage package: pip install "warp-lang[remote-cache-gcs]"'
+        ) from exc
+    return GCSRemoteStore(root)
+
+
 # Backends for URL roots, keyed by scheme. A root without a scheme is a directory.
-_URL_STORES: dict[str, Callable[[str], RemoteStore]] = {}
+_URL_STORES: dict[str, Callable[[str], RemoteStore]] = {"gs": _create_gcs_store}
 
 _root: str | None = None
 _version = ""

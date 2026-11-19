@@ -38,6 +38,9 @@ Issues = "https://github.com/NVIDIA/warp/issues"
 Changelog = "https://github.com/NVIDIA/warp/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
+remote-cache-gcs = [
+    "google-cloud-storage>=3.14.1,<4",
+]
 docs = [
     "nvidia-sphinx-theme",
     "sphinx-copybutton",

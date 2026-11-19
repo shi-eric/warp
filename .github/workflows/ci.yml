@@ -649,6 +649,9 @@ jobs:
             platform: ubuntu-x86_64
             artifact-name: build-artifact-ubuntu-x86_64-cuda13
             jax-extra: jax[cuda13]>=0.5
+            # Install the optional Google Cloud Storage package on one platform so
+            # the remote cache's GCS backend tests run instead of being skipped.
+            test-extras: --extra remote-cache-gcs
           - os: ubuntu-24.04-arm
             platform: ubuntu-aarch64
             artifact-name: build-artifact-ubuntu-aarch64-cuda13
@@ -682,7 +685,7 @@ jobs:
         if: matrix.jax-extra != ''
         env:
           WARP_CACHE_PATH: ${{ runner.temp }}/warp-cache-${{ matrix.artifact-name }}-tests
-        run: uv run --extra dev --with "${{ matrix.jax-extra }}" -m warp.tests --junit-report-xml rspec.xml -s autodetect
+        run: uv run --extra dev ${{ matrix.test-extras }} --with "${{ matrix.jax-extra }}" -m warp.tests --junit-report-xml rspec.xml -s autodetect
 
       - name: Run Tests
         if: matrix.jax-extra == ''
