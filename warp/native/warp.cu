@@ -6077,15 +6077,11 @@ size_t wp_cuda_launch_kernel(
         // A clustered kernel needs gridDim.x to be a multiple of cluster_dim: an untruncated grid must
         // already be aligned (pad dim), while a grid truncated by max_blocks rounds down to a whole
         // number of clusters (the loop still covers every work item).
-        int natural_grid_dim = (dim + block_dim - 1) / block_dim;
-        int grid_dim = natural_grid_dim;
+        size_t natural_grid_dim = (dim + static_cast<size_t>(block_dim) - 1) / static_cast<size_t>(block_dim);
         int cap = (max_blocks > 0) ? max_blocks : 2147483647;
-        if (grid_dim < 0)
-            grid_dim = cap;
-        else if (grid_dim > cap)
-            grid_dim = cap;
+        int grid_dim = natural_grid_dim > static_cast<size_t>(cap) ? cap : static_cast<int>(natural_grid_dim);
         if (cluster_dim > 1 && grid_dim > 0) {
-            if (grid_dim == natural_grid_dim) {
+            if (static_cast<size_t>(grid_dim) == natural_grid_dim) {
                 if (grid_dim % cluster_dim != 0) {
                     wp::set_error_string(
                         "Warp CUDA error: clustered kernel launch requires the block count to be a multiple of "
