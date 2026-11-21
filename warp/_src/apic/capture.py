@@ -376,6 +376,8 @@ class APICapture:
                 fixedarray_cls = None
             if fixedarray_cls is not None and warp._src.types.matches_array_class(arg_type, fixedarray_cls):
                 raise NotImplementedError("APIC capture does not yet support wp.fixedarray launch params")
+            if warp._src.types.matches_array_class(arg_type, warp._src.types.largearray):
+                raise NotImplementedError("APIC capture does not yet support wp.largearray launch params")
             try:
                 from warp._src.fabric import fabricarray, indexedfabricarray  # noqa: PLC0415
             except ImportError:

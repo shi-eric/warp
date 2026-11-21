@@ -778,6 +778,8 @@ class Struct:
 
         annotations = get_annotations(self.cls)
         for label, type_ in annotations.items():
+            if type_ is largearray or matches_array_class(type_, largearray):
+                raise TypeError("wp.largearray is not supported in structs.")
             _validate_array_parameter_annotation(type_, f"Struct field '{label}'")
             self.vars[label] = Var(label, type_)
 
@@ -1875,6 +1877,26 @@ def specialize_callable_func(func, callable_arg_values):
     return specialized_func
 
 
+def check_largearray_indices(indices) -> None:
+    """Reject a constant index into a ``wp.largearray`` that its 32-bit literal type would truncate.
+
+    Warp types a plain integer literal as ``int32``, so ``x[2147483652]`` would silently wrap to a
+    negative index even though the array accepts 64-bit indices. Indices wrapped in
+    ``wp.int64()``, ``wp.uint32()`` etc. and non-constant indices are left alone.
+    """
+    for index in indices:
+        if (
+            isinstance(index, Var)
+            and index.type is int32
+            and type(index.constant) is int
+            and not -(2**31) <= index.constant < 2**31
+        ):
+            raise WarpCodegenError(
+                f"Index {index.constant} into a wp.largearray does not fit in a 32-bit integer literal. "
+                f"Wrap it in wp.int64(), e.g. x[wp.int64({index.constant})]."
+            )
+
+
 def get_arg_type(arg: Var | Any) -> type:
     arg = strip_reference(arg)
 
@@ -2959,8 +2981,46 @@ class Adjoint:
 
                 arg_type_reprs.append(type_repr(arg_type))
 
+        largearray_error = adj._largearray_resolution_error(func, itertools.chain(arg_types, kwarg_types.values()))
+        if largearray_error is not None:
+            raise WarpCodegenError(f"{largearray_error} Got inputs with types: [{', '.join(arg_type_reprs)}]")
+
         raise WarpCodegenError(
             f"Couldn't find function overload for '{func.key}' that matched inputs with types: [{', '.join(arg_type_reprs)}]"
+        )
+
+    @staticmethod
+    def _largearray_resolution_error(func, arg_types) -> str | None:
+        """Explain an unresolved call that involves ``wp.largearray``, or return ``None``.
+
+        Only reached once overload resolution has failed, so it costs nothing for calls that resolve.
+        """
+
+        def is_largearray(t):
+            return warp._src.types.matches_array_class(t, warp._src.types.largearray)
+
+        arg_types = [strip_reference(t) for t in arg_types if not isinstance(t, (warp._src.context.Function, Sequence))]
+        if func.is_builtin():
+            if not any(is_largearray(t) for t in arg_types):
+                return None
+            if func.key == "view":
+                return "wp.largearray does not support slicing or views."
+            return f"Built-in '{func.key}' does not support wp.largearray with these arguments."
+
+        # A user function: name the parameter types too, since largearray and array do not convert.
+        overloads = [
+            *getattr(func, "user_overloads", {}).values(),
+            *getattr(func, "user_templates", {}).values(),
+        ] or [func]
+        param_types = [t for f in overloads for t in f.input_types.values()]
+        if not any(is_largearray(t) for t in (*arg_types, *param_types)):
+            return None
+        signatures = "; ".join(
+            "(" + ", ".join(f"{name}: {type_repr(t)}" for name, t in f.input_types.items()) + ")" for f in overloads
+        )
+        return (
+            f"Couldn't find function overload for '{func.key}' (wp.largearray and wp.array do not convert to each "
+            f"other). Expected inputs: {signatures}."
         )
 
     @staticmethod
@@ -4151,10 +4211,17 @@ class Adjoint:
 
         # Short-circuit evaluation: only evaluate subsequent operands
         # if the result so far permits it (true for 'and', false for 'or').
+        def emit_operand(var):
+            # array_t converts to bool implicitly through its data pointer; largearray_t only
+            # explicitly, so that it never converts to a pointer or an integer.
+            if warp._src.types.matches_array_class(strip_reference(var.type), warp._src.types.largearray):
+                return f"bool({var.emit()})"
+            return var.emit()
+
         output = adj.add_var(builtins.bool)
         first = adj.eval(node.values[0])
         first = adj.load(first)
-        adj.add_forward(f"{output.emit()} = {first.emit()};")
+        adj.add_forward(f"{output.emit()} = {emit_operand(first)};")
 
         for expr in node.values[1:]:
             # Guard: only evaluate next operand if short-circuit condition holds
@@ -4169,7 +4236,7 @@ class Adjoint:
             val = adj.eval(expr)
             val = adj.load(val)
             op_str = "&&" if is_and else "||"
-            adj.add_forward(f"{output.emit()} = {output.emit()} {op_str} {val.emit()};")
+            adj.add_forward(f"{output.emit()} = {output.emit()} {op_str} {emit_operand(val)};")
 
             adj.dedent()
             adj.add_forward("}")
@@ -5328,7 +5395,10 @@ class Adjoint:
 
             return tuple(indices)
         else:
-            return tuple(adj.eval(x) for x in nodes)
+            indices = tuple(adj.eval(x) for x in nodes)
+            if warp._src.types.matches_array_class(target_type, warp._src.types.largearray):
+                check_largearray_indices(indices)
+            return indices
 
     def emit_indexing(adj, target, indices, *, as_target=False):
         target_type = strip_reference(target.type)
@@ -5346,7 +5416,10 @@ class Adjoint:
                 indices = tuple(adj.load(x) for x in indices)
                 if (
                     as_target
-                    and warp._src.types.matches_array_class(target_type, warp._src.types.array)
+                    and (
+                        warp._src.types.matches_array_class(target_type, warp._src.types.array)
+                        or warp._src.types.matches_array_class(target_type, warp._src.types.largearray)
+                    )
                     and (type_is_composite(target_type.dtype) or isinstance(target_type.dtype, Struct))
                 ):
                     origin = adj.reference_origin_for_var(target)

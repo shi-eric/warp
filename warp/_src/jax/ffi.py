@@ -29,6 +29,7 @@ from warp._src.jax import get_jax_device
 from warp._src.logger import log_warning
 from warp._src.types import (
     array_t,
+    check_descriptor_shape,
     matches_array_class,
     strides_from_shape,
     type_size_in_bytes,
@@ -500,6 +501,7 @@ class FfiKernel:
                                     buffer.dims[: buffer.rank], buffer.rank - input_arg.jax_ndim
                                 )
                         strides = strides_from_shape(shape, input_arg.type.dtype)
+                        check_descriptor_shape(shape)
                         arg = array_t(buffer.data, 0, input_arg.type.ndim, shape, strides)
                         arg_refs.append(arg)  # keep a reference
                     else:
@@ -520,6 +522,7 @@ class FfiKernel:
                                 buffer.dims[: buffer.rank], buffer.rank - output_arg.jax_ndim
                             )
                     strides = strides_from_shape(shape, output_arg.type.dtype)
+                    check_descriptor_shape(shape)
                     arg = array_t(buffer.data, 0, output_arg.type.ndim, shape, strides)
                     arg_refs.append(arg)  # keep a reference
 

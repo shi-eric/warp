@@ -13,7 +13,7 @@ import numpy as np
 
 import warp as wp
 from warp._src.logger import log_warning
-from warp._src.types import type_repr
+from warp._src.types import ARRAY_MAX_EXTENT, large_array_error, type_repr
 
 
 class GraphColoringAlgorithm(enum.IntEnum):
@@ -76,6 +76,10 @@ def graph_coloring_assign(
         raise RuntimeError(f"node_colors array must be 1-dimensional, got {node_colors.ndim} dimensions")
 
     node_count = node_colors.shape[0]
+    # The node count goes to native code as a C int. node_colors.__ctype__() would also reject an
+    # exact wp.array that is too large, but an array subclass may build its own descriptor.
+    if node_count > ARRAY_MAX_EXTENT:
+        raise large_array_error(node_colors, "wp.utils.graph_coloring_assign()")
 
     if node_count == 0:
         raise RuntimeError("Cannot color an empty graph")
@@ -162,6 +166,10 @@ def graph_coloring_balance(
         raise RuntimeError(f"node_colors array must be 1-dimensional, got {node_colors.ndim} dimensions")
 
     node_count = node_colors.shape[0]
+    # The node count goes to native code as a C int. node_colors.__ctype__() would also reject an
+    # exact wp.array that is too large, but an array subclass may build its own descriptor.
+    if node_count > ARRAY_MAX_EXTENT:
+        raise large_array_error(node_colors, "wp.utils.graph_coloring_balance()")
 
     if max_iterations is None:
         max_iterations = node_count

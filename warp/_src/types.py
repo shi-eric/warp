@@ -2751,6 +2751,8 @@ def type_is_hash_grid_query(t):
 
 # maximum number of dimensions, must match array.h
 ARRAY_MAX_DIMS = 4
+ARRAY_MAX_EXTENT = 2**31 - 1  # largest dimension size representable by the 32-bit array descriptor
+LARGEARRAY_MAX_SIZE = 2**63 - 1  # largest 1-D array length
 LAUNCH_MAX_DIMS = 4
 
 # must match array.h
@@ -2903,6 +2905,31 @@ array_t._numpy_dtype_ = {
     ],
     "itemsize": ctypes.sizeof(array_t),
 }
+
+
+class shape64_t(ctypes.Structure):
+    """Shape of a 1-D ``largearray_t``; matches ``wp::shape64_t``."""
+
+    _fields_ = (("dims", ctypes.c_int64 * 1),)
+
+    def __init__(self):
+        pass
+
+
+class largearray_t(ctypes.Structure):
+    """Native descriptor of a 1-D array with a 64-bit length; matches ``wp::largearray_t<T>``.
+
+    Only used for kernel parameters annotated ``wp.largearray[...]``, so the layout is internal to
+    generated kernels. It is not allowed in structs or NumPy structured dtypes.
+    """
+
+    _fields_ = (
+        ("data", ctypes.c_uint64),
+        ("grad", ctypes.c_uint64),
+        ("shape", ctypes.c_int64 * 1),
+        ("stride", ctypes.c_int32),
+        ("flags", ctypes.c_uint16),
+    )
 
 
 class indexedarray_t(ctypes.Structure):
@@ -3554,16 +3581,82 @@ def strides_from_shape(shape: tuple, dtype):
     return tuple(strides)
 
 
-def check_array_shape(shape: tuple):
-    """Check that the size in each dimension is positive and less than 2^31."""
+def check_array_shape(shape: tuple) -> bool:
+    """Check that each dimension is non-negative and within the supported range.
+
+    One-dimensional arrays may have up to ``2**63 - 1`` elements. In arrays with more than one
+    dimension, each dimension must not exceed ``2**31 - 1``.
+
+    Returns:
+        ``True`` if ``shape`` is a valid 1-D shape with more than ``2**31 - 1`` elements, which
+        only the 64-bit descriptor can address, otherwise ``False``.
+    """
 
     for dim_index, dim_size in enumerate(shape):
         if dim_size < 0:
             raise ValueError(f"Array shapes must be non-negative, got {dim_size} in dimension {dim_index}")
         if dim_size >= 2**31:
+            # Only shapes outside the 32-bit range get here, so shapes that fit pay nothing extra.
+            if len(shape) == 1:
+                if dim_size <= LARGEARRAY_MAX_SIZE:
+                    return True
+                raise ValueError(
+                    "Array shapes must not exceed the maximum representable value of a signed 64-bit integer, "
+                    f"got {dim_size} in dimension {dim_index}."
+                )
             raise ValueError(
-                "Array shapes must not exceed the maximum representable value of a signed 32-bit integer, "
+                "Array shapes must not exceed the maximum representable value of a signed 32-bit integer "
+                "in arrays with more than one dimension, "
                 f"got {dim_size} in dimension {dim_index}."
+            )
+
+    return False
+
+
+class _LargeArrayRejection:
+    """Stand-in for a 32-bit-only :class:`array` method on a large array; raises when called.
+
+    :meth:`array._mark_large` installs instances as instance attributes, which shadow the class's
+    :meth:`array.reshape` and :meth:`array.view` for that array only, so arrays that fit the 32-bit
+    descriptor run those methods without a size check.
+    """
+
+    __slots__ = ("length", "what")
+
+    def __init__(self, length: int, what: str):
+        self.length = length
+        self.what = what
+
+    def __call__(self, *args, **kwargs):
+        raise large_array_error(self.length, self.what)
+
+
+def large_array_error(arr, what: str) -> ValueError:
+    """Create the error raised when a 32-bit-only code path receives a large 1-D array.
+
+    ``arr`` is the offending array or, when no array object exists, its length.
+    """
+
+    length = arr if isinstance(arr, int) else arr.shape[0]
+    return ValueError(
+        f"{what} does not support arrays with more than 2**31 - 1 elements (got {length}). "
+        "Pass the array to a kernel parameter annotated wp.largearray[...] instead."
+    )
+
+
+def check_descriptor_shape(shape, what: str = "The 32-bit array descriptor") -> None:
+    """Raise if ``shape`` cannot be stored in the 32-bit shape fields of ``array_t``.
+
+    For callers that build an ``array_t`` directly from foreign metadata rather than from a ``wp.array``.
+    """
+
+    for dim_index, dim_size in enumerate(shape):
+        if dim_size > ARRAY_MAX_EXTENT:
+            if len(shape) == 1:
+                raise large_array_error(dim_size, what)
+            raise ValueError(
+                "Array shapes must not exceed the maximum representable value of a signed 32-bit integer "
+                f"in arrays with more than one dimension, got {dim_size} in dimension {dim_index}."
             )
 
 
@@ -3611,6 +3704,8 @@ def array_ctype_from_interface(interface: dict, dtype=None, owner=None):
             raise RuntimeError(
                 f"Could not convert array interface with typestr='{typestr}' to Warp array with dtype={dtype}"
             )
+
+    check_descriptor_shape(shape)
 
     # create array descriptor
     array_ctype = array_t(ptr, 0, len(shape), shape, strides)
@@ -4292,7 +4387,8 @@ class array(Array[DType, NDim]):
             # which takes take of initializing Warp if needed.
             device = warp._src.context.get_device(device)
 
-        check_array_shape(shape)
+        if check_array_shape(shape):
+            self._mark_large(shape[0])
         ndim = len(shape)
         dtype_size = type_size_in_bytes(dtype)
 
@@ -4346,7 +4442,8 @@ class array(Array[DType, NDim]):
             # which takes take of initializing Warp if needed.
             device = warp._src.context.get_device(device)
 
-        check_array_shape(shape)
+        if check_array_shape(shape):
+            self._mark_large(shape[0])
         ndim = len(shape)
         dtype_size = type_size_in_bytes(dtype)
 
@@ -4605,11 +4702,37 @@ class array(Array[DType, NDim]):
         """Observed memory kind backing this array."""
         return warp._src.context._get_array_memory_kind(self)
 
+    # Cached 64-bit descriptor built by __ctype64__(). A class default, so creating an array does
+    # not pay for it; set on the instance once built and reset wherever ``ctype`` is reset.
+    _ctype64 = None
+
+    _is_large = False
+    """Whether this is a 1-D array with more elements than the 32-bit descriptor can address.
+
+    A class attribute, overridden per instance by :meth:`_mark_large` when the array is created.
+    """
+
+    def _mark_large(self, length: int) -> None:
+        """Mark this array as large and make its 32-bit-only methods raise.
+
+        Called at construction when :func:`check_array_shape` reports a large 1-D shape, so arrays
+        that fit the 32-bit descriptor carry no per-call size check in :meth:`reshape` or
+        :meth:`view`. The instance attributes set here shadow those methods for every bound call.
+        ``__getitem__`` is looked up on the type, so it checks :attr:`_is_large`. :meth:`__ctype__`
+        is not shadowed: it checks the current shape itself when it builds the descriptor.
+        """
+        self._is_large = True
+        self.reshape = _LargeArrayRejection(length, "array.reshape()")
+        self.view = _LargeArrayRejection(length, "array.view()")
+
     def __getitem__(self, key):
         if isinstance(key, int):
             if self.ndim == 1:
                 raise RuntimeError("Item indexing is not supported on wp.array objects")
             key = [key]
+        elif self._is_large:
+            # A large array is 1-D, so an integer key has already been rejected above.
+            raise large_array_error(self, "Array slicing")
         elif isinstance(key, (slice, array)):
             key = [key]
         elif isinstance(key, tuple):
@@ -4727,6 +4850,12 @@ class array(Array[DType, NDim]):
     # construct a C-representation of the array for passing to kernels
     def __ctype__(self):
         if self.ctype is None:
+            # Checked only when the descriptor is built, so the cached path stays one test. It reads the
+            # current shape, so it holds however the method is called and catches a shape assigned after
+            # construction. Known limit: a descriptor cached while the array was small is not
+            # invalidated if ``shape`` is later reassigned to a large value (``shape`` is a plain attribute).
+            if self.ndim == 1 and self.shape[0] > ARRAY_MAX_EXTENT:
+                raise large_array_error(self, "The 32-bit array descriptor")
             data = 0 if self.ptr is None else ctypes.c_uint64(self.ptr)
             grad = 0 if self.grad is None or self.grad.ptr is None else ctypes.c_uint64(self.grad.ptr)
             flags = 0
@@ -4737,6 +4866,32 @@ class array(Array[DType, NDim]):
             )
 
         return self.ctype
+
+    def __ctype64__(self):
+        """Return the 64-bit descriptor passed to kernel parameters annotated ``wp.largearray[...]``.
+
+        Raises:
+            TypeError: The array is not 1-D.
+            ValueError: The byte stride does not fit in 32 bits.
+        """
+        if self._ctype64 is None:
+            if self.ndim != 1:
+                raise TypeError(
+                    f"wp.largearray parameters require a 1-D array, got an array with {self.ndim} dimensions"
+                )
+
+            c = largearray_t()
+            c.data = 0 if self.ptr is None else self.ptr
+            c.grad = 0 if self.grad is None or self.grad.ptr is None else self.grad.ptr
+            c.shape[0] = self.shape[0]
+            stride = self.strides[0]
+            if not -(2**31) <= stride <= ARRAY_MAX_EXTENT:
+                raise ValueError(f"wp.largearray parameters require a byte stride that fits in 32 bits, got {stride}")
+            c.stride = stride
+            c.flags = ARRAY_FLAG_RETAIN_GRAD if self._retain_grad else 0
+            self._ctype64 = c
+
+        return self._ctype64
 
     def __matmul__(self, other):
         """Matrix multiplication is not supported for wp.array objects."""
@@ -4790,6 +4945,7 @@ class array(Array[DType, NDim]):
 
         # trigger re-creation of C-representation
         self.ctype = None
+        self._ctype64 = None
 
     @property
     def requires_grad(self):
@@ -4815,6 +4971,7 @@ class array(Array[DType, NDim]):
 
         # trigger re-creation of C-representation
         self.ctype = None
+        self._ctype64 = None
 
     @property
     def retain_grad(self):
@@ -4837,6 +4994,7 @@ class array(Array[DType, NDim]):
         self._retain_grad = value
         # trigger re-creation of C-representation
         self.ctype = None
+        self._ctype64 = None
 
     def _alloc_grad(self):
         self._grad = warp.zeros(
@@ -4845,6 +5003,7 @@ class array(Array[DType, NDim]):
 
         # trigger re-creation of C-representation
         self.ctype = None
+        self._ctype64 = None
 
     @property
     def vars(self):
@@ -4994,6 +5153,9 @@ class array(Array[DType, NDim]):
         else:
             # During an APIC capture on this device, the native fill records an array-fill
             # operation: record-only on CPU, record-and-execute on CUDA.
+            if self._is_large:
+                # __ctype__() rejects an exact wp.array; a subclass may build its own descriptor
+                raise large_array_error(self, "array.fill_() on a non-contiguous array")
             carr = self.__ctype__()
             carr_ptr = ctypes.pointer(carr)
 
@@ -5171,6 +5333,10 @@ class array(Array[DType, NDim]):
         Args:
             shape : An int or tuple of ints specifying the shape of the returned array.
         """
+        # No size check here: _mark_large() shadows this method on a large instance, so bound calls
+        # raise there. A class-level call (wp.array.reshape(big, ...)) or a shape reassigned after
+        # creation does get here; the result keeps the full length, and any 32-bit path it later
+        # reaches (__ctype__(), slicing) checks it.
         if not self.is_contiguous:
             raise RuntimeError("Reshaping non-contiguous arrays is unsupported.")
 
@@ -5278,6 +5444,10 @@ class array(Array[DType, NDim]):
                 av = avf.view(wp.vec4)  # shape (10,)
                 am = amf.view(wp.mat33)  # shape (10,)
         """
+        # No size check here: _mark_large() shadows this method on a large instance, so bound calls
+        # raise there. A class-level call (wp.array.view(big, ...)) or a shape reassigned after
+        # creation does get here; the result keeps the full length, and any 32-bit path it later
+        # reaches (__ctype__(), slicing) checks it.
         if type_size_in_bytes(dtype) == type_size_in_bytes(self.dtype):
             # a simple "reinterpret cast"
             result_shape = self.shape
@@ -5665,6 +5835,10 @@ class fixedarray(array):
 # A base class for non-contiguous arrays, providing the implementation of common methods like
 # contiguous(), to(), numpy(), list(), assign(), zero_(), and fill_().
 class noncontiguous_array_base(Array[DType, NDim]):
+    # Indexed and Fabric arrays are never marked large; they have their own descriptors. This
+    # default lets size guards that test ``_is_large`` accept any array family without ``getattr``.
+    _is_large = False
+
     def __init__(self, array_type_id):
         self.type_id = array_type_id
         self.is_contiguous = False
@@ -5859,6 +6033,8 @@ def check_index_array(indices, expected_device):
         raise ValueError(f"Index array must use int32, got dtype {indices.dtype}")
     if indices.device != expected_device:
         raise ValueError(f"Index array device ({indices.device} does not match data array device ({expected_device}))")
+    if indices._is_large:
+        raise large_array_error(indices, "Index arrays")
 
 
 class indexedarray(noncontiguous_array_base[DType, NDim]):
@@ -5895,6 +6071,8 @@ class indexedarray(noncontiguous_array_base[DType, NDim]):
         if data is not None:
             if not isinstance(data, array):
                 raise ValueError("Indexed array data must be a Warp array")
+            if data._is_large:
+                raise large_array_error(data, "wp.indexedarray")
             if dtype is not None and dtype != data.dtype:
                 raise ValueError(f"Requested dtype ({dtype}) does not match dtype of data array ({data.dtype})")
             if ndim is not None and ndim != data.ndim:
@@ -5995,9 +6173,60 @@ def indexedarray4d(*args, **kwargs):
     return indexedarray(*args, **kwargs)
 
 
+_LARGEARRAY_INSTANTIATION_ERROR = (
+    "wp.largearray is a kernel parameter annotation and cannot be instantiated. "
+    "Create the array with wp.array, wp.zeros, or wp.empty."
+)
+
+
+class largearray(Array[DType, NDim]):
+    """Kernel parameter annotation for a 1-D :class:`warp.array` addressed with 64-bit indices.
+
+    Annotate a kernel parameter as ``wp.largearray[dtype]`` to pass a 1-D :class:`warp.array` of any length,
+    including arrays with more than ``2**31 - 1`` elements. The array itself is an ordinary
+    :class:`warp.array`; only the descriptor passed to the kernel differs.
+
+    ``wp.largearray`` is not a class to instantiate: create arrays with :func:`warp.array`,
+    :func:`warp.zeros`, or :func:`warp.empty`.
+    """
+
+    # member attributes available during code-gen (e.g.: n = arr.shape[0])
+    # (initialized when needed)
+    _vars = None
+
+    @classmethod
+    def __class_getitem__(cls, dtype):
+        """Support ``wp.largearray[dtype]`` syntax."""
+        if isinstance(dtype, tuple):
+            raise TypeError(f"wp.{cls.__name__} expects a single type parameter (dtype), got {len(dtype)}")
+        return _LargeArrayAnnotation(dtype)
+
+    def __init__(self, *args, **kwargs):
+        # Only the bare family descriptor ``largearray(dtype=Any)`` used to register built-ins is allowed.
+        if args or kwargs.keys() != {"dtype"} or kwargs["dtype"] is not Any:
+            if not args and "dtype" in kwargs and kwargs.keys() <= {"dtype", "ndim"}:
+                # the factory spelling of an annotation, e.g. wp.largearray(dtype=float)
+                dtype_name = getattr(kwargs["dtype"], "__name__", repr(kwargs["dtype"]))
+                raise TypeError(
+                    f"{_LARGEARRAY_INSTANTIATION_ERROR} To annotate a kernel parameter, write "
+                    f"wp.largearray[{dtype_name}] instead of wp.largearray(dtype={dtype_name})."
+                )
+            raise TypeError(_LARGEARRAY_INSTANTIATION_ERROR)
+        self.dtype = Any
+        self.ndim = 1
+        # a type descriptor, not an allocation
+        self.device = None
+
+    @property
+    def vars(self):
+        if largearray._vars is None:
+            largearray._vars = {"shape": warp._src.codegen.Var("shape", shape64_t)}
+        return largearray._vars
+
+
 from warp._src.fabric import fabricarray, fabricarray_t, indexedfabricarray, indexedfabricarray_t  # noqa: E402
 
-array_types = (array, indexedarray, fabricarray, indexedfabricarray, fixedarray)
+array_types = (array, indexedarray, fabricarray, indexedfabricarray, fixedarray, largearray)
 
 
 # ---------------------------------------------------------------------------
@@ -6018,6 +6247,10 @@ class _ArrayAnnotationBase:
 
     __slots__ = ("dtype", "ndim")
     # Subclasses must set _concrete_cls to the corresponding array class.
+
+    # Array family of the gradient passed to an adjoint launch for a parameter of this type: a
+    # regular array for every family except wp.largearray. Read by ``pack_arg``.
+    _adjoint_family = array
 
     def __init__(self, dtype, ndim=1):
         self.dtype = dtype if dtype is Any else type_to_warp(dtype)
@@ -6161,13 +6394,42 @@ class _IndexedFabricArrayAnnotation(_FabricAnnotationBase):
         return indexedfabricarray_t()
 
 
+class _LargeArrayAnnotation(_ArrayAnnotationBase):
+    """Lightweight annotation for :class:`largearray` kernel parameters (always 1-D)."""
+
+    __slots__ = ()
+    _concrete_cls = largearray
+    # Gradients of a wp.largearray parameter are packed into the 64-bit descriptor too.
+    _adjoint_family = largearray
+
+    def __init__(self, dtype, ndim=1):
+        if ndim != 1:
+            raise TypeError(f"wp.largearray is 1-D only, got ndim={ndim}")
+        super().__init__(dtype, 1)
+
+    @property
+    def vars(self):
+        if largearray._vars is None:
+            largearray._vars = {"shape": warp._src.codegen.Var("shape", shape64_t)}
+        return largearray._vars
+
+    def __ctype__(self):
+        return largearray_t()
+
+
 # Mapping from concrete array class → lightweight annotation class.
 _ARRAY_ANNOTATION_MAP = {
     array: _ArrayAnnotation,
     indexedarray: _IndexedArrayAnnotation,
     fabricarray: _FabricArrayAnnotation,
     indexedfabricarray: _IndexedFabricArrayAnnotation,
+    largearray: _LargeArrayAnnotation,
 }
+
+# Array instances can also describe kernel parameters (``wp.array(dtype=float)``); their
+# gradients are regular arrays, as for _ArrayAnnotationBase above. Assigned here because
+# ``Array`` is defined before ``array``.
+Array._adjoint_family = array
 
 # Registered classes are retained by array_types. Compare identities without invoking
 # application metaclass hashing or equality; this is not a cache of user classes.
@@ -6228,6 +6490,15 @@ def _normalize_array_argument_type(value):
     return annotation_cls(value.dtype, value.ndim)
 
 
+def _reject_large_subclass(value) -> None:
+    """Raise if an :class:`array` subclass instance is too large for the 32-bit descriptor.
+
+    A subclass's own ``__ctype__()`` may build an ``array_t`` from the current shape without a size check.
+    """
+    if value.ndim == 1 and value.shape[0] > ARRAY_MAX_EXTENT:
+        raise large_array_error(value, "The 32-bit array descriptor")
+
+
 def _validate_array_subclass_descriptor(value, descriptor, expected_family, ndim):
     """Validate a subclass descriptor's layout before passing it to native code.
 
@@ -6236,6 +6507,9 @@ def _validate_array_subclass_descriptor(value, descriptor, expected_family, ndim
     """
     if type(value) is expected_family:
         return descriptor
+    if expected_family is array and value.ndim == 1 and value.shape[0] > ARRAY_MAX_EXTENT:
+        # the subclass's own __ctype__() may have built a descriptor with a wrapped length
+        raise large_array_error(value, "The 32-bit array descriptor")
     descriptor_cls = _ARRAY_CTYPE_MAP[expected_family]
     if not issubclass(type(descriptor), descriptor_cls):
         raise TypeError(
@@ -6611,6 +6885,11 @@ class Bvh:
         if len(lowers) != len(uppers):
             raise RuntimeError("The same number of lower and upper bounds must be provided")
 
+        # The item count goes to native code as a C int. ``uppers`` and ``groups`` have the same
+        # length as ``lowers``, so checking ``lowers`` covers all three.
+        if lowers._is_large:
+            raise large_array_error(lowers, "wp.Bvh")
+
         if lowers.device != uppers.device:
             raise RuntimeError("Lower and upper bounds must live on the same device")
 
@@ -6873,6 +7152,12 @@ class Mesh:
 
         if indices.ndim > 1:
             raise RuntimeError("Mesh indices should be a flattened 1d array of indices")
+
+        # The point count goes to native code as a C int. __ctype__() below rejects an exact
+        # wp.array that is too large; an array subclass may build its own descriptor instead.
+        if points._is_large or indices._is_large or (velocities is not None and velocities._is_large):
+            large = next(a for a in (points, indices, velocities) if a is not None and a._is_large)
+            raise large_array_error(large, "wp.Mesh")
 
         if groups is not None:
             if groups.dtype != int32 or not groups.is_contiguous:
@@ -8136,6 +8421,7 @@ class Volume:
             raise RuntimeError(
                 "tile_points must be contiguous and either a 1D Warp array of vec3f or vec3i or a 2D n-by-3 array of int32 or float32."
             )
+        _reject_large_volume_points(tile_points, "wp.Volume.allocate_by_tiles()")
         if tile_points.device != device:
             tile_points = tile_points.to(device)
 
@@ -8354,6 +8640,7 @@ class Volume:
             raise RuntimeError(
                 "voxel_points must be contiguous and either a 1D Warp array of vec3f or vec3i or a 2D n-by-3 array of int32 or float32."
             )
+        _reject_large_volume_points(voxel_points, "wp.Volume.allocate_by_voxels()")
         if voxel_points.device != device:
             voxel_points = voxel_points.to(device)
 
@@ -8492,6 +8779,7 @@ class Volume:
             raise RuntimeError(
                 "tile_points must be contiguous and either a 1D Warp array of vec3f or vec3i or a 2D n-by-3 array of int32 or float32."
             )
+        _reject_large_volume_points(tile_points, "wp.Volume.rebuild()")
         if tile_points.device != self.device:
             tile_points = tile_points.to(self.device)
         status = _volume_rebuild_status_array(status, self.device) if status is not None else None
@@ -8572,6 +8860,7 @@ class Volume:
             raise RuntimeError(
                 "voxel_points must be contiguous and either a 1D Warp array of vec3f or vec3i or a 2D n-by-3 array of int32 or float32."
             )
+        _reject_large_volume_points(voxel_points, "wp.Volume.rebuild()")
         if voxel_points.device != self.device:
             voxel_points = voxel_points.to(self.device)
         status = _volume_rebuild_status_array(status, self.device) if status is not None else None
@@ -8641,12 +8930,24 @@ def _volume_rebuild_status_array(status: array, device) -> array:
     return status
 
 
+def _reject_large_volume_points(points: array, what: str) -> None:
+    """Raise if ``points`` holds more points than the native Volume builders take as a C ``int``.
+
+    Reads the current shape, so it applies to array subclasses too. A 2-D ``N x 3`` array cannot
+    get here with ``N`` above the limit, so only a large 1-D array is rejected.
+    """
+    if points.shape[0] > ARRAY_MAX_EXTENT:
+        raise large_array_error(points, what)
+
+
 def _volume_point_mask_array(point_mask: array | None, point_count: int, device) -> array | None:
     if point_mask is None:
         return None
 
     if not is_array(point_mask) or point_mask.dtype != int32 or point_mask.ndim != 1 or not point_mask.is_contiguous:
         raise RuntimeError("point_mask must be a contiguous 1D Warp array with dtype int32")
+    # Only the pointer reaches native code, but Volume accepts no large array, for one simple rule.
+    _reject_large_volume_points(point_mask, "wp.Volume point_mask")
     if point_mask.shape[0] < point_count:
         raise RuntimeError(f"point_mask must have at least {point_count} entries")
     if point_mask.device != device:
@@ -8862,6 +9163,10 @@ class HashGrid:
         """
         if not types_equal(points.dtype, self._vec_type):
             raise TypeError(f"Hash grid points should have type {self._vec_type.__name__}, got {points.dtype}")
+        # __ctype__() below rejects an exact wp.array that is too large; a subclass may build its own
+        # descriptor. ``groups`` must match ``points`` in size, so it needs no check of its own.
+        if points._is_large:
+            raise large_array_error(points, "wp.HashGrid.build()")
         if radius <= 0.0:
             raise ValueError(f"Hash grid cell width must be positive, got {radius}")
         if points.device != self.device:
@@ -8918,6 +9223,9 @@ class HashGrid:
                 "HashGrid.reserve() cannot be called during CPU graph capture; reserve before capture"
             )
 
+        if num_points > ARRAY_MAX_EXTENT:
+            # the native entry point takes the count as a C int
+            raise ValueError(f"wp.HashGrid.reserve() supports at most 2**31 - 1 points, got {num_points}")
         self._native_func("reserve")(self.id, self._type_id, num_points, with_groups)
         self.reserved = True
 
@@ -9134,6 +9442,7 @@ simple_type_codes = {
     float32: "f4",
     float64: "f8",
     shape_t: "sh",
+    shape64_t: "sh64",
     range_t: "rg",
     **{cls: f"lb{n}" for n, cls in _launch_bounds_classes.items()},
     hash_grid_query_type(float16): "hgqh",
@@ -9226,6 +9535,7 @@ def get_type_code(arg_type) -> str:
             indexedarray: "ia",
             fabricarray: "fa",
             indexedfabricarray: "ifa",
+            largearray: "a64",
         }[concrete_array_type(arg_type)]
         return f"{prefix}{ndim_code}{dtype_code}"
     elif get_origin(arg_type) is tuple:

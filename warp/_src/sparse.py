@@ -15,6 +15,7 @@ import warp as wp
 import warp._src.utils
 from warp._src import sparse_multi_rhs as _multi_rhs
 from warp._src.types import (
+    ARRAY_MAX_EXTENT,
     Array,
     Cols,
     Rows,
@@ -1525,6 +1526,10 @@ def bsr_set_from_triplets(
             raise ValueError("Values array must be contiguous")
 
     nnz = rows.shape[0]
+    # The triplet count goes to native code as a C int. ``columns`` and ``values`` have the same
+    # length as ``rows`` (checked above) and ``count`` has one element, so this covers all four.
+    if nnz > ARRAY_MAX_EXTENT:
+        raise wp._src.types.large_array_error(rows, "wp.sparse.bsr_set_from_triplets()")
     if nnz == 0:
         bsr_set_zero(dest, topology=topology)
         if mapping is not None:
@@ -2911,6 +2916,14 @@ def _bsr_transpose_values(
     transposed_bsr_values[block, i, j] = bsr_values[src_block, j, i] * scale
 
 
+def _check_transpose_nnz(nnz: int) -> None:
+    """Raise if the transpose scratch map of ``2 * nnz`` C ints would not fit the native int indexing."""
+    if 2 * nnz > ARRAY_MAX_EXTENT:
+        raise ValueError(
+            f"bsr_set_transpose() supports matrices with at most {ARRAY_MAX_EXTENT // 2} non-zero blocks, got {nnz}"
+        )
+
+
 def bsr_set_transpose(
     dest: BsrMatrix[BlockType[Cols, Rows, Scalar]],
     src: BsrMatrixOrExpression[BlockType[Rows, Cols, Scalar]],
@@ -2961,6 +2974,7 @@ def bsr_set_transpose(
         if nnz == 0:
             bsr_set_zero(dest, topology="padded")
             return
+        _check_transpose_nnz(nnz)
 
         _bsr_ensure_independent_row_counts(dest)
 
@@ -3047,6 +3061,7 @@ def bsr_set_transpose(
         if nnz == 0:
             bsr_set_zero(dest)
             return
+        _check_transpose_nnz(nnz)
 
         # Increase dest array sizes if needed
         _bsr_ensure_fits(dest, nnz=nnz)

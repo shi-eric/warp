@@ -166,6 +166,16 @@ def array_scan_temp_storage_size(count: int, dtype: type, device: DeviceLike = N
     return size.value
 
 
+def _raise_large(what: str, *arrays) -> None:
+    """Raise the large-array error for the first of ``arrays`` that is too large for 32-bit entry points.
+
+    Callers test ``_is_large`` inline, so this only runs once a large array has been found.
+    """
+    for arr in arrays:
+        if arr is not None and arr._is_large:
+            raise wp._src.types.large_array_error(arr, what)
+
+
 @warp_function
 def array_scan(
     in_array: wp.array, out_array: wp.array, inclusive: bool = True, temp_storage: wp.array | None = None
@@ -219,6 +229,10 @@ def array_scan(
           array during CPU graph capture or CUDA graph capture with
           ``apic=True``.
     """
+
+    # The native scan takes the element count as a C int.
+    if in_array._is_large or out_array._is_large:
+        _raise_large("wp.utils.array_scan()", in_array, out_array)
 
     if in_array.device != out_array.device:
         raise RuntimeError(f"In and out array storage devices do not match ({in_array.device} vs {out_array.device})")
@@ -348,6 +362,10 @@ def radix_sort_pairs(
     Raises:
         RuntimeError: If array storage devices don't match, if storage size is insufficient, or if data types are unsupported.
     """
+    # The native sort takes the count as a C int and works on 2 * count elements of each array.
+    if keys._is_large or values._is_large:
+        _raise_large("wp.utils.radix_sort_pairs()", keys, values)
+
     if keys.device != values.device:
         raise RuntimeError(f"Keys and values array storage devices do not match ({keys.device} vs {values.device})")
 
@@ -523,6 +541,11 @@ def segmented_sort_pairs(
     if count > (1 << 31) - 1:
         raise ValueError(f"count must not exceed {(1 << 31) - 1}, got {count}")
 
+    # The native sort takes the counts as C ints. segment_end_indices needs no check of its own: it
+    # must have the same size as segment_start_indices, or is a slice of it.
+    if keys._is_large or values._is_large or segment_start_indices._is_large:
+        _raise_large("wp.utils.segmented_sort_pairs()", keys, values, segment_start_indices)
+
     segment_devices_match = segment_start_indices.device == keys.device
     if segment_end_indices is not None:
         segment_devices_match = segment_devices_match and segment_end_indices.device == keys.device
@@ -672,6 +695,10 @@ def runlength_encode(
         NotImplementedError: If ``run_count`` is ``None`` for a non-empty call
           during CPU graph capture or CUDA graph capture with ``apic=True``.
     """
+    # The native encoder takes the value count as a C int.
+    if values._is_large or run_values._is_large or run_lengths._is_large:
+        _raise_large("wp.utils.runlength_encode()", values, run_values, run_lengths)
+
     if run_values.device != values.device or run_lengths.device != values.device:
         raise RuntimeError("run_values, run_lengths and values storage devices do not match")
 
@@ -850,6 +877,11 @@ def array_sum(
             stride during APIC recording, including for a zero-count call, or a
             non-empty whole-array reduction requires a contiguous copy during APIC recording.
     """
+    # The native reduction takes the count as a C int. ``out`` needs no check: it must have the
+    # reduced shape, which for a large (1-D) ``values`` is (1,).
+    if values._is_large:
+        _raise_large("wp.utils.array_sum()", values)
+
     if axis is not None:
         axis = _normalize_array_reduction_axis("array_sum", axis, values.ndim)
 
@@ -1012,6 +1044,11 @@ def array_inner(
     """
     if a.shape != b.shape:
         raise ValueError(f"array_inner() arguments must have the same shape, got {a.shape} and {b.shape}")
+
+    # The native reduction takes the count as a C int. ``b`` has the same shape as ``a``, and ``out``
+    # must have the reduced shape, so neither needs a check of its own.
+    if a._is_large:
+        _raise_large("wp.utils.array_inner()", a)
 
     if a.device != b.device:
         raise RuntimeError(f"A and b array storage devices do not match ({a.device} vs {b.device})")
@@ -1215,6 +1252,9 @@ def array_cast(in_array: warp.array, out_array: warp.array, count: int | None = 
         If the input and output arrays have the same data type, this function will
         simply copy the data without any conversion.
     """
+    if in_array._is_large or out_array._is_large:
+        _raise_large("wp.utils.array_cast()", in_array, out_array)
+
     if in_array.device != out_array.device:
         raise RuntimeError(f"Array storage devices do not match ({in_array.device} vs {out_array.device})")
 

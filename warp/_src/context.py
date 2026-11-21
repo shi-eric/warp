@@ -67,7 +67,15 @@ from warp._src.codegen import WarpCodegenError, WarpCodegenTypeError, _codegen_l
 from warp._src.function_dispatch import get_warp_function_callsite, warp_function
 from warp._src.logger import get_logger, log_debug, log_error, log_info, log_warning
 from warp._src.texture import Texture1D, Texture2D, Texture3D, texture1d_t, texture2d_t, texture3d_t
-from warp._src.types import LAUNCH_MAX_DIMS, Array, LaunchBounds, array_t, launch_bounds_t, type_repr
+from warp._src.types import (
+    LAUNCH_MAX_DIMS,
+    Array,
+    LaunchBounds,
+    _LargeArrayAnnotation,
+    array_t,
+    launch_bounds_t,
+    type_repr,
+)
 
 _KERNEL_RETURN_ERROR = (
     "Warp kernels cannot return values. Write results to output arguments, "
@@ -11095,6 +11103,59 @@ def event_from_ipc_handle(handle, device: DeviceLike = None) -> Event:
     return event
 
 
+def _pack_largearray_arg(kernel, arg_type, arg_name, value, device, adjoint):
+    """Pack a value for a kernel parameter annotated ``wp.largearray[...]`` into a ``largearray_t``.
+
+    Forward and adjoint arguments are packed alike: the value must be a 1-D :class:`warp.array`
+    whose dtype matches the annotation. ``None`` is handled by the caller.
+    """
+    if isinstance(value, warp._src.types.largearray_t):
+        # accept 64-bit descriptors verbatim
+        return value
+
+    adj = "adjoint " if adjoint else ""
+
+    value_family = None
+    if type(value) is warp.array:
+        value_family = warp.array
+    elif not isinstance(value, warp._src.types.array_t):
+        try:
+            value_family = warp._src.types._resolve_array_family(value)
+        except TypeError as e:
+            raise RuntimeError(f"Error launching kernel '{kernel.key}', {adj}argument '{arg_name}': {e}") from e
+
+    if value_family is not warp.array:
+        raise RuntimeError(
+            f"Error launching kernel '{kernel.key}', {adj}argument '{arg_name}' expects an array of type {warp._src.types.type_repr(arg_type)}, but passed value has type {type(value).__name__}."
+        )
+
+    if type(value) is not warp.array and type(value).__ctype__ is not warp.array.__ctype__:
+        # __ctype64__ is built from the Python attributes and would ignore a custom descriptor
+        raise RuntimeError(
+            f"Error launching kernel '{kernel.key}', {adj}argument '{arg_name}': array subclass "
+            f"'{type(value).__qualname__}' overrides __ctype__(); array subclasses with a custom descriptor "
+            "are not supported for wp.largearray parameters."
+        )
+
+    if not warp._src.types.types_equal(value.dtype, arg_type.dtype):
+        raise RuntimeError(
+            f"Error launching kernel '{kernel.key}', {adj}argument '{arg_name}' expects an array with dtype={arg_type.dtype} but passed array has dtype={value.dtype}."
+        )
+
+    if value.ndim != 1:
+        raise RuntimeError(
+            f"Error launching kernel '{kernel.key}', {adj}argument '{arg_name}' expects an array with 1 dimension(s) but the passed array has {value.ndim} dimension(s)."
+        )
+
+    if warp.config.launch_array_access_mode != warp.config.LaunchArrayAccessMode.RELAXED:
+        _validate_launch_array_access(kernel, arg_name, value, device)
+
+    try:
+        return value.__ctype64__()
+    except (TypeError, ValueError) as e:
+        raise RuntimeError(f"Error launching kernel '{kernel.key}', {adj}argument '{arg_name}': {e}") from e
+
+
 # given a kernel destination argument type and a value convert
 #  to a c-type that can be passed to a kernel
 def pack_arg(kernel, arg_type, arg_name, value, device, adjoint=False):
@@ -11106,17 +11167,29 @@ def pack_arg(kernel, arg_type, arg_name, value, device, adjoint=False):
             return arg_type.__ctype__()
 
         elif isinstance(value, warp._src.types.array_t):
+            if type(arg_type) is _LargeArrayAnnotation:
+                # rejected: a 32-bit descriptor does not have the layout of a wp.largearray parameter
+                return _pack_largearray_arg(kernel, arg_type, arg_name, value, device, adjoint)
             # accept array descriptors verbatim
             return value
 
         else:
             # check for array type
             # - in forward passes, array types have to match
-            # - in backward passes, indexed array gradients are regular arrays
-            expected_family = warp.array if adjoint else warp._src.types.concrete_array_type(arg_type)
+            # - in backward passes, gradients are regular arrays (``_adjoint_family`` is wp.array),
+            #   except for wp.largearray parameters, which are packed below
+            expected_family = arg_type._adjoint_family if adjoint else warp._src.types.concrete_array_type(arg_type)
             if type(value) is expected_family:
                 # Keep ordinary built-in arrays on the existing fast path.
                 value_family = expected_family
+            elif type(arg_type) is _LargeArrayAnnotation:
+                # Invariant: a concrete wp.largearray parameter type is always an _LargeArrayAnnotation.
+                # wp.largearray[dtype] is the only way to spell it, and the bare largearray(dtype=Any)
+                # descriptor is generic, so it never reaches launch packing. An argument is never an
+                # instance of largearray (only the bare largearray(dtype=Any) descriptor is, and it fails
+                # the dtype check), so every wp.largearray argument gets here, off the path that an
+                # argument of exactly the expected family (every plain wp.array argument) takes.
+                return _pack_largearray_arg(kernel, arg_type, arg_name, value, device, adjoint)
             else:
                 try:
                     value_family = warp._src.types._resolve_array_family(value)
@@ -11183,7 +11256,12 @@ def pack_arg(kernel, arg_type, arg_name, value, device, adjoint=False):
                 _validate_launch_array_access(kernel, arg_name, value, device)
 
             if type(value) is expected_family:
-                return value.__ctype__()
+                try:
+                    return value.__ctype__()
+                except ValueError as e:
+                    # e.g. a large array passed to a parameter that uses the 32-bit descriptor
+                    adj = "adjoint " if adjoint else ""
+                    raise RuntimeError(f"Error launching kernel '{kernel.key}', {adj}argument '{arg_name}': {e}") from e
             try:
                 return warp._src.types._validate_array_subclass_descriptor(
                     value, value.__ctype__(), expected_family, arg_type.ndim
@@ -15667,6 +15745,11 @@ def copy(
         ):
             raise RuntimeError("Copying to/from Fabric arrays of arrays is not supported")
 
+        # __ctype__() rejects an exact wp.array that is too large; a subclass's own __ctype__() may not
+        if type(src_nc) is not warp.array and isinstance(src_nc, warp.array):
+            warp._src.types._reject_large_subclass(src_nc)
+        if type(dest_nc) is not warp.array and isinstance(dest_nc, warp.array):
+            warp._src.types._reject_large_subclass(dest_nc)
         src_desc = src_nc.__ctype__()
         dst_desc = dest_nc.__ctype__()
         src_ptr = ctypes.pointer(src_desc)
@@ -15718,6 +15801,7 @@ def copy(
         copy(dest.grad, src.grad, dest_offset=dest_offset, src_offset=src_offset, count=count, stream=stream)
 
         if runtime.tape:
+            _reject_large_tape_copy(dest, src)
             runtime.tape.record_func(
                 backward=lambda: adj_copy(
                     dest.grad,
@@ -15740,6 +15824,25 @@ def copy(
                     else:
                         dest.mark_write()
                 src.mark_read()
+
+
+def _reject_large_tape_copy(dest: warp.array, src: warp.array) -> None:
+    """Raise if a copy that is about to be recorded on a tape involves a large array.
+
+    The recorded adjoint (:func:`adj_copy`) slices the gradients and accumulates them with a
+    kernel that takes ``wp.array`` parameters, neither of which supports arrays with more than
+    ``2**31 - 1`` elements. Raising here reports the problem where the copy is recorded instead
+    of at ``tape.backward()``. The gradients need no test of their own: the ``grad`` setter
+    requires them to have the shape of their array.
+    """
+    if dest._is_large or src._is_large:
+        arr = dest if dest._is_large else src
+        raise ValueError(
+            f"wp.copy() of an array with more than 2**31 - 1 elements (got {arr.shape[0]}) cannot be "
+            "recorded on a wp.Tape, because the copy's adjoint does not support large arrays. Copy the "
+            "array outside the tape, or copy it with a kernel that takes wp.largearray[...] parameters, "
+            "which the tape records and differentiates."
+        )
 
 
 def _address_ranges_overlap(a: warp.array, b: warp.array) -> bool:
@@ -16021,6 +16124,9 @@ def type_str(t, scalar_override=None):
         return f"FabricArray[{type_str(t.dtype)}]"
     elif warp._src.types.matches_array_class(t, warp.indexedfabricarray):
         return f"IndexedFabricArray[{type_str(t.dtype)}]"
+    elif warp._src.types.matches_array_class(t, warp.largearray):
+        # no exported built-in takes wp.largearray, but code-generation errors name it
+        return f"LargeArray[{type_str(t.dtype)}]"
     elif hasattr(t, "_wp_generic_type_hint_"):
         generic_type = t._wp_generic_type_hint_
 

@@ -58,6 +58,7 @@ within these limits. Use 64-bit arithmetic when flattening such coordinates into
 :ref:`large-array launch indexing <large_launch_indexing>` for an example. Kernels that need a linear
 index beyond :math:`2^{31}-1` can call :func:`wp.linear_tid() <warp._src.lang.linear_tid>` instead, which
 returns a 64-bit index and is not subject to this limit when the kernel does not also call ``wp.tid()``.
+See :ref:`large_arrays`.
 
 By default, Warp will try to process one element from the Warp grid in one CUDA thread.
 This is not always possible for kernels launched with multi-dimensional grid bounds, as there are
@@ -79,10 +80,12 @@ Arrays
 ------
 
 * Arrays can have a maximum of four dimensions.
-* Each dimension of a Warp array cannot be greater than the maximum value representable by a 32-bit signed integer,
-  :math:`2^{31}-1`. As a result, one-dimensional Warp arrays cannot represent larger logical data sets; split them
-  across multiple dimensions instead. See :ref:`large-array launch indexing <large_launch_indexing>` for the launch
-  and indexing pattern.
+* Each dimension of a multi-dimensional Warp array cannot be greater than the maximum value representable by a
+  32-bit signed integer, :math:`2^{31}-1`. One-dimensional arrays may exceed this limit, up to :math:`2^{63}-1`
+  elements, but kernels must access them through parameters annotated ``wp.largearray[dtype]``, and many
+  operations do not support them. See :ref:`large_arrays` for what is supported. Alternatively, split a large
+  data set across multiple dimensions; see :ref:`large-array launch indexing <large_launch_indexing>` for the
+  launch and indexing pattern.
 * There is currently no dedicated complex scalar type.
 * ``wp.config.launch_array_access_mode = wp.config.LaunchArrayAccessMode.CHECKED``
   only fully verifies cross-device :class:`wp.array <warp.array>` arguments when

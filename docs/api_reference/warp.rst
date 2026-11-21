@@ -187,6 +187,7 @@ Arrays
    array3d
    array4d
    fixedarray
+   largearray
    tile
    tile_stack
    clone

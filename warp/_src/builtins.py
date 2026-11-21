@@ -13,12 +13,16 @@ import numpy as np
 
 import warp._src.build
 import warp._src.context
-from warp._src.codegen import AdjointUnsupportedError, Var, get_arg_value
+from warp._src.codegen import AdjointUnsupportedError, Var, WarpCodegenError, get_arg_value
 from warp._src.logger import log_warning
 from warp._src.types import *
 from warp._src.types import _BvhQueryAabb, _BvhQueryCapsule, _BvhQueryRay, _BvhQuerySphere, _MeshQuerySphere
 
 from .context import add_builtin
+
+# The multi-index and view built-ins below are not registered for wp.largearray, which is 1-D and
+# has no views; its single-index overloads are registered separately, next to each family.
+_array_types_without_largearray = tuple(t for t in array_types if t is not largearray)
 
 
 def seq_check_equal(seq_1, seq_2):
@@ -15104,7 +15108,7 @@ def address_value_func(arg_types: Mapping[str, type], arg_values: Mapping[str, A
     return Reference(arr_type.dtype)
 
 
-for array_type in array_types:
+for array_type in _array_types_without_largearray:
     add_builtin(
         "address",
         input_types={"arr": array_type(dtype=Any), "i": Int, "j": Int, "k": Int, "l": Int},
@@ -15114,6 +15118,15 @@ for array_type in array_types:
         value_func=address_value_func,
         group="Utility",
     )
+
+add_builtin(
+    "address",
+    input_types={"arr": largearray(dtype=Any), "i": Int},
+    hidden=True,
+    export=False,
+    value_func=address_value_func,
+    group="Utility",
+)
 
 
 # does argument checking and type propagation for view()
@@ -15171,7 +15184,7 @@ def view_value_func(arg_types: Mapping[str, type], arg_values: Mapping[str, Any]
     return type(arr_type)(dtype=dtype, ndim=ndim)
 
 
-for array_type in array_types:
+for array_type in _array_types_without_largearray:
     add_builtin(
         "view",
         input_types={
@@ -15225,7 +15238,7 @@ def array_store_value_func(arg_types: Mapping[str, type], arg_values: Mapping[st
     return None
 
 
-for array_type in array_types:
+for array_type in _array_types_without_largearray:
     add_builtin(
         "array_store",
         input_types={"arr": array_type(dtype=Any), "i": Int, "value": Any},
@@ -15262,6 +15275,16 @@ for array_type in array_types:
         skip_replay=True,
         group="Utility",
     )
+
+add_builtin(
+    "array_store",
+    input_types={"arr": largearray(dtype=Any), "i": Int, "value": Any},
+    hidden=True,
+    export=False,
+    value_func=array_store_value_func,
+    skip_replay=True,
+    group="Utility",
+)
 
 
 # does argument checking for store()
@@ -15423,6 +15446,9 @@ def atomic_op_dispatch_func(input_types: Mapping[str, type], return_type: Any, a
         arr = args["arr"]
         arr.mark_write()
 
+    if matches_array_class(input_types["arr"], largearray):
+        warp._src.codegen.check_largearray_indices(args[name] for name in "ijkl" if name in args)
+
     func_args = tuple(args.values())
     # we don't need to specify template arguments for atomic ops
     template_args = ()
@@ -15430,7 +15456,7 @@ def atomic_op_dispatch_func(input_types: Mapping[str, type], return_type: Any, a
     return (func_args, template_args)
 
 
-for array_type in array_types:
+for array_type in _array_types_without_largearray:
     # don't list fixed or indexed array operations explicitly in docs
     hidden = array_type in (indexedarray, fixedarray)
 
@@ -16016,6 +16042,43 @@ for array_type in array_types:
         skip_replay=True,
         is_differentiable=False,
     )
+
+# wp.largearray: single-index overloads only, hidden from the docs like the indexed array ones.
+for _op, _is_differentiable in (
+    ("add", True),
+    ("sub", True),
+    ("min", True),
+    ("max", True),
+    ("exch", False),
+    ("and", False),
+    ("or", False),
+    ("xor", False),
+):
+    add_builtin(
+        f"atomic_{_op}",
+        hidden=True,
+        export=False,
+        input_types={"arr": largearray(dtype=Any), "i": Int, "value": Any},
+        constraint=atomic_op_constraint,
+        value_func=create_atomic_op_value_func(_op),
+        dispatch_func=atomic_op_dispatch_func,
+        group="Utility",
+        skip_replay=True,
+        is_differentiable=_is_differentiable,
+    )
+
+add_builtin(
+    "atomic_cas",
+    hidden=True,
+    export=False,
+    input_types={"arr": largearray(dtype=Any), "i": Int, "compare": Any, "value": Any},
+    constraint=atomic_op_constraint,
+    value_func=create_atomic_op_value_func("cas"),
+    dispatch_func=atomic_op_dispatch_func,
+    group="Utility",
+    skip_replay=True,
+    is_differentiable=False,
+)
 
 
 # used to index into builtin types, i.e.: y = vec3[1]
@@ -17973,6 +18036,17 @@ add_builtin(
 
     Returns:
         ``True`` if ``a`` is falsy (``False``, zero, or an empty/null array), ``False`` otherwise.""",
+    group="Operators",
+    is_differentiable=False,
+)
+
+# Null check on a wp.largearray (`not x`); last in the overload list, so existing calls resolve first.
+add_builtin(
+    "unot",
+    input_types={"a": largearray(dtype=Any)},
+    value_type=builtins.bool,
+    hidden=True,
+    export=False,
     group="Operators",
     is_differentiable=False,
 )
@@ -21081,5 +21155,39 @@ add_builtin(
     export=False,
     group="Utility",
     hidden=True,
+    is_differentiable=False,
+)
+
+
+# ---------------------------------
+# wp.largearray overloads of built-ins whose other overloads are registered above. They are
+# registered last so that no existing call tries them before its own overload.
+
+
+def shape64_extract_value_func(arg_types: Mapping[str, type], arg_values: Mapping[str, Any]):
+    # A wp.largearray shape has a single dimension, and reading past it is not defined.
+    if arg_types is not None and arg_values.get("i") != 0:
+        raise WarpCodegenError("wp.largearray has one dimension; its shape can only be indexed with the constant 0.")
+    return int64
+
+
+# x.shape[0] of a wp.largearray
+add_builtin(
+    "extract",
+    input_types={"s": shape64_t, "i": int},
+    value_func=shape64_extract_value_func,
+    hidden=True,
+    export=False,
+    group="Utility",
+    is_differentiable=False,
+)
+
+add_builtin(
+    "len",
+    input_types={"a": largearray(dtype=Any)},
+    value_type=int64,
+    hidden=True,
+    group="Utility",
+    export=False,
     is_differentiable=False,
 )

@@ -286,6 +286,67 @@ template <typename T> inline CUDA_CALLABLE array_t<T> add(const array_t<T>& a, c
 }
 
 
+// Shape of a 1-D largearray_t. Named and indexed like shape_t so `x.shape[0]` reuses the same code path.
+struct shape64_t {
+    int64 dims[1];
+
+    CUDA_CALLABLE inline shape64_t()
+        : dims()
+    {
+    }
+
+    CUDA_CALLABLE inline int64 operator[](int i) const
+    {
+        assert(i == 0);
+        return dims[i];
+    }
+};
+
+
+// Descriptor of a 1-D array with a 64-bit length, passed to kernel parameters annotated
+// `wp.largearray[...]`. Must match largearray_t in types.py. Its layout is internal to generated
+// kernels: it is never stored in structs or exchanged through NumPy structured dtypes.
+//
+// NDim is always 1 (see the largearray_t alias below). It is there so that largearray_t does not
+// bind to the generic `template <typename> class A` array functions, which take `int`
+// indices and, for adjoints, drop gradients. Every largearray_t call therefore resolves to the
+// overloads in the "largearray_t" section at the end of this file, whose `int64` index
+// parameter accepts any integer type without overload ambiguity.
+template <typename T, int NDim> struct largearray_desc_t {
+    static_assert(NDim == 1, "largearray_t is 1-D only");
+
+    CUDA_CALLABLE inline largearray_desc_t()
+        : data(nullptr)
+        , grad(nullptr)
+        , shape()
+        , stride(0)
+        , flags(0)
+    {
+    }
+
+    CUDA_CALLABLE inline bool empty() const { return !data; }
+
+    // Null check for `if x:` and `not x` in kernels. Explicit, unlike array_t's implicit
+    // `operator T*()`, so that a largearray_t never converts to a pointer or an integer.
+    CUDA_CALLABLE inline explicit operator bool() const { return data != nullptr; }
+
+    T* data;
+    T* grad;
+    shape64_t shape;
+    int32 stride;  // byte stride between consecutive elements
+    uint16_t flags;
+};
+
+template <typename T> using largearray_t = largearray_desc_t<T, 1>;
+
+
+// Required when compiling adjoints.
+template <typename T> inline CUDA_CALLABLE largearray_t<T> add(const largearray_t<T>& a, const largearray_t<T>& b)
+{
+    return largearray_t<T>();
+}
+
+
 // Shape returned by the in-kernel `wp.zeros()` and `wp.empty()` builtins. Assigning it
 // to a declared fixedarray_t sets that array's shape in place, and zero-fills its own
 // storage when `Zero` is true, instead of building a temporary and copying it.
@@ -2458,6 +2519,384 @@ inline CUDA_CALLABLE void adj_atomic_xor(
 
 
 template <template <typename> class A, typename T> CUDA_CALLABLE inline int len(const A<T>& a) { return a.shape[0]; }
+
+
+// ------------------------------------------------------------------------------------------
+// largearray_t: 1-D arrays with a 64-bit length (`wp.largearray[...]` kernel parameters).
+//
+// These mirror the 1-D array_t functions above with an `int64` index. Every Warp integer
+// type converts to it by value (unsigned indices below 2**63 stay non-negative), and the
+// debug bounds assertions, negative-index wrapping by shape[0], and the byte offset are all
+// computed in 64 bits. Only kernels that use wp.largearray instantiate them.
+// ------------------------------------------------------------------------------------------
+
+CUDA_CALLABLE inline int64 extract(const shape64_t& s, int i) { return s[i]; }
+
+template <typename T> CUDA_CALLABLE inline int64 len(const largearray_t<T>& a) { return a.shape[0]; }
+
+template <typename T> CUDA_CALLABLE inline size_t byte_offset(const largearray_t<T>& arr, int64 i)
+{
+    assert(i >= 0 && i < arr.shape[0]);
+
+    return size_t(i) * size_t(arr.stride);
+}
+
+// Wraps a negative index by the array length.
+template <typename T> CUDA_CALLABLE inline int64 largearray_wrap_index(const largearray_t<T>& arr, int64 i)
+{
+    assert(i >= -arr.shape[0] && i < arr.shape[0]);
+
+    return i < 0 ? i + arr.shape[0] : i;
+}
+
+template <typename T> CUDA_CALLABLE inline T& index(const largearray_t<T>& arr, int64 i)
+{
+    const size_t offset = byte_offset(arr, largearray_wrap_index(arr, i));
+    T& result = *reinterpret_cast<T*>(reinterpret_cast<char*>(arr.data) + offset);
+    FP_VERIFY_FWD(result)
+
+    return result;
+}
+
+template <typename T> CUDA_CALLABLE inline T& index_grad(const largearray_t<T>& arr, int64 i)
+{
+    const size_t offset = byte_offset(arr, largearray_wrap_index(arr, i));
+    T& result = *reinterpret_cast<T*>(reinterpret_cast<char*>(arr.grad) + offset);
+    FP_VERIFY_FWD(result)
+
+    return result;
+}
+
+template <typename T> inline CUDA_CALLABLE T* address(const largearray_t<T>& buf, int64 i)
+{
+    return &index(buf, i);  // cppcheck-suppress returnDanglingLifetime
+}
+
+// Loads from a largearray_t use scalar accesses; the wide-access path is not specialized for it.
+template <typename T> CUDA_CALLABLE inline bool element_is_wide_aligned(const T*, const largearray_t<T>&, int)
+{
+    return false;
+}
+
+template <typename T> inline CUDA_CALLABLE void array_store(const largearray_t<T>& buf, int64 i, T value)
+{
+    FP_VERIFY_FWD(value)
+
+    index(buf, i) = value;
+}
+
+template <typename T> inline CUDA_CALLABLE T atomic_add(const largearray_t<T>& buf, int64 i, T value)
+{
+    return atomic_add(&index(buf, i), value);
+}
+
+template <typename T> inline CUDA_CALLABLE T atomic_sub(const largearray_t<T>& buf, int64 i, T value)
+{
+    return atomic_add(&index(buf, i), -value);
+}
+
+template <typename T> inline CUDA_CALLABLE T atomic_min(const largearray_t<T>& buf, int64 i, T value)
+{
+    return atomic_min(&index(buf, i), value);
+}
+
+template <typename T> inline CUDA_CALLABLE T atomic_max(const largearray_t<T>& buf, int64 i, T value)
+{
+    return atomic_max(&index(buf, i), value);
+}
+
+template <typename T> inline CUDA_CALLABLE T atomic_cas(const largearray_t<T>& buf, int64 i, T old_value, T new_value)
+{
+    return atomic_cas(&index(buf, i), old_value, new_value);
+}
+
+template <typename T> inline CUDA_CALLABLE T atomic_exch(const largearray_t<T>& buf, int64 i, T value)
+{
+    return atomic_exch(&index(buf, i), value);
+}
+
+template <typename T> inline CUDA_CALLABLE T atomic_and(const largearray_t<T>& buf, int64 i, T value)
+{
+    return atomic_and(&index(buf, i), value);
+}
+
+template <typename T> inline CUDA_CALLABLE T atomic_or(const largearray_t<T>& buf, int64 i, T value)
+{
+    return atomic_or(&index(buf, i), value);
+}
+
+template <typename T> inline CUDA_CALLABLE T atomic_xor(const largearray_t<T>& buf, int64 i, T value)
+{
+    return atomic_xor(&index(buf, i), value);
+}
+
+// Gradient element for index i, as the array_t adjoints choose it: the explicit adjoint
+// array when one was passed, otherwise buf.grad, otherwise none.
+template <typename T>
+CUDA_CALLABLE inline T* largearray_adj_element(const largearray_t<T>& buf, const largearray_t<T>& adj_buf, int64 i)
+{
+    if (adj_buf.data)
+        return &index(adj_buf, i);
+    if (buf.grad)
+        return &index_grad(buf, i);
+    return nullptr;
+}
+
+template <typename T>
+inline CUDA_CALLABLE void
+adj_address(const largearray_t<T>& buf, int64 i, const largearray_t<T>& adj_buf, int64 adj_i, const T& adj_output)
+{
+    if (T* g = largearray_adj_element(buf, adj_buf, i))
+        adj_atomic_add(g, adj_output);
+}
+
+template <typename T>
+inline CUDA_CALLABLE void
+adj_array_store(const largearray_t<T>& buf, int64 i, T value, const largearray_t<T>& adj_buf, int64 adj_i, T& adj_value)
+{
+    if (adj_buf.data) {
+        T& g = index(adj_buf, i);
+        adj_value += g;
+
+        // As for array_t: only zero the gradient when adj_buf aliases buf.grad and the
+        // forward array does not retain its gradient.
+        if (buf.grad && adj_buf.data == buf.grad && !(buf.flags & ARRAY_FLAG_RETAIN_GRAD))
+            g = T {};
+    } else if (buf.grad) {
+        T& g = index_grad(buf, i);
+        adj_value += g;
+        if (!(buf.flags & ARRAY_FLAG_RETAIN_GRAD))
+            g = T {};
+    }
+
+    FP_VERIFY_ADJ(value, adj_value)
+}
+
+template <typename T>
+inline CUDA_CALLABLE void adj_atomic_add(
+    const largearray_t<T>& buf,
+    int64 i,
+    T value,
+    const largearray_t<T>& adj_buf,
+    int64 adj_i,
+    T& adj_value,
+    const T& adj_ret
+)
+{
+    if (T* g = largearray_adj_element(buf, adj_buf, i))
+        adj_value += *g;
+
+    FP_VERIFY_ADJ(value, adj_value)
+}
+
+template <typename T>
+inline CUDA_CALLABLE void adj_atomic_sub(
+    const largearray_t<T>& buf,
+    int64 i,
+    T value,
+    const largearray_t<T>& adj_buf,
+    int64 adj_i,
+    T& adj_value,
+    const T& adj_ret
+)
+{
+    if (T* g = largearray_adj_element(buf, adj_buf, i))
+        adj_value -= *g;
+
+    FP_VERIFY_ADJ(value, adj_value)
+}
+
+template <typename T>
+inline CUDA_CALLABLE void adj_atomic_min(
+    const largearray_t<T>& buf,
+    int64 i,
+    T value,
+    const largearray_t<T>& adj_buf,
+    int64 adj_i,
+    T& adj_value,
+    const T& adj_ret
+)
+{
+    if (T* g = largearray_adj_element(buf, adj_buf, i))
+        adj_atomic_minmax(&index(buf, i), g, value, adj_value);
+
+    FP_VERIFY_ADJ(value, adj_value)
+}
+
+template <typename T>
+inline CUDA_CALLABLE void adj_atomic_max(
+    const largearray_t<T>& buf,
+    int64 i,
+    T value,
+    const largearray_t<T>& adj_buf,
+    int64 adj_i,
+    T& adj_value,
+    const T& adj_ret
+)
+{
+    if (T* g = largearray_adj_element(buf, adj_buf, i))
+        adj_atomic_minmax(&index(buf, i), g, value, adj_value);
+
+    FP_VERIFY_ADJ(value, adj_value)
+}
+
+template <typename T>
+inline CUDA_CALLABLE void adj_atomic_cas(
+    const largearray_t<T>& buf,
+    int64 i,
+    T compare,
+    T value,
+    const largearray_t<T>& adj_buf,
+    int64 adj_i,
+    T& adj_compare,
+    T& adj_value,
+    const T& adj_ret
+)
+{
+    if (T* g = largearray_adj_element(buf, adj_buf, i))
+        adj_atomic_cas(&index(buf, i), compare, value, g, adj_compare, adj_value, adj_ret);
+
+    FP_VERIFY_ADJ(value, adj_value)
+}
+
+template <typename T>
+inline CUDA_CALLABLE void adj_atomic_exch(
+    const largearray_t<T>& buf,
+    int64 i,
+    T value,
+    const largearray_t<T>& adj_buf,
+    int64 adj_i,
+    T& adj_value,
+    const T& adj_ret
+)
+{
+    if (T* g = largearray_adj_element(buf, adj_buf, i))
+        adj_atomic_exch(&index(buf, i), value, g, adj_value, adj_ret);
+
+    FP_VERIFY_ADJ(value, adj_value)
+}
+
+// Bitwise atomics do not accumulate gradients.
+template <typename T>
+inline CUDA_CALLABLE void adj_atomic_and(const largearray_t<T>&, int64, T, const largearray_t<T>&, int64, T&, const T&)
+{
+}
+
+template <typename T>
+inline CUDA_CALLABLE void adj_atomic_or(const largearray_t<T>&, int64, T, const largearray_t<T>&, int64, T&, const T&)
+{
+}
+
+template <typename T>
+inline CUDA_CALLABLE void adj_atomic_xor(const largearray_t<T>&, int64, T, const largearray_t<T>&, int64, T&, const T&)
+{
+}
+
+// Composite-slot updates such as `x[i][1] += v` or `x[i].a = v`, mirroring the array_t slot
+// functions. `access` maps an array element to the updated component, row, or field.
+template <typename T, typename SlotType, typename Accessor>
+inline CUDA_CALLABLE SlotType
+array_atomic_add_slot(const largearray_t<T>& buf, SlotType value, Accessor access, int64 i)
+{
+    SlotType old = atomic_add(&access(index(buf, i)), value);
+    FP_VERIFY_FWD(old + value)
+    return old;
+}
+
+template <typename T, typename SlotType, typename Accessor>
+inline CUDA_CALLABLE SlotType
+array_atomic_sub_slot(const largearray_t<T>& buf, SlotType value, Accessor access, int64 i)
+{
+    SlotType old = atomic_add(&access(index(buf, i)), -value);
+    FP_VERIFY_FWD(old - value)
+    return old;
+}
+
+template <typename T, typename SlotType, typename Accessor>
+inline CUDA_CALLABLE SlotType
+array_atomic_and_slot(const largearray_t<T>& buf, SlotType value, Accessor access, int64 i)
+{
+    return atomic_and(&access(index(buf, i)), value);
+}
+
+template <typename T, typename SlotType, typename Accessor>
+inline CUDA_CALLABLE SlotType array_atomic_or_slot(const largearray_t<T>& buf, SlotType value, Accessor access, int64 i)
+{
+    return atomic_or(&access(index(buf, i)), value);
+}
+
+template <typename T, typename SlotType, typename Accessor>
+inline CUDA_CALLABLE SlotType
+array_atomic_xor_slot(const largearray_t<T>& buf, SlotType value, Accessor access, int64 i)
+{
+    return atomic_xor(&access(index(buf, i)), value);
+}
+
+// Same gradient source and zeroing rules as adj_array_store.
+template <typename T, typename Accessor, typename AdjSlot>
+inline CUDA_CALLABLE void adj_array_store_slot(
+    const largearray_t<T>& buf, const largearray_t<T>& adj_buf, AdjSlot& adj_value, Accessor access, int64 i
+)
+{
+    if (adj_buf.data) {
+        AdjSlot& slot = access(index(adj_buf, i));
+        adj_value += slot;
+        if (buf.grad && adj_buf.data == buf.grad && !(buf.flags & ARRAY_FLAG_RETAIN_GRAD))
+            slot = AdjSlot {};
+    } else if (buf.grad) {
+        AdjSlot& slot = access(index_grad(buf, i));
+        adj_value += slot;
+        if (!(buf.flags & ARRAY_FLAG_RETAIN_GRAD))
+            slot = AdjSlot {};
+    }
+
+    FP_VERIFY_ADJ_SLOT(adj_value)
+}
+
+template <typename T, typename Accessor, typename AdjSlot>
+inline CUDA_CALLABLE void adj_array_atomic_add_slot(
+    const largearray_t<T>& buf, const largearray_t<T>& adj_buf, AdjSlot& adj_value, Accessor access, int64 i
+)
+{
+    if (adj_buf.data)
+        adj_value += access(index(adj_buf, i));
+    else if (buf.grad)
+        adj_value += access(index_grad(buf, i));
+
+    FP_VERIFY_ADJ_SLOT(adj_value)
+}
+
+template <typename T, typename Accessor, typename AdjSlot>
+inline CUDA_CALLABLE void adj_array_atomic_sub_slot(
+    const largearray_t<T>& buf, const largearray_t<T>& adj_buf, AdjSlot& adj_value, Accessor access, int64 i
+)
+{
+    if (adj_buf.data)
+        adj_value -= access(index(adj_buf, i));
+    else if (buf.grad)
+        adj_value -= access(index_grad(buf, i));
+
+    FP_VERIFY_ADJ_SLOT(adj_value)
+}
+
+// Bitwise integer slot atomics are not differentiable.
+template <typename T, typename Accessor, typename AdjSlot>
+inline CUDA_CALLABLE void
+adj_array_atomic_and_slot(const largearray_t<T>&, const largearray_t<T>&, AdjSlot&, Accessor, int64)
+{
+}
+
+template <typename T, typename Accessor, typename AdjSlot>
+inline CUDA_CALLABLE void
+adj_array_atomic_or_slot(const largearray_t<T>&, const largearray_t<T>&, AdjSlot&, Accessor, int64)
+{
+}
+
+template <typename T, typename Accessor, typename AdjSlot>
+inline CUDA_CALLABLE void
+adj_array_atomic_xor_slot(const largearray_t<T>&, const largearray_t<T>&, AdjSlot&, Accessor, int64)
+{
+}
 
 }  // namespace wp
 
