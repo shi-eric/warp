@@ -614,5 +614,22 @@ for name, func in cpu_block_fft_tests:
     )
 
 
+for inverse in (False, True):
+    for mathdx in (False, True):
+        for mode in ("before", "after"):
+            name = f"test_tile_{'ifft' if inverse else 'fft'}_func_{mode}_{'mathdx' if mathdx else 'scalar'}"
+            func = functools.partial(test_tile_fft_func_composition, inverse=inverse, mode=mode, mathdx=mathdx)
+            add_function_test(TestTileFFT, name, func, devices=test_devices, check_output=False)
+            if not mathdx:
+                add_function_test(
+                    TestTileFFT,
+                    name + "_cpu_blocks",
+                    func,
+                    devices=get_cpu_test_devices(),
+                    enable_cpu_blocks=True,
+                    check_output=False,
+                )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2, failfast=True)

@@ -1020,6 +1020,14 @@ template <typename T, typename L> struct tile_register_t {
             data[i] = T {};
     }
 
+    struct AdjExtractScratch {
+        // Batch large elements so scratch does not grow with the whole block.
+        static constexpr int MaxElements = sizeof(Type) < 4096 ? 4096 / sizeof(Type) : 1;
+        static constexpr int Size = WP_TILE_BLOCK_DIM < MaxElements ? WP_TILE_BLOCK_DIM : MaxElements;
+        int indices[Size];
+        Type values[Size];
+    };
+
     // extract a single tile element to a native type
     template <typename Coord> inline CUDA_CALLABLE Type extract(const Coord& c)
     {
@@ -1067,17 +1075,57 @@ template <typename T, typename L> struct tile_register_t {
     }
 
 
-    // backward version of scalar extract
+    // Each owner accumulates all requesting threads' contributions, including
+    // requests for different coordinates or multiple requests for one element.
     template <typename Coord> inline CUDA_CALLABLE void adj_extract(const Coord& c, Type adj_ret)
     {
-        // map from logical coords (i, j) -> (thread, reg)
         const int linear = Layout::linear_from_coord(c);
-        const int thread = Layout::thread_from_linear(linear);
-        const int reg = Layout::register_from_linear(linear);
-
-        if (WP_TILE_THREAD_IDX == thread) {
-            data[reg] += adj_ret;
+#if !defined(__CUDA_ARCH__)
+        if constexpr (WP_TILE_BLOCK_DIM == 1) {
+            data[linear] += adj_ret;
+        } else {
+#endif
+#if defined(__CUDA_ARCH__)
+            __shared__ AdjExtractScratch scratch;
+#else
+        wp_block_shared<AdjExtractScratch> scratch_holder;
+        auto& scratch = *scratch_holder;
+#endif
+            auto& indices = scratch.indices;
+            auto& values = scratch.values;
+            for (int start = 0; start < WP_TILE_BLOCK_DIM; start += AdjExtractScratch::Size) {
+                const int remaining = WP_TILE_BLOCK_DIM - start;
+                const int count = remaining < AdjExtractScratch::Size ? remaining : AdjExtractScratch::Size;
+                const int slot = WP_TILE_THREAD_IDX - start;
+                if (slot >= 0 && slot < count) {
+                    indices[slot] = linear;
+                    values[slot] = adj_ret;
+                }
+                WP_TILE_SYNC();
+#if defined(__CUDA_ARCH__)
+                if (__syncthreads_and(linear == indices[0])) {
+                    // Pairwise reduction also handles batches that are not powers of two.
+                    for (int stride = 1; stride < count; stride *= 2) {
+                        if (WP_TILE_THREAD_IDX % (2 * stride) == 0 && WP_TILE_THREAD_IDX + stride < count)
+                            values[WP_TILE_THREAD_IDX] += values[WP_TILE_THREAD_IDX + stride];
+                        WP_TILE_SYNC();
+                    }
+                    if (Layout::thread_from_linear(linear) == WP_TILE_THREAD_IDX)
+                        data[Layout::register_from_linear(linear)] += values[0];
+                } else
+#endif
+                {
+                    for (int requester = 0; requester < count; ++requester) {
+                        const int requested = indices[requester];
+                        if (Layout::thread_from_linear(requested) == WP_TILE_THREAD_IDX)
+                            data[Layout::register_from_linear(requested)] += values[requester];
+                    }
+                }
+                WP_TILE_SYNC();
+            }
+#if !defined(__CUDA_ARCH__)
         }
+#endif
     }
 
     inline CUDA_CALLABLE void print_from_shared(T* smem) const;
