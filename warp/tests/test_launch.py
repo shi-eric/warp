@@ -593,6 +593,109 @@ def test_launch_adjoint_block_dim_failure(test, device):
         )
 
 
+@wp.kernel
+def linear_tid_1d_kernel(out: wp.array[wp.int64]):
+    out[wp.tid()] = wp.linear_tid()
+
+
+@wp.kernel
+def linear_tid_2d_kernel(out: wp.array2d[wp.int64]):
+    i, j = wp.tid()
+    out[i, j] = wp.linear_tid()
+
+
+@wp.kernel
+def linear_tid_folded_kernel(out: wp.array[wp.int64]):
+    wp.atomic_max(out, wp.tid(), wp.linear_tid())
+
+
+@wp.kernel
+def linear_tid_tail_kernel(flags: wp.array[wp.int32], n: wp.int64):
+    i = wp.linear_tid()
+    if i >= n - wp.int64(4):
+        flags[int(i - (n - wp.int64(4)))] = 1
+
+
+@wp.kernel
+def linear_tid_index_1d_kernel(x: wp.array[float], y: wp.array[float]):
+    i = wp.linear_tid()
+    y[i] = 2.0 * x[i]
+
+
+@wp.kernel
+def linear_tid_index_2d_kernel(x: wp.array2d[float], y: wp.array[float]):
+    i, j = wp.tid()
+    y[wp.linear_tid()] = 2.0 * x[i, j]
+
+
+@wp.func(module="unique")
+def linear_tid_in_func():
+    return wp.linear_tid()
+
+
+@wp.kernel(module="unique")
+def linear_tid_func_caller_kernel(out: wp.array[wp.int64]):
+    out[wp.tid()] = linear_tid_in_func()
+
+
+def test_linear_tid_1d(test, device):
+    out = wp.zeros(10, dtype=wp.int64, device=device)
+    wp.launch(linear_tid_1d_kernel, dim=10, inputs=[out], device=device)
+    np.testing.assert_array_equal(out.numpy(), np.arange(10))
+
+
+def test_linear_tid_2d(test, device):
+    out = wp.zeros((3, 5), dtype=wp.int64, device=device)
+    wp.launch(linear_tid_2d_kernel, dim=(3, 5), inputs=[out], device=device)
+    np.testing.assert_array_equal(out.numpy(), np.arange(15).reshape(3, 5))
+
+
+def test_linear_tid_folded(test, device):
+    out = wp.full(4, -1, dtype=wp.int64, device=device)
+    wp.launch(linear_tid_folded_kernel, dim=(4, 3), inputs=[out], device=device)
+    np.testing.assert_array_equal(out.numpy(), [2, 5, 8, 11])
+
+
+def test_linear_tid_array_index(test, device):
+    """Verify that the ``int64`` value from ``wp.linear_tid()`` indexes a ``wp.array``."""
+    x = wp.array(np.arange(10, dtype=np.float32), dtype=float, device=device)
+    y = wp.zeros(10, dtype=float, device=device)
+    wp.launch(linear_tid_index_1d_kernel, dim=10, inputs=[x, y], device=device)
+    np.testing.assert_array_equal(y.numpy(), 2.0 * np.arange(10, dtype=np.float32))
+
+    x = wp.array(np.arange(15, dtype=np.float32).reshape(3, 5), dtype=float, device=device)
+    y = wp.zeros(15, dtype=float, device=device)
+    wp.launch(linear_tid_index_2d_kernel, dim=(3, 5), inputs=[x, y], device=device)
+    np.testing.assert_array_equal(y.numpy(), 2.0 * np.arange(15, dtype=np.float32))
+
+
+def test_linear_tid_adjoint_launch_builds(test, device):
+    # Smoke test: a kernel that calls wp.linear_tid() builds and runs as an adjoint launch.
+    out = wp.zeros(10, dtype=wp.int64, device=device)
+    wp.launch(linear_tid_1d_kernel, dim=10, inputs=[out], adj_inputs=[out], adjoint=True, device=device)
+    wp.synchronize_device(device)
+
+
+def test_linear_tid_past_int32(test, device):
+    n = 2**31 + 8
+    flags = wp.zeros(4, dtype=wp.int32, device=device)
+    wp.launch(linear_tid_tail_kernel, dim=n, inputs=[flags, n], device=device)
+    np.testing.assert_array_equal(flags.numpy(), [1, 1, 1, 1])
+
+
+def test_linear_tid_in_func_rejected(test, device):
+    out = wp.zeros(4, dtype=wp.int64, device=device)
+    with test.assertRaisesRegex(wp.WarpCodegenError, r"linear_tid\(\) may only be called from a Warp kernel"):
+        wp.launch(linear_tid_func_caller_kernel, dim=4, inputs=[out], device=device)
+
+
+def test_linear_tid_keeps_tid_limit(test, device):
+    """Verify that a kernel calling both ``wp.tid()`` and ``wp.linear_tid()`` keeps the 32-bit extent limit."""
+    out = wp.zeros(4, dtype=wp.int64, device=device)
+    with test.assertRaisesRegex(ValueError, r"wp.tid\(\)"):
+        wp.launch(linear_tid_1d_kernel, dim=2**31 + 8, inputs=[out], device=device)
+
+
 devices = get_test_devices()
 cuda_devices = get_cuda_test_devices()
 
@@ -705,6 +808,19 @@ add_function_test(
 add_function_test(
     TestLaunch, "test_launch_adjoint_block_dim_failure", test_launch_adjoint_block_dim_failure, devices=cuda_devices
 )
+
+add_function_test(TestLaunch, "test_linear_tid_1d", test_linear_tid_1d, devices=devices)
+add_function_test(TestLaunch, "test_linear_tid_2d", test_linear_tid_2d, devices=devices)
+add_function_test(TestLaunch, "test_linear_tid_folded", test_linear_tid_folded, devices=devices)
+add_function_test(TestLaunch, "test_linear_tid_array_index", test_linear_tid_array_index, devices=devices)
+add_function_test(
+    TestLaunch, "test_linear_tid_adjoint_launch_builds", test_linear_tid_adjoint_launch_builds, devices=devices
+)
+add_function_test(
+    TestLaunch, "test_linear_tid_past_int32", test_linear_tid_past_int32, devices=get_selected_cuda_test_devices()
+)
+add_function_test(TestLaunch, "test_linear_tid_in_func_rejected", test_linear_tid_in_func_rejected, devices=devices)
+add_function_test(TestLaunch, "test_linear_tid_keeps_tid_limit", test_linear_tid_keeps_tid_limit, devices=devices)
 
 
 if __name__ == "__main__":

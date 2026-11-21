@@ -420,6 +420,7 @@ def _is_tid_call(
     local_variables=frozenset(),
     tid_aliases=frozenset(),
     callable_arg_values=None,
+    builtin_name="tid",
 ) -> bool:
     """Return whether ``node`` semantically calls ``wp.tid()``.
 
@@ -431,12 +432,14 @@ def _is_tid_call(
         tid_aliases: Local names known to reference ``wp.tid()``.
         callable_arg_values: Specialized function targets keyed by callable
             parameter name.
+        builtin_name: Launch-index built-in to look for instead of ``tid``,
+            for example ``"linear_tid"``.
     """
     if not isinstance(node, ast.Call):
         return False
 
     if adj is None:
-        if not isinstance(node.func, ast.Attribute) or node.func.attr != "tid":
+        if not isinstance(node.func, ast.Attribute) or node.func.attr != builtin_name:
             return False
 
         receiver = node.func.value
@@ -453,7 +456,7 @@ def _is_tid_call(
     else:
         func = resolve_reference_call_func(adj, node, callable_arg_values)
 
-    return func is warp._src.context.builtin_functions["tid"]
+    return func is warp._src.context.builtin_functions[builtin_name]
 
 
 def is_external_constant_params_arg(arg) -> bool:
@@ -483,13 +486,13 @@ def iter_ast_nodes_of_types(root: ast.AST, *types: type):
                 todo.append(value)
 
 
-def _uses_tid_call(adj) -> bool:
-    """Return whether ``adj`` calls ``wp.tid()`` directly or through an alias."""
+def _uses_tid_call(adj, builtin_name="tid") -> bool:
+    """Return whether ``adj`` calls ``wp.tid()`` (or ``builtin_name``) directly or through an alias."""
     local_variables = adj.syntax().assigned_name_ids
-    tid_aliases = resolve_reference_tid_aliases(adj, local_variables)
+    tid_aliases = resolve_reference_tid_aliases(adj, local_variables, builtin_name)
     callable_arg_values = getattr(adj, "callable_arg_values", None) or {}
     return any(
-        _is_tid_call(node, adj, local_variables, tid_aliases, callable_arg_values)
+        _is_tid_call(node, adj, local_variables, tid_aliases, callable_arg_values, builtin_name)
         for node in iter_ast_nodes_of_types(adj.tree, ast.Call)
     )
 
@@ -1703,10 +1706,10 @@ def resolve_reference_call_func_once(adj, call_node, key, call_funcs, callable_a
     return func
 
 
-def resolve_reference_tid_aliases(adj, local_variables) -> frozenset[str]:
-    """Return local names that can resolve to ``wp.tid()`` during reference scans."""
+def resolve_reference_tid_aliases(adj, local_variables, builtin_name="tid") -> frozenset[str]:
+    """Return local names that can resolve to ``wp.tid()`` (or ``builtin_name``) during reference scans."""
 
-    tid_func = warp._src.context.builtin_functions["tid"]
+    tid_func = warp._src.context.builtin_functions[builtin_name]
     tid_aliases = set()
     aliases_by_source = {}
 
@@ -4794,14 +4797,17 @@ class Adjoint:
         return adj.eval(node.value)
 
     def check_tid_in_func_error(adj, func):
-        if adj.is_user_function and func is warp._src.context.builtin_functions["tid"]:
-            lineno = adj.lineno + adj.fun_lineno
-            line = adj.source_lines[adj.lineno]
-            raise WarpCodegenError(
-                "tid() may only be called from a Warp kernel, not a Warp function. "
-                "Instead, obtain the indices from a @wp.kernel and pass them as "
-                f"arguments to the function {adj.fun_name}, {adj.filename}:{lineno}:\n{line}\n"
-            )
+        if not adj.is_user_function:
+            return
+        for name in ("tid", "linear_tid"):
+            if func is warp._src.context.builtin_functions[name]:
+                lineno = adj.lineno + adj.fun_lineno
+                line = adj.source_lines[adj.lineno]
+                raise WarpCodegenError(
+                    f"{name}() may only be called from a Warp kernel, not a Warp function. "
+                    "Instead, obtain the indices from a @wp.kernel and pass them as "
+                    f"arguments to the function {adj.fun_name}, {adj.filename}:{lineno}:\n{line}\n"
+                )
 
     def resolve_arg(adj, arg):
         # Always try to start with evaluating the argument since it can help
@@ -7730,6 +7736,8 @@ cpu_module_header = """
 #define builtin_tid3d(x, y, z) wp::tid(x, y, z, task_index, dim)
 #define builtin_tid4d(x, y, z, w) wp::tid(x, y, z, w, task_index, dim)
 
+#define builtin_linear_tid() static_cast<wp::int64>(task_index)
+
 #define builtin_block_dim() wp::block_dim()
 
 """
@@ -7749,6 +7757,8 @@ cuda_module_header = """
 #define builtin_tid2d(x, y) wp::tid(x, y, _idx, dim)
 #define builtin_tid3d(x, y, z) wp::tid(x, y, z, _idx, dim)
 #define builtin_tid4d(x, y, z, w) wp::tid(x, y, z, w, _idx, dim)
+
+#define builtin_linear_tid() static_cast<wp::int64>(_idx)
 
 #define builtin_block_dim() wp::block_dim()
 
@@ -9032,11 +9042,13 @@ def codegen_kernel(kernel, device, options):
             "deterministic lowering."
         )
 
-    if is_external_constant_params_entry and _uses_tid_call(adj):
-        raise WarpCodegenError(
-            f"Kernel '{kernel.key}' with entry_point_abi='external_constant_params' cannot use wp.tid(); "
-            "the external entry point does not define dim or _idx."
-        )
+    if is_external_constant_params_entry:
+        for launch_index_name in ("tid", "linear_tid"):
+            if _uses_tid_call(adj, launch_index_name):
+                raise WarpCodegenError(
+                    f"Kernel '{kernel.key}' with entry_point_abi='external_constant_params' cannot use "
+                    f"wp.{launch_index_name}(); the external entry point does not define dim or _idx."
+                )
     if is_external_constant_params_entry and adj.get_total_required_shared():
         raise WarpCodegenError(
             f"Kernel '{kernel.key}' with entry_point_abi='external_constant_params' cannot use shared-memory tiles; "
