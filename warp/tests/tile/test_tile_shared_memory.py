@@ -6,6 +6,7 @@ import io
 import re
 import unittest
 import warnings
+from typing import Any
 from unittest import mock
 
 import numpy as np
@@ -582,6 +583,302 @@ def test_tile_function_returned_tile_reserves_shared_memory(test, device):
 
         test.assertEqual(hooks.forward_smem_bytes, expected_forward_bytes)
         test.assertEqual(hooks.backward_smem_bytes, expected_forward_bytes * 2)
+
+
+RETURN_TILE_DIM = 16
+RETURN_BLOCK_DIM = 64
+RETURN_TILE_BYTES = RETURN_TILE_DIM * RETURN_TILE_DIM * 4
+
+
+@wp.func
+def load_shared(a: wp.array2d[float]):
+    return wp.tile_load(a, shape=(RETURN_TILE_DIM, RETURN_TILE_DIM), storage="shared")
+
+
+@wp.func
+def load_shared_nested(a: wp.array2d[float]):
+    return load_shared(a)
+
+
+@wp.func
+def load_shared_any(a: Any):
+    return wp.tile_load(a, shape=(RETURN_TILE_DIM, RETURN_TILE_DIM), storage="shared")
+
+
+@wp.func
+def load_shared_pair(a: wp.array2d[float], b: wp.array2d[float]):
+    return (
+        wp.tile_load(a, shape=(RETURN_TILE_DIM, RETURN_TILE_DIM), storage="shared"),
+        wp.tile_load(b, shape=(RETURN_TILE_DIM, RETURN_TILE_DIM), storage="shared"),
+    )
+
+
+@wp.func
+def load_shared_either(a: wp.array2d[float], b: wp.array2d[float], use_a: int):
+    x = wp.tile_load(a, shape=(RETURN_TILE_DIM, RETURN_TILE_DIM), storage="shared")
+    y = wp.tile_load(b, shape=(RETURN_TILE_DIM, RETURN_TILE_DIM), storage="shared")
+    if use_a:
+        return x, y
+    return y, x
+
+
+@wp.func
+def load_shared_twice(a: wp.array2d[float]):
+    x = wp.tile_load(a, shape=(RETURN_TILE_DIM, RETURN_TILE_DIM), storage="shared")
+    return x, x
+
+
+@wp.kernel
+def shared_return_kernel(a: wp.array2d[float], b: wp.array2d[float], out: wp.array2d[float]):
+    x = load_shared(a)
+    y = load_shared_nested(b)
+    wp.tile_store(out, x + y)
+
+
+@wp.kernel
+def shared_return_generic_kernel(
+    a32: wp.array2d[float], a64: wp.array2d[wp.float64], out32: wp.array2d[float], out64: wp.array2d[wp.float64]
+):
+    wp.tile_store(out32, load_shared_any(a32))
+    wp.tile_store(out64, load_shared_any(a64))
+
+
+@wp.kernel
+def shared_returns_kernel(
+    a: wp.array2d[float], b: wp.array2d[float], out_x: wp.array2d[float], out_y: wp.array2d[float]
+):
+    x, y = load_shared_pair(a, b)
+    wp.tile_store(out_x, x)
+    wp.tile_store(out_y, y)
+
+
+@wp.kernel
+def shared_return_either_kernel(
+    a: wp.array2d[float], b: wp.array2d[float], use_a: int, out0: wp.array2d[float], out1: wp.array2d[float]
+):
+    t0, t1 = load_shared_either(a, b, use_a)
+    wp.tile_store(out0, t0)
+    wp.tile_store(out1, t1)
+
+
+@wp.kernel
+def shared_return_twice_kernel(a: wp.array2d[float], out0: wp.array2d[float], out1: wp.array2d[float]):
+    t0, t1 = load_shared_twice(a)
+    wp.tile_store(out0, t0)
+    wp.tile_store(out1, t1)
+
+
+@wp.kernel
+def shared_return_loop_kernel(a: wp.array2d[float], n: int, out: wp.array2d[float]):
+    acc = wp.tile_zeros(shape=(RETURN_TILE_DIM, RETURN_TILE_DIM), dtype=float)
+    for _ in range(n):
+        t = load_shared(a)
+        t += wp.tile_ones(shape=(RETURN_TILE_DIM, RETURN_TILE_DIM), dtype=float)
+        acc += t
+    wp.tile_store(out, acc)
+
+
+@wp.func
+def load_shared_with_replay(a: wp.array2d[float]):
+    return wp.tile_load(a, shape=(RETURN_TILE_DIM, RETURN_TILE_DIM), storage="shared")
+
+
+@wp.func_replay(load_shared_with_replay)
+def replay_load_shared_with_replay(a: wp.array2d[float]):
+    return wp.tile_load(a, shape=(RETURN_TILE_DIM, RETURN_TILE_DIM), storage="shared")
+
+
+@wp.kernel
+def shared_return_replay_kernel(a: wp.array2d[float], out: wp.array2d[float]):
+    wp.tile_store(out, load_shared_with_replay(a))
+
+
+def assert_kernel_shared_memory(test, kernel, device, forward_bytes, backward_bytes):
+    """Check the dynamic shared memory that a CUDA kernel requests; CPU kernels make no such request."""
+    if not wp.get_device(device).is_cuda:
+        return
+
+    hooks = kernel.module.load(device, RETURN_BLOCK_DIM).get_kernel_hooks(kernel)
+    test.assertEqual(hooks.forward_smem_bytes, forward_bytes)
+    test.assertEqual(hooks.backward_smem_bytes, backward_bytes)
+
+
+def test_tile_function_shared_return_uses_caller_tile(test, device):
+    """Build a single returned shared tile directly in the caller's tile."""
+    DIM = RETURN_TILE_DIM
+    rng = np.random.default_rng(42)
+    a_np = rng.standard_normal((DIM, DIM)).astype(np.float32)
+    b_np = rng.standard_normal((DIM, DIM)).astype(np.float32)
+    a = wp.array(a_np, device=device, requires_grad=True)
+    b = wp.array(b_np, device=device, requires_grad=True)
+    out = wp.zeros((DIM, DIM), dtype=float, device=device, requires_grad=True)
+
+    with wp.Tape() as tape:
+        wp.launch_tiled(
+            shared_return_kernel, dim=[1], inputs=[a, b], outputs=[out], block_dim=RETURN_BLOCK_DIM, device=device
+        )
+
+    np.testing.assert_allclose(out.numpy(), a_np + b_np, rtol=1e-6)
+
+    tape.backward(grads={out: wp.ones_like(out)})
+    np.testing.assert_allclose(a.grad.numpy(), np.ones((DIM, DIM)))
+    np.testing.assert_allclose(b.grad.numpy(), np.ones((DIM, DIM)))
+
+    # only the caller's two tiles, also when a function returns another function's tile
+    assert_kernel_shared_memory(test, shared_return_kernel, device, 2 * RETURN_TILE_BYTES, 4 * RETURN_TILE_BYTES)
+
+
+def test_tile_function_generic_shared_return_uses_caller_tile(test, device):
+    """Build returned shared tiles in the caller's tiles for each overload of a generic function."""
+    DIM = RETURN_TILE_DIM
+    rng = np.random.default_rng(42)
+    a32_np = rng.standard_normal((DIM, DIM)).astype(np.float32)
+    a64_np = rng.standard_normal((DIM, DIM))
+    a32 = wp.array(a32_np, dtype=float, device=device)
+    a64 = wp.array(a64_np, dtype=wp.float64, device=device)
+    out32 = wp.zeros((DIM, DIM), dtype=float, device=device)
+    out64 = wp.zeros((DIM, DIM), dtype=wp.float64, device=device)
+
+    wp.launch_tiled(
+        shared_return_generic_kernel,
+        dim=[1],
+        inputs=[a32, a64],
+        outputs=[out32, out64],
+        block_dim=RETURN_BLOCK_DIM,
+        device=device,
+    )
+
+    np.testing.assert_allclose(out32.numpy(), a32_np)
+    np.testing.assert_allclose(out64.numpy(), a64_np)
+
+    # only the caller's float32 and float64 tiles
+    assert_kernel_shared_memory(
+        test, shared_return_generic_kernel, device, 3 * RETURN_TILE_BYTES, 6 * RETURN_TILE_BYTES
+    )
+
+
+def test_tile_function_shared_returns_use_caller_tiles(test, device):
+    """Build returned shared tiles directly in the caller's tiles."""
+    DIM = RETURN_TILE_DIM
+    rng = np.random.default_rng(42)
+    a_np = rng.standard_normal((DIM, DIM)).astype(np.float32)
+    b_np = rng.standard_normal((DIM, DIM)).astype(np.float32)
+    a = wp.array(a_np, device=device, requires_grad=True)
+    b = wp.array(b_np, device=device, requires_grad=True)
+    out_x = wp.zeros((DIM, DIM), dtype=float, device=device, requires_grad=True)
+    out_y = wp.zeros((DIM, DIM), dtype=float, device=device, requires_grad=True)
+
+    with wp.Tape() as tape:
+        wp.launch_tiled(
+            shared_returns_kernel,
+            dim=[1],
+            inputs=[a, b],
+            outputs=[out_x, out_y],
+            block_dim=RETURN_BLOCK_DIM,
+            device=device,
+        )
+
+    np.testing.assert_allclose(out_x.numpy(), a_np)
+    np.testing.assert_allclose(out_y.numpy(), b_np)
+
+    tape.backward(grads={out_x: wp.ones_like(out_x), out_y: wp.full_like(out_y, 2.0)})
+    np.testing.assert_allclose(a.grad.numpy(), np.ones((DIM, DIM)))
+    np.testing.assert_allclose(b.grad.numpy(), np.full((DIM, DIM), 2.0))
+
+    # only the caller's two tiles, as when the loads are written in the kernel
+    assert_kernel_shared_memory(test, shared_returns_kernel, device, 2 * RETURN_TILE_BYTES, 4 * RETURN_TILE_BYTES)
+
+
+def test_tile_function_shared_return_in_loop(test, device):
+    """Differentiate a loop that changes a returned shared tile in place."""
+    DIM = RETURN_TILE_DIM
+    a_np = np.random.default_rng(42).standard_normal((DIM, DIM)).astype(np.float32)
+    a = wp.array(a_np, device=device, requires_grad=True)
+    out = wp.zeros((DIM, DIM), dtype=float, device=device, requires_grad=True)
+
+    with wp.Tape() as tape:
+        wp.launch_tiled(
+            shared_return_loop_kernel, dim=[1], inputs=[a, 3], outputs=[out], block_dim=RETURN_BLOCK_DIM, device=device
+        )
+
+    np.testing.assert_allclose(out.numpy(), 3.0 * (a_np + 1.0), rtol=1e-6)
+
+    tape.backward(grads={out: wp.ones_like(out)})
+    np.testing.assert_allclose(a.grad.numpy(), np.full((DIM, DIM), 3.0))
+
+
+def test_tile_function_shared_return_with_custom_replay(test, device):
+    """Differentiate a function with a custom replay that returns a shared tile."""
+    DIM = RETURN_TILE_DIM
+    a_np = np.random.default_rng(42).standard_normal((DIM, DIM)).astype(np.float32)
+    a = wp.array(a_np, device=device, requires_grad=True)
+    out = wp.zeros((DIM, DIM), dtype=float, device=device, requires_grad=True)
+
+    with wp.Tape() as tape:
+        wp.launch_tiled(
+            shared_return_replay_kernel, dim=[1], inputs=[a], outputs=[out], block_dim=RETURN_BLOCK_DIM, device=device
+        )
+
+    np.testing.assert_allclose(out.numpy(), a_np)
+
+    tape.backward(grads={out: wp.ones_like(out)})
+    np.testing.assert_allclose(a.grad.numpy(), np.ones((DIM, DIM)))
+
+
+def test_tile_function_shared_return_fallbacks(test, device):
+    """Copy returned shared tiles that cannot share the caller's tiles."""
+    DIM = RETURN_TILE_DIM
+    rng = np.random.default_rng(42)
+    a_np = rng.standard_normal((DIM, DIM)).astype(np.float32)
+    b_np = rng.standard_normal((DIM, DIM)).astype(np.float32)
+
+    for use_a in (1, 0):
+        with test.subTest(use_a=use_a):
+            a = wp.array(a_np, device=device, requires_grad=True)
+            b = wp.array(b_np, device=device, requires_grad=True)
+            out0 = wp.zeros((DIM, DIM), dtype=float, device=device, requires_grad=True)
+            out1 = wp.zeros((DIM, DIM), dtype=float, device=device, requires_grad=True)
+
+            with wp.Tape() as tape:
+                wp.launch_tiled(
+                    shared_return_either_kernel,
+                    dim=[1],
+                    inputs=[a, b, use_a],
+                    outputs=[out0, out1],
+                    block_dim=RETURN_BLOCK_DIM,
+                    device=device,
+                )
+
+            np.testing.assert_allclose(out0.numpy(), a_np if use_a else b_np)
+            np.testing.assert_allclose(out1.numpy(), b_np if use_a else a_np)
+
+            tape.backward(grads={out0: wp.ones_like(out0), out1: wp.full_like(out1, 2.0)})
+            np.testing.assert_allclose(a.grad.numpy(), np.full((DIM, DIM), 1.0 if use_a else 2.0))
+            np.testing.assert_allclose(b.grad.numpy(), np.full((DIM, DIM), 2.0 if use_a else 1.0))
+
+    a = wp.array(a_np, device=device, requires_grad=True)
+    out0 = wp.zeros((DIM, DIM), dtype=float, device=device, requires_grad=True)
+    out1 = wp.zeros((DIM, DIM), dtype=float, device=device, requires_grad=True)
+
+    with wp.Tape() as tape:
+        wp.launch_tiled(
+            shared_return_twice_kernel,
+            dim=[1],
+            inputs=[a],
+            outputs=[out0, out1],
+            block_dim=RETURN_BLOCK_DIM,
+            device=device,
+        )
+
+    np.testing.assert_allclose(out0.numpy(), a_np)
+    np.testing.assert_allclose(out1.numpy(), a_np)
+
+    tape.backward(grads={out0: wp.ones_like(out0), out1: wp.full_like(out1, 2.0)})
+    np.testing.assert_allclose(a.grad.numpy(), np.full((DIM, DIM), 3.0))
+
+    # the function keeps its own tiles: two in load_shared_either, one in load_shared_twice
+    assert_kernel_shared_memory(test, shared_return_either_kernel, device, 4 * RETURN_TILE_BYTES, 8 * RETURN_TILE_BYTES)
+    assert_kernel_shared_memory(test, shared_return_twice_kernel, device, 3 * RETURN_TILE_BYTES, 6 * RETURN_TILE_BYTES)
 
 
 def round_up(a, b):
@@ -1392,6 +1689,7 @@ class TestTileSharedMemoryMessages(unittest.TestCase):
 
 
 devices = get_cuda_test_devices()
+all_devices = get_test_devices()
 
 
 class TestTileSharedMemory(unittest.TestCase):
@@ -1459,6 +1757,42 @@ add_function_test(
     "test_tile_function_returned_tile_reserves_shared_memory",
     test_tile_function_returned_tile_reserves_shared_memory,
     devices=devices,
+)
+add_function_test(
+    TestTileSharedMemory,
+    "test_tile_function_shared_return_uses_caller_tile",
+    test_tile_function_shared_return_uses_caller_tile,
+    devices=all_devices,
+)
+add_function_test(
+    TestTileSharedMemory,
+    "test_tile_function_generic_shared_return_uses_caller_tile",
+    test_tile_function_generic_shared_return_uses_caller_tile,
+    devices=all_devices,
+)
+add_function_test(
+    TestTileSharedMemory,
+    "test_tile_function_shared_returns_use_caller_tiles",
+    test_tile_function_shared_returns_use_caller_tiles,
+    devices=all_devices,
+)
+add_function_test(
+    TestTileSharedMemory,
+    "test_tile_function_shared_return_fallbacks",
+    test_tile_function_shared_return_fallbacks,
+    devices=all_devices,
+)
+add_function_test(
+    TestTileSharedMemory,
+    "test_tile_function_shared_return_in_loop",
+    test_tile_function_shared_return_in_loop,
+    devices=all_devices,
+)
+add_function_test(
+    TestTileSharedMemory,
+    "test_tile_function_shared_return_with_custom_replay",
+    test_tile_function_shared_return_with_custom_replay,
+    devices=all_devices,
 )
 add_function_test(TestTileSharedMemory, "test_tile_shared_non_aligned", test_tile_shared_non_aligned, devices=devices)
 add_function_test(

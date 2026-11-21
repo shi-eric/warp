@@ -2153,6 +2153,12 @@ class Adjoint:
 
         adj.is_user_function = is_user_function
 
+        # whether a returned shared tile may be built directly in the caller's tile, set by Function.build()
+        adj.return_slots_allowed = False
+        # per-build return state, see build()
+        adj.return_statements = []
+        adj.single_return_slot = False
+
         # whether the generation of the forward code is skipped for this function
         adj.skip_forward_codegen = skip_forward_codegen
         # whether the generation of the adjoint code is skipped for this function
@@ -2300,11 +2306,51 @@ class Adjoint:
     def alloc_shared_extra_backward(adj, num_bytes):
         adj.max_required_extra_shared_memory_backward = max(adj.max_required_extra_shared_memory_backward, num_bytes)
 
+    @property
+    def uses_return_slots(adj):
+        """Whether the generated function passes its return values back through ``ret_N`` reference parameters."""
+        return adj.return_var is not None and (len(adj.return_var) > 1 or adj.single_return_slot)
+
+    def returns_shared_tile_in_slot(adj, var):
+        """Return whether a return statement passes ``var`` through the return-slot helpers.
+
+        Only a shared, owning tile can be built directly in the caller's tile, and only in a function whose
+        callers share the returned variable's type and follow the generated signatures.
+        """
+        return adj.return_slots_allowed and is_tile(var.type) and var.type.storage == "shared" and var.type.owner
+
+    def get_return_slot_aliases(adj):
+        """Map each local tile that is built directly in the caller's tile to its return slot index.
+
+        The generated function declares such a tile as a reference to its slot instead of allocating it.
+        This holds when every return statement returns the tile in the same slot through the return-slot
+        helpers and in no other slot, the tile is not a parameter, and it is still a shared, owning tile
+        once the build is complete. Storage can change after a return statement is emitted, so this is
+        decided from the final types.
+        """
+        if not adj.return_slots_allowed or not adj.return_statements:
+            return {}
+
+        aliases = {}
+        for i, var in enumerate(adj.return_statements[0][0]):
+            if var.is_parameter or not adj.returns_shared_tile_in_slot(var):
+                continue
+            if all(
+                values[i] is var and uses_helpers[i] and sum(value is var for value in values) == 1
+                for values, uses_helpers in adj.return_statements
+            ):
+                aliases[var] = i
+        return aliases
+
     # returns the number of bytes of shared memory required by this function's own tile
     # variables, excluding anything required by callees
     def get_own_required_shared(adj):
         own_shared = 0
+        # tiles built in the caller's tiles are counted by the caller
+        aliases = adj.get_return_slot_aliases()
         for var in adj.variables:
+            if var in aliases:
+                continue
             if is_tile(var.type) and var.type.storage == "shared" and var.type.owner:
                 own_shared += var.type.size_in_bytes()
             elif is_tile_stack(var.type):
@@ -2499,6 +2545,10 @@ class Adjoint:
         adj.has_non_unrolled_constant_loop = False
 
         adj.return_var = None  # return type for function or kernel
+        # each return statement's values and, per value, whether it went through the return-slot helpers
+        adj.return_statements = []
+        # whether a single return value goes through a return slot like multiple values do, see add_return()
+        adj.single_return_slot = False
         adj.loop_symbols = []  # symbols at the start of each loop
         adj.loop_const_iter_symbols = (
             set()
@@ -3415,8 +3465,10 @@ class Adjoint:
         # Select the same replay target for void, scalar, and multiple outputs.
         # Function-valued arguments follow that selection too, including when
         # the enclosing native implementation invokes them during its adjoint.
-        call_outputs = output_list if len(output_list) > 1 else []
-        assignment = f"var_{output} = " if len(output_list) == 1 else ""
+        # A user function that returns a single shared tile through a slot takes the output as an argument.
+        single_return_slot = not func_is_builtin and func.adj.single_return_slot
+        call_outputs = output_list if len(output_list) > 1 or single_return_slot else []
+        assignment = f"var_{output} = " if len(output_list) == 1 and not single_return_slot else ""
         forward_args = adj.format_forward_call_args(fwd_args + det_args + call_outputs, use_initializer_list)
         forward_call = f"{assignment}{func.namespace}{func_name}({forward_args});"
         if func.skip_replay:
@@ -3498,7 +3550,7 @@ class Adjoint:
                 adj.unvalidated_ref_calls.append(func)
             adj_args = tuple(reverse_adj_args)
             reverse_has_output_args = (
-                func.require_original_output_arg or len(output_list) > 1
+                func.require_original_output_arg or len(output_list) > 1 or single_return_slot
             ) and func.custom_grad_func is None
             reverse_extra_args = adj.deterministic.reverse_call_args(func, bound_args, det_args)
             arg_str = adj.format_reverse_call_args(
@@ -3508,7 +3560,7 @@ class Adjoint:
                 use_initializer_list,
                 extra_args=reverse_extra_args,
                 has_output_args=reverse_has_output_args,
-                require_original_output_arg=func.require_original_output_arg,
+                require_original_output_arg=func.require_original_output_arg or single_return_slot,
             )
             if arg_str is not None:
                 if func.lto_dispatch_func is not None or func.adjoint_uses_template_args:
@@ -3768,19 +3820,34 @@ class Adjoint:
             return result_var
 
     def add_return(adj, var):
+        if var is not None and len(var) == 1 and not adj.return_statements:
+            # The first return statement fixes the calling convention for the rest of the build: a single
+            # shared tile goes through a return slot so that it can be built in the caller's tile. Storage can
+            # still change afterwards, so the slot form below stays valid for either storage.
+            adj.single_return_slot = adj.returns_shared_tile_in_slot(var[0])
+
         if var is None or len(var) == 0:
             # Rewritten to `continue;` for CUDA grid-stride kernels by codegen_func_forward().
             adj.add_forward("return;", f"goto label{adj.label_count};")
-        elif len(var) == 1:
+        elif len(var) == 1 and not adj.single_return_slot:
             adj.add_forward(f"return {var[0].emit()};", f"goto label{adj.label_count};")
             if not adj.type_contains_native_value(var[0].type):
                 adj.add_reverse("adj_" + str(var[0]) + " += adj_ret;")
+            adj.return_statements.append((tuple(var), (False,)))
         else:
+            # a shared tile may end up declared as a reference to its slot, so copy and accumulate
+            # through helpers that do nothing when the value and the slot are the same tile
+            uses_helpers = tuple(adj.returns_shared_tile_in_slot(v) for v in var)
             for i, v in enumerate(var):
-                adj.add_forward(f"ret_{i} = {v.emit()};")
-                if not adj.type_contains_native_value(v.type):
-                    adj.add_reverse(f"adj_{v} += adj_ret_{i};")
+                if uses_helpers[i]:
+                    adj.add_forward(f"wp::tile_return_assign(ret_{i}, {v.emit()});")
+                    adj.add_reverse(f"wp::adj_tile_return(adj_{v}, adj_ret_{i});")
+                else:
+                    adj.add_forward(f"ret_{i} = {v.emit()};")
+                    if not adj.type_contains_native_value(v.type):
+                        adj.add_reverse(f"adj_{v} += adj_ret_{i};")
             adj.add_forward("return;", f"goto label{adj.label_count};")
+            adj.return_statements.append((tuple(var), uses_helpers))
 
         adj.add_reverse(f"label{adj.label_count}:;")
 
@@ -3999,7 +4066,7 @@ class Adjoint:
 
         if adj.return_var is not None and len(adj.return_var) == 1:
             if not isinstance(node.body[-1], ast.Return):
-                adj.add_forward("return {};", skip_replay=True)
+                adj.add_forward("return;" if adj.single_return_slot else "return {};", skip_replay=True)
 
         # native function case: return type is specified, eg -> int or -> wp.float32
         is_func_native = False
@@ -8560,8 +8627,13 @@ def codegen_func_forward(adj, func_type="kernel", device="cpu", grid_stride=Fals
     lines += ["//---------\n"]
     lines += ["// primal vars\n"]
 
+    # returned tiles built directly in the caller's tiles
+    return_slot_aliases = adj.get_return_slot_aliases()
+
     for var in adj.variables:
-        if is_tile(var.type):
+        if var in return_slot_aliases:
+            lines += [f"{var.ctype()}& {var.emit()} = ret_{return_slot_aliases[var]};\n"]
+        elif is_tile(var.type):
             lines += [f"{var.ctype()} {var.emit()} = {var.type.cinit(requires_grad=False)};\n"]
         elif is_tile_stack(var.type):
             lines += [f"{var.ctype()} {var.emit()} = {var.type.cinit()};\n"]
@@ -8621,8 +8693,13 @@ def codegen_func_reverse(adj, func_type="kernel", device="cpu", grid_stride=Fals
     lines += ["//---------\n"]
     lines += ["// primal vars\n"]
 
+    # returned tiles built directly in the caller's tiles, which also hold their gradients
+    return_slot_aliases = adj.get_return_slot_aliases()
+
     for var in adj.variables:
-        if is_tile(var.type):
+        if var in return_slot_aliases:
+            lines += [f"{var.ctype()}& {var.emit()} = ret_{return_slot_aliases[var]};\n"]
+        elif is_tile(var.type):
             lines += [f"{var.ctype()} {var.emit()} = {var.type.cinit(requires_grad=True)};\n"]
         elif is_tile_stack(var.type):
             lines += [f"{var.ctype()} {var.emit()} = {var.type.cinit()};\n"]
@@ -8708,12 +8785,12 @@ def codegen_func(
         func_line_directive = f"{line_directive}\n"
 
     # forward header
-    if adj.return_var is not None and len(adj.return_var) == 1:
+    if adj.return_var is not None and len(adj.return_var) == 1 and not adj.single_return_slot:
         return_type = adj.return_var[0].ctype()
     else:
         return_type = "void"
 
-    has_multiple_outputs = adj.return_var is not None and len(adj.return_var) != 1
+    has_output_slots = adj.uses_return_slots
 
     forward_args = []
     reverse_args = []
@@ -8761,7 +8838,7 @@ def codegen_func(
     det_args = adj.deterministic.function_args()
     forward_args.extend(det_args)
     reverse_args.extend(det_args)
-    if has_multiple_outputs:
+    if has_output_slots:
         for i, arg in enumerate(adj.return_var):
             forward_args.append(arg.ctype() + " & ret_" + str(i))
             reverse_args.append(arg.ctype() + " & ret_" + str(i))
@@ -8783,7 +8860,7 @@ def codegen_func(
             reverse_args.append(arg.ctype() + " adj_" + arg.label)
         else:
             reverse_args.append(arg.ctype() + " & adj_" + arg.label)
-    if has_multiple_outputs:
+    if has_output_slots:
         for i, arg in enumerate(adj.return_var):
             reverse_args.append(arg.ctype() + " & adj_ret_" + str(i))
     elif return_type != "void":

@@ -2415,6 +2415,26 @@ template <typename T, typename L, bool Owner_ = true> struct tile_shared_t {
 };
 
 
+// Copy a function's returned tile into the caller's tile (the return slot).
+// A returned shared tile that the code generator declares as a reference to
+// its slot is the caller's tile already, so skip the copy in that case.
+template <typename Ret, typename Value> inline CUDA_CALLABLE void tile_return_assign(Ret& ret, Value& value)
+{
+    if ((const void*)&ret != (const void*)&value)
+        ret = value;
+}
+
+// Adjoint counterpart of tile_return_assign(): a returned tile that is the
+// caller's tile shares the caller's gradient buffer, which already holds the
+// incoming gradient, so accumulating it again would double it.
+template <typename AdjValue, typename AdjRet>
+inline CUDA_CALLABLE void adj_tile_return(AdjValue& adj_value, AdjRet& adj_ret)
+{
+    if ((const void*)&adj_value != (const void*)&adj_ret)
+        adj_value += adj_ret;
+}
+
+
 template <typename T, typename L> inline CUDA_CALLABLE void tile_register_t<T, L>::print_from_shared(T* smem) const
 {
     tile_shared_t<T, tile_layout_strided_t<typename L::Shape>, false> scratch(smem, nullptr);

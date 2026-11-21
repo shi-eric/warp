@@ -289,6 +289,10 @@ class Function:
         self.adj_native_snippet = adj_native_snippet
         self.replay_snippet = replay_snippet
         self.custom_grad_func: Function | None = None
+        # whether value_func reads the return type from the body's return statements, see build()
+        self._return_type_from_body = False
+        # whether this is another function's custom gradient or replay function, see build()
+        self._is_custom_callback = False
         self.require_original_output_arg = require_original_output_arg
         self.inline_hint = inline_hint
         self.generic_parent = None  # generic function that was used to instantiate this overload
@@ -815,6 +819,17 @@ class Function:
         return call_builtin_from_desc(desc, call_args)
 
     def build(self, builder: ModuleBuilder | None, default_builder_options=None):
+        # A returned shared tile can be built in the caller's tile only when callers' output variables
+        # share its type, which holds when the return type comes from the body rather than an annotation,
+        # and when calls follow the generated signatures. Calls to a function with a custom gradient or
+        # replay function, and calls to those functions themselves, follow the forward function's
+        # signature instead.
+        self.adj.return_slots_allowed = (
+            (self.value_func is None or self._return_type_from_body)
+            and self.custom_grad_func is None
+            and self.custom_replay_func is None
+            and not self._is_custom_callback
+        )
         self.adj.build(builder, default_builder_options)
 
         # complete the function return type after we have analyzed it (inferred from return statement in ast)
@@ -832,6 +847,7 @@ class Function:
                 return value_type
 
             self.value_func = wrap(self.adj)
+            self._return_type_from_body = True
 
     def __repr__(self):
         inputs_str = ", ".join([f"{k}: {warp._src.types.type_repr(v)}" for k, v in self.input_types.items()])
@@ -1803,6 +1819,7 @@ def func_grad(forward_fn):
                 code_transformers=f.adj.transformers,
                 inline_hint=f.inline_hint,
             )
+            f.custom_grad_func._is_custom_callback = True
             f.adj.skip_reverse_codegen = True
 
         if hasattr(forward_fn, "user_overloads") and len(forward_fn.user_overloads):
@@ -1881,6 +1898,7 @@ def func_replay(forward_fn):
             code_transformers=f.adj.transformers,
             inline_hint=f.inline_hint,
         )
+        f.custom_replay_func._is_custom_callback = True
         return replay_fn
 
     return wrapper
