@@ -127,12 +127,21 @@ def test_large_arrays(test, device):
 
 
 def test_large_array_excessive_zeros(test, device):
-    """Allocate an array with a dimension longer than 2**31 - 1."""
+    """Allocate arrays whose shape exceeds the supported limits.
+
+    A 1-D array may have up to ``2**63 - 1`` elements, but each dimension of a multi-dimensional array is limited to
+    ``2**31 - 1``. Shape validation runs before allocation, so these shapes never allocate memory.
+    """
 
     with test.assertRaisesRegex(
         ValueError, "Array shapes must not exceed the maximum representable value of a signed 32-bit integer"
     ):
-        _ = wp.zeros((2**31), dtype=int, device=device)
+        _ = wp.zeros((2**31, 1), dtype=int, device=device)
+
+    with test.assertRaisesRegex(
+        ValueError, "Array shapes must not exceed the maximum representable value of a signed 64-bit integer"
+    ):
+        _ = wp.zeros((2**63,), dtype=int, device=device)
 
 
 # grid_stride=False opts these kernels into the lean 3D launch (grid-stride is the default), so
@@ -309,7 +318,10 @@ class TestLarge(unittest.TestCase):
         self.assertEqual(test_result.numpy()[0], 1000)
 
     def test_large_array_excessive_numpy(self):
-        """Exercise the ``2**31``-element boundary check through ``check_array_shape`` without allocation.
+        """Exercise the per-dimension limits of ``check_array_shape`` without allocation.
+
+        A multi-dimensional shape may not have a dimension of ``2**31`` or more, and a 1-D shape may not reach
+        ``2**63``.
 
         Shape validation is pure Python, so no ndarray or device allocation is needed. The user-facing
         ``wp.array(ndarray)`` path reaches this same validator via
@@ -320,17 +332,24 @@ class TestLarge(unittest.TestCase):
             ValueError,
             "Array shapes must not exceed the maximum representable value of a signed 32-bit integer",
         ):
-            check_array_shape((2**31,))
+            check_array_shape((2**31, 1))
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "Array shapes must not exceed the maximum representable value of a signed 64-bit integer",
+        ):
+            check_array_shape((2**63,))
 
     def test_large_array_excessive_ndarray(self):
-        """Exercise the ``wp.array(ndarray)`` path at the ``2**31`` boundary without allocating a real buffer.
+        """Exercise the ``wp.array(ndarray)`` path at the multi-dimensional ``2**31`` limit without allocating.
 
         Runs the ``wp.array(ndarray) -> _init_from_data -> _init_new`` path without allocating a real
-        ``2**31``-element buffer. ``np.broadcast_to`` returns a zero-stride view over a single-element source, and
+        ``2**31``-element buffer. The shape is multi-dimensional because 1-D shapes of this length are valid.
+        ``np.broadcast_to`` returns a zero-stride view over a single-element source, and
         ``np.asarray`` preserves the view (no copy when dtypes match). ``_init_new`` calls ``check_array_shape``
         before any device allocation, so the ``ValueError`` fires for free.
         """
-        large_view = np.broadcast_to(np.zeros(1, dtype=np.int8), (2**31,))
+        large_view = np.broadcast_to(np.zeros(1, dtype=np.int8), (2**31, 1))
         with self.assertRaisesRegex(
             ValueError,
             "Array shapes must not exceed the maximum representable value of a signed 32-bit integer",

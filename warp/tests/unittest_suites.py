@@ -242,6 +242,7 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
     from warp.tests.test_jet_quat import TestJetQuat
     from warp.tests.test_kernel_cache import TestKernelCache
     from warp.tests.test_large import TestLarge
+    from warp.tests.test_largearray import TestLargeArray
     from warp.tests.test_launch import TestLaunch
     from warp.tests.test_lerp import TestLerp
     from warp.tests.test_linear_solvers import TestLinearSolvers
@@ -342,6 +343,7 @@ def default_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader)
         TestApicUtilityAlgorithms,
         TestArithmetic,
         TestArray,
+        TestLargeArray,
         TestArrayFillCapture,
         TestArrayReduce,
         TestArraySubclass,
@@ -737,6 +739,7 @@ def debug_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader):
     from warp.tests.test_intersect import TestIntersect
     from warp.tests.test_iter import TestIter
     from warp.tests.test_kernel_cache import TestKernelCache
+    from warp.tests.test_largearray import TestLargeArray
     from warp.tests.test_launch import TestLaunch
     from warp.tests.test_lerp import TestLerp
     from warp.tests.test_logger import TestLogger
@@ -942,6 +945,7 @@ def debug_suite(test_loader: unittest.TestLoader = unittest.defaultTestLoader):
         TestApicLoadFromBytes,
         TestApicMesh,
         TestArray,
+        TestLargeArray,
         TestArrayReduce,
         TestAssertDebug,
         TestAssertModeSwitch,

@@ -300,6 +300,8 @@ def from_paddle(
     if return_ctype:
         ptr = t.data_ptr()
 
+        warp._src.types.check_descriptor_shape(shape)
+
         # create array descriptor
         array_ctype = warp._src.types.array_t(ptr, grad_ptr, len(shape), shape, strides)
 

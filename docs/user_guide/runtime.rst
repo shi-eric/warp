@@ -230,6 +230,144 @@ The following construction methods are provided for allocating zero-initialized 
 * :func:`wp.clone() <warp.clone>`
 
 
+.. _large_arrays:
+
+Large Arrays
+############
+
+A one-dimensional Warp array can hold up to :math:`2^{63}-1` elements. It is an ordinary
+:class:`wp.array <warp.array>`, created the usual way. Inside a kernel, an array with more than
+:math:`2^{31}-1` elements must be accessed through a parameter annotated
+:class:`wp.largearray[dtype] <warp.largearray>`, which uses 64-bit indices. Use
+:func:`wp.linear_tid() <warp._src.lang.linear_tid>` to get a 64-bit thread index:
+
+.. code-block:: python
+
+    @wp.kernel
+    def axpy(x: wp.largearray[float], y: wp.largearray[float], a: float):
+        i = wp.linear_tid()  # wp.int64
+        y[i] = a * x[i] + y[i]
+
+    n = 3_000_000_000
+    x = wp.zeros(n, dtype=float, device="cuda")  # an ordinary wp.array
+    y = wp.zeros(n, dtype=float, device="cuda")
+    wp.launch(axpy, dim=n, inputs=[x, y, 2.0], device="cuda")
+
+A ``wp.largearray`` parameter accepts any one-dimensional :class:`wp.array <warp.array>` with a matching
+``dtype``, small or large, contiguous or strided, so one kernel serves both sizes. Kernels with
+``wp.array`` parameters keep the 32-bit descriptor and are unaffected. ``wp.largearray`` is only an
+annotation; arrays are always created with :func:`wp.zeros() <warp.zeros>`,
+:func:`wp.empty() <warp.empty>`, :class:`wp.array() <warp.array>`, and the other constructors.
+
+**At Python scope**, a large array supports:
+
+* Creation with :func:`wp.zeros() <warp.zeros>`, :func:`wp.empty() <warp.empty>`,
+  :func:`wp.full() <warp.full>`, :func:`wp.zeros_like() <warp.zeros_like>`,
+  :func:`wp.empty_like() <warp.empty_like>`, :func:`wp.clone() <warp.clone>`, and
+  :class:`wp.array() <warp.array>` from a NumPy array (with or without a copy).
+* ``requires_grad=True``, which allocates a gradient array of the same length.
+* :meth:`fill_() <warp.array.fill_>` and :meth:`zero_() <warp.array.zero_>` on contiguous arrays,
+  and :func:`wp.copy() <warp.copy>` between contiguous arrays on the same or different devices.
+* :meth:`numpy() <warp.array.numpy>`, ``__array_interface__``, ``__cuda_array_interface__``, and
+  DLPack export and import.
+* :func:`wp.to_torch() <warp.to_torch>`, :func:`wp.from_torch() <warp.from_torch>`,
+  :func:`wp.to_jax() <warp.to_jax>`, and :func:`wp.from_jax() <warp.from_jax>`. JAX itself indexes
+  with 32-bit integers unless ``jax_enable_x64`` is enabled, so indexing a large JAX array may fail
+  on the JAX side without it.
+
+**Inside a kernel**, a ``wp.largearray`` parameter supports:
+
+* Reads, writes, and augmented assignments (``x[i]``, ``x[i] = v``, ``x[i] += v``) with any
+  integer index type. The index is widened to :class:`wp.int64 <warp.int64>`, and negative indices
+  wrap as they do for ``wp.array``.
+* The atomic built-ins: :func:`wp.atomic_add() <warp._src.lang.atomic_add>`,
+  ``atomic_sub``, ``atomic_min``, ``atomic_max``, ``atomic_cas``, ``atomic_exch``,
+  ``atomic_and``, ``atomic_or``, and ``atomic_xor``.
+* ``len(x)`` and ``x.shape[0]``, which return :class:`wp.int64 <warp.int64>`.
+* Passing ``x`` to a user function whose parameter is annotated ``wp.largearray[dtype]``.
+* A null check, for an optional array that may be passed as ``None`` at launch: ``if x:``,
+  ``if not x:``, and ``x and y`` or ``x or y`` in a condition. A ``wp.largearray`` cannot be the
+  condition of :func:`wp.where() <warp._src.lang.where>` or of a conditional expression
+  (``a if x else b``); write an ``if`` statement instead.
+* Scalar, vector, matrix, and struct element types.
+* Reverse-mode differentiation with :class:`wp.Tape <warp.Tape>`, forward-mode jets, CPU blocks,
+  and CUDA graph capture.
+
+``wp.linear_tid()`` returns the row-major linear index of the current thread over the whole
+launch as a :class:`wp.int64 <warp.int64>`. A kernel that does not call
+:func:`wp.tid() <warp._src.lang.tid>` can be launched with more than :math:`2^{31}` threads on CPU and CUDA. A kernel that calls
+``wp.tid()`` keeps its 32-bit extent limit, even if it also calls ``wp.linear_tid()``.
+
+A large array passed to code that needs the 32-bit descriptor raises an error that names its
+length, for example when launching a kernel whose parameter is annotated ``wp.array``:
+
+.. code-block:: text
+
+    RuntimeError: Error launching kernel 'scale', argument 'x': The 32-bit array descriptor does not
+    support arrays with more than 2**31 - 1 elements (got 3000000000). Pass the array to a kernel
+    parameter annotated wp.largearray[...] instead.
+
+The following are not supported in this version:
+
+* Arrays with more than one dimension keep the limit of :math:`2^{31}-1` elements per dimension.
+  ``wp.largearray`` is one-dimensional only.
+* A large array raises a ``ValueError`` in Python slicing, :meth:`reshape() <warp.array.reshape>`,
+  :meth:`view() <warp.array.view>`, :meth:`fill_() <warp.array.fill_>` and
+  :meth:`zero_() <warp.array.zero_>` on a non-contiguous array, :func:`wp.copy() <warp.copy>` between
+  non-contiguous arrays, :func:`wp.struct <warp.struct>` fields,
+  :class:`wp.indexedarray <warp.indexedarray>` (as data or as an index array), the
+  ``warp.utils`` functions (``array_scan``, ``array_sum``, ``array_inner``, ``array_cast``,
+  ``radix_sort_pairs``, ``segmented_sort_pairs``, ``runlength_encode``, ``graph_coloring_assign``,
+  and ``graph_coloring_balance``), :class:`wp.Bvh <warp.Bvh>`, :class:`wp.Mesh <warp.Mesh>`,
+  :meth:`wp.HashGrid.build() <warp.HashGrid.build>`, :class:`wp.Volume <warp.Volume>` (as the
+  points or point mask of :meth:`~warp.Volume.allocate_by_tiles`,
+  :meth:`~warp.Volume.allocate_by_voxels`, and :meth:`~warp.Volume.rebuild`), texture data,
+  :func:`wp.sparse.bsr_set_from_triplets() <warp.sparse.bsr_set_from_triplets>`, and any other API
+  that passes the array to native code through the 32-bit descriptor. Launching a kernel whose parameter
+  is annotated ``wp.array`` raises a ``RuntimeError``.
+* A :func:`wp.copy() <warp.copy>` or :func:`wp.clone() <warp.clone>` of a large array whose source
+  and destination both have gradients cannot be recorded on a :class:`wp.Tape <warp.Tape>`: the
+  copy's adjoint does not support large arrays, so the call raises a ``ValueError`` when the tape
+  records it, after the copy itself has run. Copy such arrays outside the tape, or with a kernel
+  that takes ``wp.largearray`` parameters, which the tape records and differentiates. Copies made
+  while no tape is recording, and copies of arrays without gradients, are not affected.
+* ``wp.largearray`` cannot be used as a struct field. Its ``dtype`` must be concrete:
+  a ``wp.largearray[Any]`` parameter does not accept arrays at launch, so declare explicit
+  overloads with :func:`wp.overload <warp.overload>` instead.
+* Inside a kernel, ``wp.largearray`` and ``wp.array`` are distinct types that do not convert to each
+  other. A ``largearray`` cannot be passed to a function parameter annotated ``wp.array`` or to a
+  generic array parameter, and a helper that must serve both types is written once for each.
+  Slicing, multi-index access, and built-ins without a ``wp.largearray`` overload, such as
+  :func:`wp.lower_bound() <warp._src.lang.lower_bound>`, fail at code generation with an error
+  that names ``wp.largearray``.
+* ``x.shape`` on a ``wp.largearray`` can only be indexed with the constant ``0``.
+* :ref:`Deterministic mode <determinism>` does not support atomics into a
+  ``wp.largearray``, or gradient accumulation into one, which a backward-enabled kernel needs for
+  every ``wp.largearray`` it reads. Such kernels fail at code generation. Use a ``wp.array`` parameter
+  for these arrays, set ``enable_backward=False``, or disable deterministic mode for the kernel.
+* Kernels with ``wp.largearray`` parameters cannot be recorded by APIC, which includes all CPU graph
+  capture and CUDA graph capture with ``apic=True``. Such launches raise ``NotImplementedError``.
+  CUDA graph capture without APIC works.
+* Kernel ``range()`` takes 32-bit arguments, so ``for i in range(len(x))`` does not compile for a
+  ``wp.largearray``. Looping over more than :math:`2^{31}` elements in one thread is rarely useful;
+  for a short loop with large 64-bit bounds, such as CSR row offsets, use a 32-bit trip count and
+  add a 64-bit start:
+
+  .. code-block:: python
+
+      start = row_ptr[i]
+      for k in range(int(row_ptr[i + wp.int64(1)] - start)):
+          j = start + wp.int64(k)
+
+* Integer literals in kernels are 32-bit. Arithmetic between a :class:`wp.int64 <warp.int64>`
+  value, such as ``wp.linear_tid()``, ``len(x)``, or ``x.shape[0]``, and a literal is a type error
+  ("Input types must be the same"), so wrap the literal: write ``i + wp.int64(1)`` and
+  ``len(x) - wp.int64(1)``, not ``i + 1`` and ``len(x) - 1``.
+* For the same reason, write an index above :math:`2^{31}-1` as ``x[wp.int64(2147483652)]``.
+  Warp rejects a literal that does not fit when it reaches the index directly, as in
+  ``x[2147483652]`` or ``i = 2147483652`` followed by ``x[i]``. It does not catch every case:
+  ``j = i`` followed by ``x[j]``, ``x[i + 0]``, a literal assigned in a branch, and a constant
+  expression such as ``x[2147483647 + 5]`` each wrap to a negative 32-bit value without an error.
 
 .. _Indexed_Arrays:
 

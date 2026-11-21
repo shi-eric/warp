@@ -40,6 +40,8 @@ from warp._src.types import (
     indexedarray,
     int32,
     is_array,
+    largearray,
+    matches_array_class,
     type_is_int,
     type_repr,
     type_size_in_bytes,
@@ -70,6 +72,48 @@ def _direct_access_error(target_label: str, operation: str) -> WarpDeterminismEr
         f"Deterministic mode cannot compile this kernel. Cause: array {target_label!r} receives deterministic atomic "
         f"updates and is also {operation}. Warp would change the operation order. Fix: use separate input and output "
         "arrays, or split the direct access and atomic update into separate kernel launches."
+    )
+
+
+def _largearray_target_error(target_label: str, operation: str, backward_only: bool = False) -> WarpDeterminismError:
+    """Return the error for a ``wp.largearray`` that would receive deferred deterministic updates.
+
+    The deferred-update path addresses destinations through ``array_t`` strides and a 32-bit
+    element count, which do not describe a ``wp.largearray``. ``backward_only`` marks an update
+    that only the backward pass performs, which ``enable_backward=False`` avoids.
+    """
+    if backward_only:
+        fix = (
+            "use a wp.array parameter for this array, disable deterministic mode for this kernel, "
+            "or set enable_backward=False for this module."
+        )
+    else:
+        fix = "use a wp.array parameter for this array, or disable deterministic mode for this kernel."
+    return WarpDeterminismError(
+        f"Deterministic mode cannot compile this kernel. Cause: array {target_label!r} is a wp.largearray and "
+        f"receives {operation}, which deterministic mode does not support for wp.largearray parameters. Fix: {fix}"
+    )
+
+
+def _reject_largearray_target(array_type, target_label: str, operation: str) -> None:
+    """Reject a ``wp.largearray`` as the destination of a deferred forward update."""
+    if matches_array_class(array_type, largearray):
+        raise _largearray_target_error(target_label, operation)
+
+
+def _reject_largearray_adjoint_target(adj, target_label: str) -> None:
+    """Reject a ``wp.largearray`` that receives deferred gradient updates, if the adjoint is emitted.
+
+    A kernel built without its backward pass still generates reverse statements, so the error
+    only applies when the adjoint is emitted. The module builder raises it for a kernel with the
+    backward pass enabled, and for a function once it knows whether the function's adjoint is used.
+    """
+    builder = adj.builder
+    # builds without a module builder only infer types, and their code is not compiled
+    if builder is None or (builder._is_kernel(adj) and not adj.used_by_backward_kernel):
+        return
+    builder.adjoint_unsupported(
+        adj, _largearray_target_error(target_label, "gradient accumulation", backward_only=True)
     )
 
 
@@ -783,6 +827,10 @@ class DeterministicCodegen:
             if scalar_dtype not in float_types:
                 return fallback_call
 
+            if matches_array_class(arr_type, largearray):
+                _reject_largearray_adjoint_target(self.adj, f"adj_{target_label(target_root_label, target_attr_path)}")
+                return fallback_call
+
             if not any(arg.label == target_root_label for arg in self.adj.args):
                 return fallback_call
 
@@ -879,6 +927,12 @@ class DeterministicCodegen:
             scalar_dtype = getattr(value_dtype, "_wp_scalar_type_", value_dtype)
             if scalar_dtype not in float_types:
                 return False
+
+            # This statement runs as written (it updates an adjoint array directly), so the
+            # rejection does not depend on whether the backward pass is emitted.
+            _reject_largearray_target(
+                array_type, f"adj_{target_label(target_root_label, target_attr_path)}", "gradient accumulation"
+            )
 
             if not any(arg.label == target_root_label for arg in self.adj.args):
                 raise _internal_error(
@@ -1633,6 +1687,9 @@ def emit_deterministic_atomic(adj, func, bound_args, return_type, output, output
             adj.add_forward(f"WP_DET_SIDE_EFFECT_IF_ACTIVE(det_ctx, {fallback_call});")
             return output
         return None  # fall through to normal codegen
+
+    label = target_label(target_root_label, target_attr_path)
+    _reject_largearray_target(arr_type, f"adj_{label}" if target_is_adjoint else label, f"wp.{func.key}() updates")
 
     if return_is_consumed:
         # Consumed-return counter: assign slots by replaying after a prefix sum.

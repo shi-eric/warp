@@ -145,10 +145,12 @@ differ only in the last index access adjacent array elements. On CUDA devices,
 this is the preferred pattern for coalesced global memory access.
 
 This is also useful when a logical data set has more than :math:`2^{31}-1`
-elements. Because each array dimension must fit in a signed 32-bit integer,
-store the data across multiple dimensions, launch over the array shape, and
-construct a 64-bit linear index when the algorithm is naturally expressed in
-1D:
+elements. A one-dimensional array of that size can be accessed through a
+``wp.largearray`` kernel parameter (see :ref:`large_arrays`), but many operations
+do not support such arrays. Alternatively, because each dimension of a
+multi-dimensional array must fit in a signed 32-bit integer, store the data
+across multiple dimensions, launch over the array shape, and construct a 64-bit
+linear index when the algorithm is naturally expressed in 1D:
 
 .. code-block:: python
 

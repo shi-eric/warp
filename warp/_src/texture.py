@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from warp._src.context import DeviceLike
 
 from warp._src.types import (
+    ARRAY_MAX_EXTENT,
     array,
     float16,
     float32,
@@ -483,6 +484,11 @@ class Texture:
         # make sure everything is sane
         if width <= 0:
             raise ValueError("Texture width must be a positive integer")
+        # Texture extents reach native code as C ints (a 1-D array can be longer than that).
+        if width > ARRAY_MAX_EXTENT or height > ARRAY_MAX_EXTENT or depth > ARRAY_MAX_EXTENT:
+            raise ValueError(
+                f"Texture dimensions must not exceed 2**31 - 1, got width={width}, height={height}, depth={depth}"
+            )
         if height <= 0 and ndim > 1:
             raise ValueError("Texture height must be a positive integer")
         if depth <= 0 and ndim > 2:

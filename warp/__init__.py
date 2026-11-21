@@ -231,6 +231,7 @@ from warp._src.types import array1d as array1d
 from warp._src.types import array2d as array2d
 from warp._src.types import array3d as array3d
 from warp._src.types import array4d as array4d
+from warp._src.types import largearray as largearray
 
 from warp._src.types import fixedarray as fixedarray
 
