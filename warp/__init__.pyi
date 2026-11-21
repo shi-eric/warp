@@ -10351,6 +10351,16 @@ def tid() -> int | tuple[int, int] | tuple[int, int, int] | tuple[int, int, int,
     This function may not be called from user-defined Warp functions."""
     ...
 
+def linear_tid() -> int64:
+    """Return the linear index of the current thread over the whole launch as a 64-bit integer.
+
+    The value lies in ``[0, N)`` where ``N`` is the product of the launch dimensions; for a
+    multi-dimensional launch it is the row-major flattened index, with the last dimension varying
+    fastest. Unlike :func:`tid`, it is not limited to 32-bit extents.
+
+    This function may not be called from user-defined Warp functions."""
+    ...
+
 def block_dim() -> int:
     """Query the number of threads in the current block."""
     ...

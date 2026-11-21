@@ -2646,6 +2646,14 @@ class TestCodeGen(unittest.TestCase):
         with self.assertRaisesRegex(wp.WarpCodegenError, "cannot use wp.tid"):
             self._codegen_cuda_source(invalid_kernel)
 
+    def test_external_constant_params_entry_point_rejects_linear_tid(self):
+        @wp.kernel(module="unique", enable_backward=False, entry_point_abi="external_constant_params")
+        def invalid_kernel(params: EntryPointParams):
+            _ = wp.linear_tid()
+
+        with self.assertRaisesRegex(wp.WarpCodegenError, r"cannot use wp\.linear_tid\(\)"):
+            self._codegen_cuda_source(invalid_kernel)
+
     def test_external_constant_params_entry_point_rejects_deterministic_lowering(self):
         @wp.kernel(
             module="unique",
