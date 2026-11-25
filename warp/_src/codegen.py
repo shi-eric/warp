@@ -761,6 +761,100 @@ def _make_struct_field_setter(cls, field: str, var_type: type):
         return set_primitive_value
 
 
+# C++17 keywords ([lex.key], Table 5) and alternative tokens ([lex.digraph], Table 6), in the standard's order.
+# Struct field names are emitted verbatim as C++ member names, so these can't be used as field names.
+# Keep in sync with the -std flag in warp/native/clang/clang.cpp and warp/native/warp.cu.
+_CPP_KEYWORDS = frozenset(
+    (
+        "alignas",
+        "alignof",
+        "asm",
+        "auto",
+        "bool",
+        "break",
+        "case",
+        "catch",
+        "char",
+        "char16_t",
+        "char32_t",
+        "class",
+        "const",
+        "constexpr",
+        "const_cast",
+        "continue",
+        "decltype",
+        "default",
+        "delete",
+        "do",
+        "double",
+        "dynamic_cast",
+        "else",
+        "enum",
+        "explicit",
+        "export",
+        "extern",
+        "false",
+        "float",
+        "for",
+        "friend",
+        "goto",
+        "if",
+        "inline",
+        "int",
+        "long",
+        "mutable",
+        "namespace",
+        "new",
+        "noexcept",
+        "nullptr",
+        "operator",
+        "private",
+        "protected",
+        "public",
+        "register",
+        "reinterpret_cast",
+        "return",
+        "short",
+        "signed",
+        "sizeof",
+        "static",
+        "static_assert",
+        "static_cast",
+        "struct",
+        "switch",
+        "template",
+        "this",
+        "thread_local",
+        "throw",
+        "true",
+        "try",
+        "typedef",
+        "typeid",
+        "typename",
+        "union",
+        "unsigned",
+        "using",
+        "virtual",
+        "void",
+        "volatile",
+        "wchar_t",
+        "while",
+        # alternative tokens
+        "and",
+        "and_eq",
+        "bitand",
+        "bitor",
+        "compl",
+        "not",
+        "not_eq",
+        "or",
+        "or_eq",
+        "xor",
+        "xor_eq",
+    )
+)
+
+
 class Struct:
     hash: bytes
 
@@ -777,6 +871,10 @@ class Struct:
         for label, type_ in annotations.items():
             _validate_array_parameter_annotation(type_, f"Struct field '{label}'")
             self.vars[label] = Var(label, type_)
+
+        # Fields named after C++ keywords work on the host but can't be emitted as C++ members;
+        # codegen_struct() rejects them when a kernel uses the struct (GH-2428).
+        self.cpp_keyword_fields: tuple[str, ...] = tuple(label for label in self.vars if label in _CPP_KEYWORDS)
 
         fields = []
         for label, var in self.vars.items():
@@ -8387,6 +8485,13 @@ def make_full_qualified_name(func: str | Callable) -> str:
 
 
 def codegen_struct(struct, device="cpu", indent_size=4, include_tile_helpers=False):
+    if struct.cpp_keyword_fields:
+        label = struct.cpp_keyword_fields[0]
+        raise WarpCodegenError(
+            f"Struct field '{label}' of '{struct.cls.__qualname__}' is a C++ keyword, so the struct can't be used "
+            f"in kernels; rename the field, for example to '{label}_'."
+        )
+
     name = struct.native_name
 
     body = []

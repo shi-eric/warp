@@ -4838,6 +4838,7 @@ static void append_common_nvrtc_compile_options(
     bool lineinfo
 )
 {
+    // When changing the C++ standard, update _CPP_KEYWORDS in warp/_src/codegen.py.
     options.push_back("--std=c++17");
 
 #if CUDA_VERSION >= 12080 && CUDA_VERSION < 13000

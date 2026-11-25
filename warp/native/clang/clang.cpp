@@ -392,6 +392,7 @@ static std::unique_ptr<clang::CompilerInstance> create_compiler(
         args.push_back("-I");
         args.push_back(extra_include_dirs[i]);
     }
+    // When changing the C++ standard, update _CPP_KEYWORDS in warp/_src/codegen.py.
     args.push_back("-std=c++17");
 
     switch (effective_optimization_level) {

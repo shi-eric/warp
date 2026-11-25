@@ -881,6 +881,80 @@ def test_struct_returned_from_func_grad(test, device):
             assert_np_equal(x.grad.numpy()[0], expected, tol=1e-5)
 
 
+def _make_struct(name, fields):
+    return wp.struct(type(name, (), {"__annotations__": fields, "__module__": __name__, "__qualname__": name}))
+
+
+# Field names that contain a C++ keyword without being one (GH-2428).
+@wp.struct
+class NearKeywordFields:
+    new_: float
+    newton: float
+    default_value: float
+    Int: float
+    integer: float
+
+
+@wp.kernel(module="unique")
+def near_keyword_fields_kernel(s: NearKeywordFields, out: wp.array[float]):
+    out[0] = s.new_ + 10.0 * s.newton + 100.0 * s.default_value + 1000.0 * s.Int + 10000.0 * s.integer
+
+
+def test_cpp_keyword_near_miss_field_names(test, device):
+    """Allow struct field names that only contain a C++ keyword."""
+    s = NearKeywordFields()
+    s.new_ = 1.0
+    s.newton = 2.0
+    s.default_value = 3.0
+    s.Int = 4.0
+    s.integer = 5.0
+    out = wp.zeros(1, dtype=float, device=device)
+    wp.launch(near_keyword_fields_kernel, dim=1, inputs=[s], outputs=[out], device=device)
+    np.testing.assert_allclose(out.numpy(), [54321.0])
+
+
+def _launch_with_struct(struct_type, device):
+    @wp.kernel(module="unique")
+    def uses_struct(s: struct_type):
+        pass
+
+    wp.launch(uses_struct, dim=1, inputs=[struct_type()], device=device)
+
+
+def test_cpp_keyword_field_names_in_kernels(test, device):
+    """Use keyword-named struct fields on the host, and reject them with a clear error in kernels."""
+    for name in (
+        "new",
+        "delete",
+        "this",
+        "int",
+        "default",
+        "union",
+        "operator",
+        "template",
+        "xor",
+        "bitand",
+        "char16_t",
+        "static_assert",
+        "true",
+        "nullptr",
+        "register",
+        "export",
+    ):
+        with test.subTest(name=name):
+            struct_type = _make_struct("KeywordField", {name: float})
+            s = struct_type()
+            setattr(s, name, 1.5)
+            test.assertEqual(getattr(s, name), 1.5)
+            test.assertEqual(wp.zeros(2, dtype=struct_type, device=device).numpy()[name].tolist(), [0.0, 0.0])
+            with test.assertRaisesRegex(
+                wp.WarpCodegenError,
+                rf"Struct field '{name}' of 'KeywordField' is a C\+\+ keyword, so the struct can't be used in "
+                rf"kernels; rename the field, for example to '{name}_'",
+            ):
+                _launch_with_struct(struct_type, device)
+
+
 class TestStruct(unittest.TestCase):
     # check structs default initialized in Python correctly
     def test_struct_default_attributes_python(self):
@@ -1168,6 +1242,12 @@ add_function_test(
 )
 add_function_test(
     TestStruct, "test_struct_returned_from_func_grad", test_struct_returned_from_func_grad, devices=devices
+)
+add_function_test(
+    TestStruct, "test_cpp_keyword_near_miss_field_names", test_cpp_keyword_near_miss_field_names, devices=devices
+)
+add_function_test(
+    TestStruct, "test_cpp_keyword_field_names_in_kernels", test_cpp_keyword_field_names_in_kernels, devices=devices
 )
 
 
