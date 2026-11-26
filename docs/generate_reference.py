@@ -585,6 +585,9 @@ def write_module_page(
     lines.append(f".. currentmodule:: {current_module}")
     lines.append("")
 
+    if name == BUILTINS_MODULE:
+        lines.extend((".. include:: signature_notation/overview.rst.inc", ""))
+
     if submodules:
         # Separate submodules into auto-available and explicit-import categories.
         # A submodule is auto-available if it's imported in the parent module's namespace.
@@ -687,7 +690,7 @@ def run():
     output_language_dir = OUTPUT_DIR / BUILTINS_REF_DIR
 
     shutil.rmtree(output_api_dir, ignore_errors=True)
-    shutil.rmtree(output_language_dir, ignore_errors=True)
+    shutil.rmtree(output_language_dir / TOCTREE_DIR, ignore_errors=True)
 
     # First pass: collect all modules that will be documented and their symbols.
     symbols_per_module = {}

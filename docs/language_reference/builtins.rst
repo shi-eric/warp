@@ -7,6 +7,8 @@ Built-Ins
 
 .. currentmodule:: warp._src.lang
 
+.. include:: signature_notation/overview.rst.inc
+
 Scalar Math
 -----------
 

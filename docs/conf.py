@@ -30,6 +30,7 @@ from sphinx.ext.autosummary import autosummary_toc
 from sphinx.ext.autosummary.generate import AutosummaryRenderer
 from sphinx.util.inspect import signature as sphinx_signature
 from sphinx.util.inspect import stringify_signature
+from sphinx.util.nodes import make_refnode
 from sphinx.util.typing import stringify_annotation
 
 _RE_WP_DOT = re.compile(r"\bwp\.")
@@ -1015,6 +1016,35 @@ def resolve_public_builtin_aliases(app, env, node, contnode):
     return result
 
 
+def resolve_builtin_notation(app, env, node, contnode):
+    """Resolve notation terms inside generated built-in signatures to their documentation labels."""
+    if (
+        node.get("refdomain") != "py"
+        or node.get("reftype") != "class"
+        or node.get("py:module") != docs.generate_reference.BUILTINS_MODULE
+    ):
+        return None
+
+    refdoc = node["refdoc"]
+    generated_builtins = f"{docs.generate_reference.BUILTINS_REF_DIR}/{docs.generate_reference.TOCTREE_DIR}/"
+    term = node["reftarget"]
+    if not refdoc.startswith(generated_builtins) or not term[:1].isupper():
+        return None
+
+    target = env.get_domain("std").anonlabels.get(f"builtin-notation-{term.lower()}")
+    if target is None:
+        return None
+
+    signature = node.parent
+    while signature is not None and not isinstance(signature, addnodes.desc_signature):
+        signature = signature.parent
+    if signature is None:
+        return None
+
+    docname, anchor = target
+    return make_refnode(app.builder, refdoc, docname, anchor, contnode)
+
+
 def generate_reference_docs(app):
     """Generate API and language reference .rst files before Sphinx reads sources."""
     # The coordinator prepares the shared source tree before starting workers.
@@ -1180,6 +1210,7 @@ def setup(app):
     # returns one, so this handler must run before it.
     app.connect("autodoc-process-signature", format_class_signature, priority=400)
     app.connect("autodoc-process-signature", rewrite_wp_aliases)
+    app.connect("missing-reference", resolve_builtin_notation, priority=400)
     app.connect("missing-reference", resolve_wp_aliases)
     app.connect("missing-reference", resolve_public_builtin_aliases)
     # Lower priority runs first; this must precede TocTreeCollector
