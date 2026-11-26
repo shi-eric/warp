@@ -604,6 +604,37 @@ class TestVolumeValidation(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Invalid NanoVDB grid structure"):
                 wp.Volume.load_from_nvdb(_serialize_nvdb_grid(grid_data), device="cpu")
 
+    def test_volume_load_rejects_inconsistent_onindex_prefix_sums_cpu(self):
+        """Reject on-index prefix sums that disagree with the value mask, even when every index is in range."""
+        grid_data = _get_index_grid_data()
+        grid_size = struct.unpack_from("<Q", grid_data, _PNANOVDB_GRID_OFF_GRID_SIZE)[0]
+        grid_data = grid_data[:grid_size]
+        leaf = _find_index_leaves(grid_data)[0]
+
+        # The fixture's first leaf has one active voxel in each of mask words 1 and 2.
+        # Zeroing its prefix sums makes both voxels look up the leaf's base index.
+        struct.pack_into("<Q", grid_data, leaf + _PNANOVDB_LEAF_OFF_TABLE_INDEX + 8, 0)
+        with self.assertRaisesRegex(RuntimeError, "Invalid NanoVDB grid structure"):
+            wp.Volume.load_from_nvdb(_serialize_nvdb_grid(grid_data), device="cpu")
+
+    def test_volume_load_accepts_trailing_empty_onindex_leaf_cpu(self):
+        """Accept an empty last on-index leaf whose base index is one past the voxel count."""
+        grid_data = _get_index_grid_data()
+        grid_size = struct.unpack_from("<Q", grid_data, _PNANOVDB_GRID_OFF_GRID_SIZE)[0]
+        grid_data = grid_data[:grid_size]
+        last_leaf = _find_index_leaves(grid_data)[-1]
+        voxel_count_field = _PNANOVDB_GRID_SIZE + _PNANOVDB_TREE_OFF_VOXEL_COUNT
+        voxel_count = struct.unpack_from("<Q", grid_data, voxel_count_field)[0]
+        voxel_count -= _count_active_leaf_voxels(grid_data, last_leaf)
+
+        # NanoVDB's converter keeps leaves without active voxels and starts each leaf's indices after
+        # the preceding leaves' voxels, so an empty last leaf gets a base index one past the voxel count.
+        struct.pack_into("<8Q", grid_data, last_leaf + _PNANOVDB_LEAF_OFF_VALUE_MASK, *([0] * 8))
+        struct.pack_into("<QQ", grid_data, last_leaf + _PNANOVDB_LEAF_OFF_TABLE_INDEX, voxel_count + 1, 0)
+        struct.pack_into("<Q", grid_data, voxel_count_field, voxel_count)
+        volume = wp.Volume.load_from_nvdb(_serialize_nvdb_grid(grid_data), device="cpu")
+        self.assertEqual(volume.get_voxel_count(), voxel_count)
+
     def test_volume_load_enforces_kernel_index_limit_cpu(self):
         """Verify that the kernel index limit applies even when the declared voxel count is larger."""
         points = wp.array([[0, 0, 0]], dtype=wp.vec3i, device="cpu")

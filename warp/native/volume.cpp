@@ -354,44 +354,60 @@ bool volume_validate_index_leaves(
     // Cap the index at Warp's 32-bit lookup limit as well. NanoVDB index N addresses array slot N - 1,
     // with zero reserved for background.
     const uint64_t index_limit = std::min(voxel_count, volume::MAX_INDEXABLE_VOXEL_COUNT);
-    const uint32_t first_index_offset = PNANOVDB_GRID_TYPE_GET(grid_type, leaf_off_table);
+
+    // All four index leaf types keep what this check reads in their first 96 bytes: the value mask at [16, 80),
+    // then the base index and on-index prefix sums at leaf_off_table = 80.
+    constexpr uint32_t index_leaf_header_size = 96;
+    static_assert(
+        PNANOVDB_LEAF_OFF_VALUE_MASK + PNANOVDB_LEAF_TABLE_COUNT / 8 <= index_leaf_header_size,
+        "Index leaf value mask must fit in the copied header"
+    );
+
+    // Copy each leaf header so the PNanoVDB accessors never read the caller's buffer directly.
+    // pnanovdb_buf_t reads 64-bit values through uint64_t pointers, so align the copy for them.
+    alignas(uint64_t) uint32_t leaf_words[index_leaf_header_size / sizeof(uint32_t)];
+    const pnanovdb_buf_t buf = pnanovdb_make_buf(leaf_words, index_leaf_header_size / sizeof(uint32_t));
+    const pnanovdb_leaf_handle_t leaf = { pnanovdb_address_null() };
+    // Each leaf stores a base index. Lookups add the voxel's offset within the leaf.
+    const pnanovdb_address_t first_index_address = pnanovdb_leaf_get_table_address(grid_type, buf, leaf, 0);
 
     for (uint32_t leaf_index = 0; leaf_index < leaf_range.count; ++leaf_index) {
-        const uint8_t* leaf = grid_buffer + leaf_range.begin + uint64_t(leaf_index) * leaf_range.stride;
-        // Each leaf stores a base index. Index lookups add the voxel's position in the block (0 to 511).
-        uint64_t first_index;
-        std::memcpy(&first_index, leaf + first_index_offset, sizeof(first_index));
+        std::memcpy(
+            leaf_words, grid_buffer + leaf_range.begin + uint64_t(leaf_index) * leaf_range.stride,
+            index_leaf_header_size
+        );
+        const uint64_t first_index = pnanovdb_read_uint64(buf, first_index_address);
 
-        uint64_t max_increment = PNANOVDB_LEAF_TABLE_COUNT - 1;
+        uint64_t last_index;
         if (active_only) {
-            // OnIndex lookups add the number of active voxels before the target voxel. The file stores the count
-            // before each 64-bit mask word after the first as a packed 9-bit field.
-            uint64_t prefix_sum;
-            std::memcpy(&prefix_sum, leaf + first_index_offset + sizeof(uint64_t), sizeof(prefix_sum));
-            bool has_active_voxels = false;
-            max_increment = 0;
-            for (uint32_t word_index = 0; word_index < PNANOVDB_LEAF_TABLE_COUNT / 64; ++word_index) {
-                uint64_t mask_word;
-                std::memcpy(
-                    &mask_word, leaf + PNANOVDB_LEAF_OFF_VALUE_MASK + word_index * sizeof(uint64_t), sizeof(mask_word)
-                );
-                if (mask_word == 0)
-                    continue;
-
-                // The last active voxel in this word has the highest index for the word. Use the stored prefix
-                // as the lookup does, since a malformed prefix can make an earlier word yield a larger index.
-                const uint64_t preceding = word_index == 0 ? 0 : (prefix_sum >> (9 * (word_index - 1))) & 511;
-                max_increment = std::max(max_increment, preceding + pnanovdb_uint64_countbits(mask_word) - 1);
-                has_active_voxels = true;
+            // OnIndex lookups add the number of active voxels before the target voxel. The leaf stores the running
+            // count through each of the first seven 64-bit mask words as a packed 9-bit field, leaving bit 63 zero.
+            // Lookups trust these counts, so require them to match the mask.
+            uint64_t expected_prefix_sum = 0;
+            uint64_t active_count = 0;
+            for (uint32_t word_index = 0; word_index < PNANOVDB_LEAF_TABLE_COUNT / 64 - 1; ++word_index) {
+                active_count += pnanovdb_uint64_countbits(pnanovdb_read_uint64(
+                    buf, pnanovdb_address_offset(leaf.address, PNANOVDB_LEAF_OFF_VALUE_MASK + 8u * word_index)
+                ));
+                expected_prefix_sum |= active_count << (9u * word_index);
             }
+            if (pnanovdb_read_uint64(buf, pnanovdb_address_offset(first_index_address, 8u)) != expected_prefix_sum)
+                return false;
 
-            // A leaf with no active voxels only yields the background index.
-            if (!has_active_voxels)
+            // A leaf with no active voxels only yields the background index. Skip it before checking the base index:
+            // NanoVDB gives empty leaves after the last active voxel a base index one past the voxel count.
+            if (pnanovdb_leaf_onindex_get_value_count(buf, leaf) == 0)
                 continue;
+            // With consistent counts, the last active voxel has the largest index. The onindex accessors also cover
+            // OnIndexMask, which shares the leaf layout.
+            last_index = pnanovdb_leaf_onindex_get_last_offset(buf, leaf);
+        } else {
+            // Index leaves assign a slot to every voxel, so the last slot has the largest index.
+            last_index = pnanovdb_uint64_offset(first_index, PNANOVDB_LEAF_TABLE_COUNT - 1u);
         }
 
-        // Subtract to avoid overflow when first_index is malformed.
-        if (first_index > index_limit || max_increment > index_limit - first_index)
+        // Check the base index too: adding to a malformed one can wrap last_index back into range.
+        if (first_index > index_limit || last_index > index_limit)
             return false;
     }
 
