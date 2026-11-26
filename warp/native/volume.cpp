@@ -323,6 +323,81 @@ bool volume_validate_internal_children(
     return true;
 }
 
+bool volume_validate_index_leaves(
+    const uint8_t* grid_buffer, uint32_t grid_type, const pnanovdb_tree_t& tree_data, const VolumeNodeRange& leaf_range
+)
+{
+    // Index grids map voxels to entries in a separate value array. Check the largest index each leaf can produce
+    // before any kernel uses it to access that array.
+
+    // Each leaf covers an 8x8x8 block. Index assigns a slot to every voxel in the block, including inactive ones.
+    // OnIndex assigns slots only to voxels marked active in the leaf's value mask. The Mask variants add a separate
+    // per-voxel mask and keep their base type's index mapping.
+    bool active_only;
+    switch (grid_type) {
+    case PNANOVDB_GRID_TYPE_INDEX:
+    case PNANOVDB_GRID_TYPE_INDEXMASK:
+        active_only = false;
+        break;
+    case PNANOVDB_GRID_TYPE_ONINDEX:
+    case PNANOVDB_GRID_TYPE_ONINDEXMASK:
+        active_only = true;
+        break;
+    default:
+        // Other grid types have no serialized leaf indices to check.
+        return true;
+    }
+
+    // Callers can size the value array with Volume.get_voxel_count(), so match wp_volume_get_tile_and_voxel_count().
+    const uint64_t voxel_count
+        = active_only ? tree_data.voxel_count : uint64_t(tree_data.node_count_leaf) * PNANOVDB_LEAF_TABLE_COUNT;
+    // Cap the index at Warp's 32-bit lookup limit as well. NanoVDB index N addresses array slot N - 1,
+    // with zero reserved for background.
+    const uint64_t index_limit = std::min(voxel_count, volume::MAX_INDEXABLE_VOXEL_COUNT);
+    const uint32_t first_index_offset = PNANOVDB_GRID_TYPE_GET(grid_type, leaf_off_table);
+
+    for (uint32_t leaf_index = 0; leaf_index < leaf_range.count; ++leaf_index) {
+        const uint8_t* leaf = grid_buffer + leaf_range.begin + uint64_t(leaf_index) * leaf_range.stride;
+        // Each leaf stores a base index. Index lookups add the voxel's position in the block (0 to 511).
+        uint64_t first_index;
+        std::memcpy(&first_index, leaf + first_index_offset, sizeof(first_index));
+
+        uint64_t max_increment = PNANOVDB_LEAF_TABLE_COUNT - 1;
+        if (active_only) {
+            // OnIndex lookups add the number of active voxels before the target voxel. The file stores the count
+            // before each 64-bit mask word after the first as a packed 9-bit field.
+            uint64_t prefix_sum;
+            std::memcpy(&prefix_sum, leaf + first_index_offset + sizeof(uint64_t), sizeof(prefix_sum));
+            bool has_active_voxels = false;
+            max_increment = 0;
+            for (uint32_t word_index = 0; word_index < PNANOVDB_LEAF_TABLE_COUNT / 64; ++word_index) {
+                uint64_t mask_word;
+                std::memcpy(
+                    &mask_word, leaf + PNANOVDB_LEAF_OFF_VALUE_MASK + word_index * sizeof(uint64_t), sizeof(mask_word)
+                );
+                if (mask_word == 0)
+                    continue;
+
+                // The last active voxel in this word has the highest index for the word. Use the stored prefix
+                // as the lookup does, since a malformed prefix can make an earlier word yield a larger index.
+                const uint64_t preceding = word_index == 0 ? 0 : (prefix_sum >> (9 * (word_index - 1))) & 511;
+                max_increment = std::max(max_increment, preceding + pnanovdb_uint64_countbits(mask_word) - 1);
+                has_active_voxels = true;
+            }
+
+            // A leaf with no active voxels only yields the background index.
+            if (!has_active_voxels)
+                continue;
+        }
+
+        // Subtract to avoid overflow when first_index is malformed.
+        if (first_index > index_limit || max_increment > index_limit - first_index)
+            return false;
+    }
+
+    return true;
+}
+
 bool volume_validate_tree(
     const uint8_t* grid_buffer, const pnanovdb_grid_t& grid_data, const pnanovdb_tree_t& tree_data
 )
@@ -414,7 +489,8 @@ bool volume_validate_tree(
                grid_buffer, lower_range, PNANOVDB_LOWER_OFF_CHILD_MASK,
                PNANOVDB_GRID_TYPE_GET(grid_type, lower_off_table), PNANOVDB_LOWER_TABLE_COUNT, table_stride, leaf_range,
                grid_data.grid_size
-        );
+        )
+        && volume_validate_index_leaves(grid_buffer, grid_type, tree_data, leaf_range);
 }
 
 void volume_add_descriptor(uint64_t id, VolumeDesc&& volumeDesc) { g_volume_descriptors[id] = std::move(volumeDesc); }

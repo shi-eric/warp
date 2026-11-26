@@ -7253,7 +7253,15 @@ class Volume:
         return out
 
     def get_voxel_count(self) -> int:
-        """Return the total number of allocated voxels for this volume"""
+        """Return the number of allocated voxel slots.
+
+        For rebuildable volumes, this returns the reserved voxel capacity.
+        Use :meth:`get_active_stats` to query the current topology.
+
+        The allocation count can exceed the ``2**31 - 1`` indexable voxels
+        supported by :func:`warp.volume_voxel_count` and
+        :func:`warp.volume_lookup_index`.
+        """
 
         voxel_count, tile_count = (
             ctypes.c_uint64(0),
