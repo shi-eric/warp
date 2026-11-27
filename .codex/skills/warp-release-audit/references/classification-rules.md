@@ -30,8 +30,10 @@ documented window was satisfied.
 Phase 4a runs `scripts/diff_public_api.py` for both committed refs. It discovers
 public namespaces from `docs/api_reference/`, follows re-exports to their
 definitions, and compares documented exports and members of documented classes.
-The additions include method and property docstrings, attribute docstrings, and
-constructor-assigned attributes listed in a class's `Attributes:` section.
+It reads literal `__all__` lists and tuples for in-repo wildcard imports.
+Member discovery uses method and property docstrings, inline attribute
+docstrings in class and constructor bodies, and constructor assignments
+documented in the class's `Attributes:` section.
 
 ### Reconcile the inventory
 

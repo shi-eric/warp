@@ -17,7 +17,7 @@ import re
 import subprocess
 import sys
 import textwrap
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
@@ -66,6 +66,7 @@ class Change:
 class ModuleSurface:
     entries: dict[str, list[ApiEntry]] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    star_exports: tuple[str, ...] = ()
 
     def add(self, entry: ApiEntry) -> None:
         self.entries.setdefault(entry.symbol, []).append(entry)
@@ -253,16 +254,45 @@ def callable_entry(
     )
 
 
+def assignment_targets(node: ast.stmt) -> Sequence[ast.expr]:
+    if isinstance(node, ast.Assign):
+        return node.targets
+    if isinstance(node, ast.AnnAssign):
+        return (node.target,)
+    return ()
+
+
+def unpack_targets(targets: Sequence[ast.expr]) -> Iterator[ast.expr]:
+    for target in targets:
+        if isinstance(target, (ast.Tuple, ast.List)):
+            yield from unpack_targets(target.elts)
+        elif isinstance(target, ast.Starred):
+            yield from unpack_targets((target.value,))
+        else:
+            yield target
+
+
+def statement_blocks(node: ast.AST) -> Iterator[list[ast.stmt]]:
+    """Yield ordered statement lists, stopping at nested definitions."""
+    for _, children in ast.iter_fields(node):
+        if not isinstance(children, list) or not children:
+            continue
+        if isinstance(children[0], ast.stmt):
+            yield children
+        for child in children:
+            if isinstance(child, (ast.stmt, ast.ExceptHandler, ast.match_case)) and not isinstance(
+                child, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
+            ):
+                yield from statement_blocks(child)
+
+
 def attributes(
-    nodes: Sequence[ast.AST], prefix: str, surface: str, source: str, instance_docs: set[str] | None = None
+    nodes: Sequence[ast.stmt], prefix: str, surface: str, source: str, instance_docs: set[str] | None = None
 ) -> list[ApiEntry]:
     entries = []
     for index, node in enumerate(nodes):
-        if isinstance(node, ast.Assign):
-            targets = node.targets
-        elif isinstance(node, ast.AnnAssign):
-            targets = [node.target]
-        else:
+        targets = assignment_targets(node)
+        if not targets:
             continue
         following = nodes[index + 1] if index + 1 < len(nodes) else None
         documented = (
@@ -270,7 +300,7 @@ def attributes(
             and isinstance(following.value, ast.Constant)
             and isinstance(following.value.value, str)
         )
-        for target in targets:
+        for target in unpack_targets(targets):
             if instance_docs is None and isinstance(target, ast.Name):
                 name = target.id
                 has_doc = documented
@@ -281,7 +311,7 @@ def attributes(
                 and target.value.id == "self"
             ):
                 name = target.attr
-                has_doc = name in instance_docs
+                has_doc = documented or name in instance_docs
             else:
                 continue
             if is_public(name):
@@ -310,7 +340,8 @@ def class_entries(
         instance_docs = (
             set(re.findall(r"^(\w+)(?: \([^\n]+\))?:", textwrap.dedent(section[1]), re.MULTILINE)) if section else set()
         )
-        entries.extend(attributes(list(ast.walk(init_node)), public_symbol, surface, source, instance_docs))
+        for block in statement_blocks(init_node):
+            entries.extend(attributes(block, public_symbol, surface, source, instance_docs))
     else:
         entries.append(ApiEntry(public_symbol, surface, "class", source=source))
 
@@ -334,19 +365,29 @@ def resolve_import_module(current_module: str, is_package: bool, node: ast.Impor
     return ".".join(part for part in parts if part)
 
 
+def static_star_exports(tree: ast.Module) -> tuple[str, ...]:
+    """Read a literal module-level __all__ without importing the module."""
+    for node in reversed(tree.body):
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)) or not any(
+            isinstance(target, ast.Name) and target.id == "__all__" for target in assignment_targets(node)
+        ):
+            continue
+        value = node.value
+        if isinstance(value, (ast.List, ast.Tuple)) and all(
+            isinstance(item, ast.Constant) and isinstance(item.value, str) for item in value.elts
+        ):
+            return tuple(item.value for item in value.elts)
+        break
+    return ()
+
+
 def entries_from_source_module(
-    repo: Path,
-    ref: str,
+    parsed: ModuleSurface | None,
     source_module: str,
     imported_name: str,
     public_symbol: str,
     surface: str,
-    seen: set[tuple[str, str]],
 ) -> list[ApiEntry]:
-    # Re-export modules often import many names from the same source module.
-    # Keep the caller's cycle guard for this resolution path, but do not let a
-    # previous alias from the same file suppress later aliases.
-    parsed = parse_module(repo, ref, source_module, surface, seen.copy())
     if parsed is None:
         return [ApiEntry(public_symbol, surface, "alias", source=source_module)]
 
@@ -413,6 +454,7 @@ def parse_module(
         _PARSE_CACHE[cache_key] = surface_data
         return surface_data
 
+    surface_data.star_exports = static_star_exports(tree)
     overload_names = overload_decorator_names(tree)
 
     for node in tree.body:
@@ -423,19 +465,27 @@ def parse_module(
             root_module = module.split(".", 1)[0]
             if source_module != root_module and not source_module.startswith(f"{root_module}."):
                 continue
-            for alias in node.names:
-                public_name = alias.asname or alias.name
-                if alias.name == "*" or not is_public(public_name):
-                    continue
+            wildcard = node.names[0].name == "*"
+            names = [
+                (alias.name, alias.asname or alias.name)
+                for alias in node.names
+                if alias.name != "*" and is_public(alias.asname or alias.name)
+            ]
+            if not wildcard and not names:
+                continue
+            # Keep the cycle guard local to this import chain so it does not
+            # affect independent re-exports from the same source module.
+            imported = parse_module(repo, ref, source_module, surface, seen.copy())
+            if wildcard and imported is not None:
+                names = [(name, name) for name in imported.star_exports if is_public(name)]
+            for imported_name, public_name in names:
                 public_symbol = f"{module}.{public_name}"
                 for entry in entries_from_source_module(
-                    repo,
-                    ref,
+                    imported,
                     source_module,
-                    alias.name,
+                    imported_name,
                     public_symbol,
                     surface,
-                    seen,
                 ):
                     surface_data.add(entry)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and is_public(node.name):
@@ -495,12 +545,17 @@ def signature_breaking_reasons(base: ApiEntry, head: ApiEntry) -> list[str]:
     return sorted(set(reasons))
 
 
-def choose_signature_entry(surface: ModuleSurface, symbol: str, ref: str) -> ApiEntry | None:
-    callable_entries = [
+def runtime_implementations(surface: ModuleSurface, symbol: str) -> list[ApiEntry]:
+    return [
         entry
         for entry in surface.entries[symbol]
         if entry.signature is not None and entry.entry_kind in {"function", "method", "class"}
     ]
+
+
+def choose_signature_entry(
+    callable_entries: list[ApiEntry], surface: ModuleSurface, symbol: str, ref: str
+) -> ApiEntry | None:
     if len(callable_entries) == 1:
         return callable_entries[0]
     if len(callable_entries) > 1:
@@ -514,15 +569,15 @@ def choose_signature_entry(surface: ModuleSurface, symbol: str, ref: str) -> Api
 def diff_signatures(base: ModuleSurface, head: ModuleSurface, base_ref: str, head_ref: str) -> list[Change]:
     changes: list[Change] = []
     for symbol in sorted(set(base.entries) & set(head.entries)):
-        if {entry.signature_key for entry in base.entries[symbol]} == {
-            entry.signature_key for entry in head.entries[symbol]
-        }:
+        base_implementations = runtime_implementations(base, symbol)
+        head_implementations = runtime_implementations(head, symbol)
+        if [(entry.signature, entry.params) for entry in base_implementations] == [
+            (entry.signature, entry.params) for entry in head_implementations
+        ]:
             continue
-        base_entry = choose_signature_entry(base, symbol, base_ref)
-        head_entry = choose_signature_entry(head, symbol, head_ref)
+        base_entry = choose_signature_entry(base_implementations, base, symbol, base_ref)
+        head_entry = choose_signature_entry(head_implementations, head, symbol, head_ref)
         if base_entry is None or head_entry is None:
-            continue
-        if base_entry.signature == head_entry.signature:
             continue
         reasons = signature_breaking_reasons(base_entry, head_entry)
         if not reasons:
