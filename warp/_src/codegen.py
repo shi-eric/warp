@@ -7760,11 +7760,16 @@ def _builtin_affects_module_hash(func) -> bool:
     """Return whether a builtin's metadata must be part of the hash of modules that call it.
 
     External builtins, LTO-dispatched calls, and templated native adjoints can change the
-    generated calls without changing the kernel source. Other Warp builtins rely on the
+    generated calls without changing the kernel source, and a module that calls NVSHMEM
+    builtins is cached for the device library it links. Other Warp builtins rely on the
     versioned cache directory instead.
     """
-    return func._has_external_builtin_contract or any(
-        overload.adjoint_uses_template_args or overload.lto_dispatch_func is not None for overload in func.overloads
+    return (
+        func._has_external_builtin_contract
+        or func.requires_nvshmem
+        or any(
+            overload.adjoint_uses_template_args or overload.lto_dispatch_func is not None for overload in func.overloads
+        )
     )
 
 

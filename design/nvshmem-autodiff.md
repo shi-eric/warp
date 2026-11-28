@@ -6,11 +6,11 @@ runtime integration this document builds on.
 
 ## Summary
 
-Warp kernels can move data between GPUs with the `wp.nvshmem_*` built-ins, but gradients do not flow
-through them. Every NVSHMEM built-in is registered as non-differentiable, and Warp's code generator
-emits no reverse statement for a non-differentiable built-in, so a kernel that pushes a halo row to a
-neighbor compiles with `enable_backward=True`, runs its backward pass, and reports a zero gradient
-through the exchange without any diagnostic.
+Warp kernels can move data between GPUs with the `wp.nvshmem_*` built-ins. Before this design, gradients
+did not flow through them. Every NVSHMEM built-in was registered as non-differentiable, and Warp's code
+generator emits no reverse statement for a non-differentiable built-in, so a kernel that pushed a halo
+row to a neighbor compiled with `enable_backward=True`, ran its backward pass, and reported a zero
+gradient through the exchange without any diagnostic.
 
 This document designs reverse-mode differentiation for those built-ins. It has three parts.
 
@@ -110,7 +110,7 @@ init_field(fields[0])
 with wp.Tape() as tape:
     for k in range(N_STEPS):
         wp.launch(jacobi_step, dim=n_rows * (NX - 2), inputs=[fields[k], fields[k + 1], NX, n_rows, *neighbors])
-        wp.launch(barrier_all, dim=1)  # forward sync between steps, not recorded on the tape
+        wp.launch(barrier_all, dim=1, record_tape=False)  # forward sync between steps, kept off the tape
     wp.launch(interior_loss, dim=n_rows * (NX - 2), inputs=[fields[N_STEPS], NX, n_rows, loss])
 
 tape.backward(loss)
@@ -197,8 +197,9 @@ if (adj_buf.data)
 Built-ins declare two flags that matter here. `skip_replay=True` comments the call out of the replay
 section, so a side effect such as an atomic or a remote write happens once, in the forward kernel, and
 not again in the adjoint kernel's replay. `is_differentiable=False` makes the code generator emit no
-reverse statement for the call. All NVSHMEM built-ins carry `is_differentiable=False` today, and all
-side-effecting ones carry `skip_replay=True`. When a built-in is differentiable, the generator emits a
+reverse statement for the call. Before this design, all NVSHMEM built-ins carried
+`is_differentiable=False`, and all side-effecting ones carry `skip_replay=True`. When a built-in is
+differentiable, the generator emits a
 call to a native function named `adj_<name>` with the forward arguments, the adjoints of the arguments,
 and the adjoint of the return value, resolved by C++ overloading.
 
@@ -294,19 +295,23 @@ The adjoint of `nvshmem_p` mirrors its four index overloads:
 template <typename T>
 inline CUDA_CALLABLE_DEVICE void adj_nvshmem_p(
     const array_t<T>& dest, int i, T value, int pe,
-    const array_t<T>& adj_dest, int& adj_i, T& adj_value, int& adj_pe)
+    const array_t<T>& adj_dest, int adj_i, T& adj_value, int adj_pe)
 {
-    if (adj_dest.data)
+    if (adj_dest.data) {
         adj_value += nvshmem_detail::get_element(&index(adj_dest, i), pe);
+    } else if (dest.grad) {
+        adj_value += nvshmem_detail::get_element(&index_grad(dest, i), pe);
+    }
 }
 ```
 
 `get_element` is the forward helper that `nvshmem_g` uses: it moves the element through the
 unsigned-integer NVSHMEM routine sized to the element's alignment, in several parts for elements wider
 than 8 bytes, so any dtype that the forward supports is supported here. The adjoint of an integer-typed
-element adds remote zeros, which Warp's other adjoints also do for integer arrays; the null check mirrors
-the convention in `array.h`. The blocking `g` returns when the value is local, so no completion step is
-needed after it.
+element adds remote zeros, which Warp's other adjoints also do for integer arrays. The gradient that is
+read follows the convention in `array.h`: the adjoint array the launch passed, or the array's own `grad`
+when it passed none, and nothing when there is neither. The blocking `g` returns when the value is
+local, so no completion step is needed after it.
 
 The adjoint of `nvshmem_put` pulls one element at a time and accumulates locally:
 
@@ -314,24 +319,29 @@ The adjoint of `nvshmem_put` pulls one element at a time and accumulates locally
 template <typename T>
 inline CUDA_CALLABLE_DEVICE void adj_nvshmem_put(
     const array_t<T>& dest, const array_t<T>& source, int pe,
-    const array_t<T>& adj_dest, const array_t<T>& adj_source, int& adj_pe)
+    const array_t<T>& adj_dest, const array_t<T>& adj_source, int adj_pe)
 {
-    if (!adj_dest.data || !adj_source.data)
+    const array_t<T> dest_grad = nvshmem_detail::gradient_of(dest, adj_dest);
+    const array_t<T> source_grad = nvshmem_detail::gradient_of(source, adj_source);
+    if (!dest_grad.data || !source_grad.data) {
         return;
+    }
     const size_t count = nvshmem_detail::element_count(source);
     for (size_t n = 0; n < count; ++n) {
-        const T g = nvshmem_detail::get_element(nvshmem_detail::element_at(adj_dest, n), pe);
-        atomic_add(nvshmem_detail::element_at(adj_source, n), g);
+        const T g = nvshmem_detail::get_element(nvshmem_detail::element_at(dest_grad, n), pe);
+        adj_atomic_add(nvshmem_detail::element_at(source_grad, n), g);
     }
 }
 ```
 
-The local accumulation is atomic because other threads of the same adjoint kernel may add to
-`adj_source` too. The per-element pull is one round trip per element from a single thread, which is slow
-over InfiniBand. A bulk `nvshmem_getmem` would overwrite rather than accumulate, and staging through
-thread-local memory is not a valid NVSHMEM destination, so the first version accepts the cost. The
-forward `nvshmem_put` from a single thread is already documented in the integration design as the
-performance trap that block-cooperative variants will fix; their adjoints will pull cooperatively.
+`gradient_of` applies the same convention as above to a whole array: the adjoint array the launch passed,
+or else the array's own `grad` with the array's layout. The local accumulation is atomic because other
+threads of the same adjoint kernel may add to the source gradient too, and `adj_atomic_add` skips integer
+dtypes like Warp's other array adjoints. The per-element pull is one round trip per element from a single
+thread, which is slow over InfiniBand. A bulk `nvshmem_getmem` would overwrite rather than accumulate,
+and staging through thread-local memory is not a valid NVSHMEM destination, so the first version accepts
+the cost. The forward `nvshmem_put` from a single thread is already documented in the integration design
+as the performance trap that block-cooperative variants will fix; their adjoints will pull cooperatively.
 
 `adj_nvshmem_put_signal` has the signature of the forward plus the adjoints of all arguments, ignores the
 signal arguments, and forwards the data arguments to `adj_nvshmem_put`.
@@ -583,16 +593,16 @@ with `dim=1` on the adjoint launch's stream immediately before it:
 
 ```python
 @wp.kernel
-def _nvshmem_barrier_all():
+def _barrier_all():
     wp.nvshmem_barrier_all()
 ```
 
-This satisfies the one-thread-per-PE rule of the device collective, needs no new host binding, lives in
-a module that the existing machinery already registers with NVSHMEM, and is capturable into a CUDA graph
-because it is an ordinary kernel launch. A one-block grid is always resident, so the deadlock concern
-that NVSHMEM's collective launch addresses does not apply to it. The device barrier completes operations
-issued before it, and in stream order the previous adjoint kernel's operations were issued before the
-barrier kernel started.
+It is defined in `warp/_src/nvshmem_sync.py`. This satisfies the one-thread-per-PE rule of the device
+collective, needs no new host binding, lives in a module that the existing machinery already registers
+with NVSHMEM, and is capturable into a CUDA graph because it is an ordinary kernel launch. A one-block
+grid is always resident, so the deadlock concern that NVSHMEM's collective launch addresses does not
+apply to it. The device barrier completes operations issued before it, and in stream order the previous
+adjoint kernel's operations were issued before the barrier kernel started.
 
 The alternative is the host library's `nvshmemx_barrier_all_on_stream`, bound with `dlsym`. It is
 stream-ordered, but the documentation does not say whether it can be captured into a CUDA graph, and
@@ -604,11 +614,18 @@ stream the adjoint launch was given, which is the device's current stream unless
 
 **Where the insertion lives.** Warp enqueues adjoint kernels from more than one place: the
 `wp.launch(..., adjoint=True)` path that `Tape.backward()` uses, `Launch.launch()` for launch objects
-created with `record_cmd=True`, and the deterministic-mode launcher. The insertion goes at the single
-point where the adjoint kernel is actually enqueued on a stream, so every path gets it, and it happens
-before the early return that `wp.launch` takes for a zero-sized `dim`. That last point matters: a PE
+created with `record_cmd=True`, and the deterministic-mode launcher. These paths share no single point
+at which the adjoint kernel is enqueued, so each of them calls one function,
+`before_adjoint_launch()` in `warp/_src/nvshmem_sync.py`, just before it enqueues the kernel: `wp.launch`
+for the launches it issues itself, and the `launch()` method of the regular and the deterministic launch
+objects. The function warns, validates the gradient arrays, and enqueues the barrier.
+
+`wp.launch` makes the call ahead of the early return it takes for a zero-sized `dim`. That matters: a PE
 whose local block is empty in some step still has to arrive at the barrier, otherwise the other PEs hang.
-Every PE enqueues the barrier for every flagged adjoint launch, regardless of its local work.
+Such a PE may never have loaded the kernel's module, and the record that says whether the kernel is
+flagged lives in the module's metadata, so a zero-size CUDA adjoint launch in a process that has loaded an
+NVSHMEM host library goes on to load the module before it returns. Every PE enqueues the barrier for
+every flagged adjoint launch, regardless of its local work.
 
 **Module loading and CUDA graph capture.** The barrier kernel lives in a Warp-owned module that is
 compiled, loaded and registered with NVSHMEM like any other, and that work is deferred to the first
@@ -721,24 +738,29 @@ backward pass.
 
 ### Changes by component
 
-The implementation plan will detail these; this list fixes the shape.
+As implemented:
 
 - `warp/_src/builtins.py`: `is_differentiable=True` for `nvshmem_p`, `nvshmem_put`, `nvshmem_put_signal`.
 - `warp/native/nvshmem_device.h`: `adj_nvshmem_p` (four overloads), `adj_nvshmem_put`,
   `adj_nvshmem_put_signal`.
 - `warp/_src/codegen.py`: per-kernel records of (a) any remote access in the adjoint kernel, (b) pull
   built-ins present, and (c) the remote-write-before-wait shape.
-- `warp/_src/context.py`: persist the per-kernel records in module metadata next to the existing NVSHMEM
-  record so cached modules carry them; barrier insertion at the single point where adjoint kernels are
-  enqueued, ahead of the zero-size early return; the capture-time load check; the pull-family and
-  fused-shape warnings; symmetric-gradient validation; the config flag.
+- `warp/_src/context.py`: persist the per-kernel records in module metadata next to the existing
+  `uses_nvshmem` flag so cached modules carry them, and hand them to launches as
+  `KernelHooks.nvshmem_adjoint`; the calls to `before_adjoint_launch()` in `wp.launch` and `Launch.launch()`,
+  the former ahead of the zero-size early return; the `Device.nvshmem_adjoint_barriers` counter that tells
+  the tape whether a pass enqueued a barrier.
+- `warp/_src/deterministic.py`: the same call in the deterministic launch object.
+- `warp/_src/nvshmem_sync.py`: the barrier kernel, the capture-time load check, the pull-family and
+  fused-shape warnings, and symmetric-gradient validation. `context.py` imports the module lazily, because
+  it defines a kernel and so needs a fully imported Warp.
+- `warp/config.py`: `nvshmem_adjoint_barrier`.
 - `warp/native/nvshmem.cpp`: bind `nvshmem_ptr` and `nvshmem_my_pe` from the host library and expose
   `wp_nvshmem_is_symmetric(ptr)`.
 - `warp/_src/tape.py`: trailing barrier when a backward pass issued at least one.
-- The internal barrier kernel in a lazily imported module, because `warp/_src/nvshmem.py` is imported by
-  `context.py` at module level and cannot define kernels without a circular import.
-- Tests, documentation (a section in the NVSHMEM docs page and the differentiability notes), a
-  differentiable example next to the existing Jacobi example, and a changelog fragment.
+- Tests, documentation (the page `docs/user_guide/distributed/nvshmem_autodiff.rst` and a pointer in the
+  differentiability notes), the example `example_jacobi_nvshmem_grad.py`, and the changelog fragment shared
+  with the forward built-ins.
 
 ## Testing
 

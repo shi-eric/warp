@@ -28,8 +28,6 @@ Requirements and Installation
 -----------------------------
 
 The NVSHMEM built-ins are available in Linux builds of Warp with CUDA support.
-:func:`wp.is_nvshmem_enabled() <warp.is_nvshmem_enabled>` returns ``True``
-when the installed build can link NVSHMEM device code into kernels.
 Kernels that call the built-ins run only on CUDA devices,
 and Warp cannot compile them with the ``llvm_cuda`` module option
 (:attr:`wp.config.llvm_cuda <warp.config.llvm_cuda>`):
@@ -53,9 +51,8 @@ that Warp links into kernels that call the built-ins.
 
 For a custom NVSHMEM build, set the ``WARP_NVSHMEM_DEVICE_LIBRARY`` environment variable
 to that build's ``libnvshmem_device.ltoir.fatbin`` or to a raw ``.ltoir`` file.
-Warp then links that file instead of the one it finds itself (see :ref:`nvshmem_first_launch`),
-and it skips its check that the loaded host library is NVSHMEM 3.9 or newer.
-NVSHMEM still checks that the device library and the host library are compatible when Warp loads the module.
+Warp then links that file instead of the one it finds itself (see :ref:`nvshmem_first_launch`).
+NVSHMEM checks that the device library and the host library are compatible when Warp loads the module.
 
 Start one process per GPU with a launcher: ``mpirun`` or ``srun`` for a program that uses MPI,
 or NVSHMEM's own ``nvshmrun``.
@@ -222,9 +219,11 @@ It looks for the device library in this order:
 3. The installed ``nvidia-nvshmem-cu<major>`` wheel for the CUDA major version that Warp was built with,
    which lets Warp compile a module before NVSHMEM is loaded.
 
-Warp records the SHA-256 digest of the device library with each module in the kernel cache,
-and it compiles a cached module again if the module was linked against a different device library,
-so upgrading NVSHMEM rebuilds the affected modules on their next launch.
+The kernel cache keeps a module separately for each device library that it was linked against,
+so upgrading NVSHMEM compiles the affected modules again on their next launch.
+A module that is compiled ahead of time is named after the device library in the same way,
+so the machine that loads it needs the same device library,
+unless the module is compiled and loaded with ``strip_hash=True``.
 Several processes can share one kernel cache directory:
 each process builds a module in a directory of its own and then moves the result into place.
 
@@ -509,9 +508,11 @@ and ends with a failure that NVSHMEM reports itself.
 Two others are rarer:
 ``WARP_NVSHMEM_DEVICE_LIBRARY names '<path>', which is not a file.`` when the override names a missing file,
 and ``Cannot load a module that uses NVSHMEM built-ins: nvshmemx_cumodule_init failed (<code>).``
-when NVSHMEM rejects the module, most often because a device library set with ``WARP_NVSHMEM_DEVICE_LIBRARY``
-does not match the loaded host library.
-In the messages, ``<paths>``, ``<version>``, ``<path>`` and ``<code>`` stand for values that Warp fills in.
+when NVSHMEM rejects the module, most often because the device library is newer than the loaded host library
+or a device library set with ``WARP_NVSHMEM_DEVICE_LIBRARY`` does not match it.
+That message goes on to name the version of the loaded host library
+and the device library that the module was linked with.
+In the messages, ``<paths>``, ``<path>`` and ``<code>`` stand for values that Warp fills in.
 
 .. list-table::
     :header-rows: 1
@@ -521,8 +522,7 @@ In the messages, ``<paths>``, ``<version>``, ``<path>`` and ``<code>`` stand for
       - Cause and fix
     * - ``This Warp build cannot link NVSHMEM device code (Linux CUDA builds only).``
       - The installed Warp build has no NVSHMEM support.
-        Use a Linux build of Warp with CUDA support;
-        :func:`wp.is_nvshmem_enabled() <warp.is_nvshmem_enabled>` returns ``True`` for one.
+        Use a Linux build of Warp with CUDA support.
     * - ``Cannot find the NVSHMEM device library needed to compile a module that uses NVSHMEM built-ins.
         Tried: <paths>. Install NVSHMEM 3.9 or newer, whose wheels ship libnvshmem_device.ltoir.fatbin,
         or set WARP_NVSHMEM_DEVICE_LIBRARY to a libnvshmem_device.ltoir.fatbin or raw .ltoir file.``
@@ -534,12 +534,6 @@ In the messages, ``<paths>``, ``<version>``, ``<path>`` and ``<code>`` stand for
         Initialize NVSHMEM before loading the module, for example with nvshmem4py's nvshmem.core.init().``
       - The program launched the kernel before it loaded NVSHMEM.
         Call ``nvshmem.init()`` before the first launch, as in :ref:`nvshmem_initialization`.
-    * - ``Warp requires NVSHMEM 3.9 or newer, but the loaded host library is NVSHMEM <version>.
-        Install a newer nvidia-nvshmem wheel, or set WARP_NVSHMEM_DEVICE_LIBRARY to a device library
-        that matches the loaded host library.``
-      - The process loaded an NVSHMEM host library older than 3.9.
-        Upgrade the ``nvidia-nvshmem-cu13`` or ``nvidia-nvshmem-cu12`` wheel.
-        ``WARP_NVSHMEM_DEVICE_LIBRARY`` is meant for custom NVSHMEM builds (see :ref:`nvshmem_requirements`).
     * - ``Cannot load a module that uses NVSHMEM built-ins because NVSHMEM is not initialized.
         Initialize NVSHMEM before loading the module, for example with nvshmem4py's nvshmem.core.init().``
       - The NVSHMEM host library is loaded, for example because the program imported nvshmem4py,

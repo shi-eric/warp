@@ -1,9 +1,10 @@
 # NVSHMEM Integration
 
-**Status**: Implemented. Warp links the device library of the installed NVSHMEM at runtime and requires NVSHMEM 3.9
-or newer, or an explicit device library override. Decided and implemented 2026-10-30, replacing a prototype that
-embedded the NVSHMEM 3.8.0 device library in `warp.so`; see
-[Transition from the Prototype](#transition-from-the-prototype).
+**Status**: Implemented. Warp links the device library of the installed NVSHMEM at runtime. NVSHMEM 3.9 or newer is
+the documented requirement, which Warp does not check, and an explicit device library override serves other builds.
+Decided and implemented 2026-10-30, replacing a prototype that embedded the NVSHMEM 3.8.0 device library in `warp.so`;
+see [Transition from the Prototype](#transition-from-the-prototype). Revised 2026-11-27: the host version check was
+removed and the device library became part of a module's cache name.
 
 ## Motivation
 
@@ -17,8 +18,8 @@ Integrating NVSHMEM into Warp kernels lets users write fused compute-communicate
 (e.g., domain-decomposed simulations where boundary exchange happens inside the kernel).
 
 The existing `warp/examples/distributed/example_jacobi_mpi.py` demonstrates the host-level pattern with mpi4py.
-This work enables an equivalent example using NVSHMEM for in-kernel communication,
-with no mpi4py dependency.
+This work enables an equivalent example whose boundary exchange runs inside the kernels through NVSHMEM.
+It still uses mpi4py to start the job, bootstrap NVSHMEM, and sum the final residual across processes.
 
 ## Requirements
 
@@ -28,15 +29,16 @@ with no mpi4py dependency.
 | R2  | NVSHMEM device code linked via nvJitLink at runtime               | Must     | Input is `libnvshmem_device.ltoir.fatbin` from the installed NVSHMEM      |
 | R3  | Kernels accept symmetric memory allocated through nvshmem4py      | Must     | Wrapped with `wp.array(ptr=...)`; freed explicitly by the user            |
 | R4  | Automatic `nvshmemx_cumodule_init` after loading NVSHMEM modules  | Must     | Native C via `dlopen(RTLD_NOLOAD)` into the loaded host lib               |
-| R5  | Clear error when NVSHMEM is not usable                            | Must     | No device library found (compile); host runtime missing or too old (load) |
-| R6  | Jacobi solver example using pure NVSHMEM (no mpi4py)              | Should   | `example_jacobi_nvshmem_device.py`; still bootstraps with MPI             |
-| R7  | No NVSHMEM artifacts in the Warp build or wheel                   | Must     | No Packman dependency, build flag, embedded payload, or license file      |
-| R8  | NVSHMEM 3.9 or newer                                              | Must     | First release whose wheels ship the device LTOIR fatbin                   |
+| R5  | Clear error when NVSHMEM is not usable                            | Must     | No device library (compile); host runtime missing or rejected (load)      |
+| R6  | Jacobi solver example with in-kernel NVSHMEM halo exchange        | Should   | `example_jacobi_nvshmem_device.py`; MPI bootstraps and sums the residual  |
+| R7  | No NVSHMEM artifacts in the Warp build or wheel                   | Must     | No Packman dependency, build option, embedded payload, or license file    |
+| R8  | NVSHMEM 3.9 or newer                                              | Must     | First release whose wheels ship the device library; not a version check   |
 
 **Non-goals** for the initial implementation (the [Coverage Plan](#coverage-plan) schedules some of these as later
 batches):
 
-- Autodiff through NVSHMEM operations
+- Autodiff through NVSHMEM operations, which the companion design
+  [NVSHMEM Automatic Differentiation](nvshmem-autodiff.md) adds for the push built-ins
 - Block-cooperative or warp-cooperative variants (`nvshmemx_*_block`, `nvshmemx_*_warp`)
 - Non-blocking variants (`nvshmem_*_nbi`)
 - Cooperative kernel launch
@@ -57,8 +59,8 @@ that owns the host library loaded in the process. Host-side operations (`cumodul
 and version queries) call into `libnvshmem_host.so` through `dlopen(RTLD_NOLOAD)`, reusing the library the
 application loaded, typically through nvshmem4py.
 
-Warp ships no NVSHMEM code, needs no NVSHMEM headers or archives to build, and has no NVSHMEM-specific build flag.
-The feature is available in every Linux CUDA build that links nvJitLink.
+Warp ships no NVSHMEM code, needs no NVSHMEM headers or archives to build, and has no NVSHMEM-specific build option:
+`WP_ENABLE_NVSHMEM` is defined for every Linux CUDA build, and all of them link nvJitLink.
 
 ### Decision: Link the Installed Device Library and Require NVSHMEM 3.9
 
@@ -131,8 +133,8 @@ confirmed on 2026-10-30 that this is a packaging gap in 3.8.0 and that the 3.9 w
 per-architecture LTOIR files in `python_libs_wheel/cmake/stagePlugins.cmake`. nvshmem4py 0.4.1 already exposes
 `nvshmem.core.find_device_bitcode_library(language=DeviceLibLanguage.LTOIR)`, which resolves to that file.
 
-Warp therefore requires NVSHMEM 3.9 or newer. Older hosts are rejected at module load with a message that names the
-loaded version.
+Warp therefore documents NVSHMEM 3.9 or newer as its requirement. It does not check the version; see
+[Decision: No Host Version Check](#decision-no-host-version-check).
 
 | Package                                                             | LLVM bitcode                | LTOIR                                                                                |
 | ------------------------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------ |
@@ -144,6 +146,24 @@ loaded version.
 LTOIR image (SM 90 in 3.8.0; the first configured architecture in 3.9), not a fatbin. CUDA 12 consumers must use the
 per-architecture `libnvshmem_device_sm_<arch>.ltoir` file for the target architecture. CUDA 13 is the priority for
 Warp; CUDA 12 handling is a follow-up.
+
+### Decision: No Host Version Check
+
+Decided 2026-11-27. The first implementation of this design rejected, at module load, a host library older than 3.9
+unless the module had been linked with the override. The check is gone, and 3.9 remains the documented requirement.
+
+The check protected nothing that was not already covered:
+
+- An installation without the device library, such as a wheel older than 3.9, fails at compile. Discovery reports the
+  paths it tried and names the 3.9 requirement.
+- A host library that cannot run the linked device library is rejected by `nvshmemx_cumodule_init` (see
+  [Host and Device Library Versions](#host-and-device-library-versions)), and Warp raises with NVSHMEM's return code.
+
+It also rejected installations that work. The 3.7 and 3.8 archives and the 3.8.0 Debian packages ship the device
+library next to the host library, so discovery finds a matching pair there, and the check then refused it. The
+override bypassed the check, which is how this branch was tested before 3.9 wheels existed, so the check did not hold
+as a support boundary either. Without it, nothing needs to record which of the three discovery steps selected a device
+library.
 
 ### Decision: Hand-Written Device Declarations
 
@@ -182,10 +202,10 @@ provide RTC-only minimal types for them. That is a larger ask than guarding a fe
 
 The accepted cost is that `extern "C"` declarations are unchecked at link time: a wrong prototype is silent memory
 corruption rather than a compile error, and the block grows with builtin coverage (typed atomics, waits, and
-reductions multiply it). Two mitigations:
+reductions multiply it). Two mitigations, the first in place and the second planned:
 
-- Declare with the header's own types rather than ABI-equivalent ones. The prototype's `ptrdiff_t` strides are
-  currently declared as `long long`, which is the same size on LP64 but a different type.
+- Declare with the header's own types rather than ABI-equivalent ones. The `iput` and `iget` strides are declared
+  as `ptrdiff_t`; the prototype declared them as `long long`, which is the same size on LP64 but a different type.
 - Add a CI consistency check in a job whose image has `nvcc` and the NVSHMEM wheel installed: a script reads the
   `extern "C"` block of `nvshmem_device.h` and emits one
   `static_assert(std::is_same_v<decltype(&::nvshmem_putmem), void (*)(void*, const void*, size_t, int)>)` per
@@ -262,8 +282,9 @@ the process, and allocating with a device other than the PE's device produced an
 
 #### Build System
 
-Warp's build needs nothing from NVSHMEM. The only change is that nvJitLink is linked whenever CUDA is enabled on
-Linux, not only when libmathdx is. The nvJitLink helper in `warp.cu` and the `-dlto` and
+Warp's build needs nothing from NVSHMEM. It compiles `warp/native/nvshmem.cpp`, defines `WP_ENABLE_NVSHMEM` for
+Linux CUDA builds, and links nvJitLink for those builds, not only when libmathdx is enabled. In other builds
+`nvshmem.cpp` reduces to stubs. The nvJitLink helper in `warp.cu` and the `-dlto` and
 `--relocatable-device-code=true` NVRTC options are used whenever a module has link inputs, whether they come from
 libmathdx or from NVSHMEM.
 
@@ -308,7 +329,10 @@ All builtins use `export=False` because they are device-only. Builtins with side
 The `extern "C"` declarations in `nvshmem_device.h` are written by hand against NVSHMEM's public C API and use the
 header's own parameter types. No NVSHMEM header is included during NVRTC compilation; see
 [Decision: Hand-Written Device Declarations](#decision-hand-written-device-declarations) for the reasoning and the
-CI check that guards the declarations against drift.
+planned CI check that would guard the declarations against drift.
+
+The adjoints of the push builtins are in the same header; see
+[NVSHMEM Automatic Differentiation](nvshmem-autodiff.md).
 
 #### Codegen and Linking
 
@@ -336,9 +360,8 @@ The device library must come from the same NVSHMEM installation as the host libr
 
 1. An explicit override, the `WARP_NVSHMEM_DEVICE_LIBRARY` environment variable, naming a
    `libnvshmem_device.ltoir.fatbin` or a raw `.ltoir` file. This serves custom NVSHMEM builds and CI before 3.9 wheels
-   exist (the 3.8.0 archive's fatbin paired with a 3.8.0 host library). An override also skips the 3.9 host version
-   floor, which exists only because older wheels lack the device library; NVSHMEM's own `nvshmemx_cumodule_init`
-   check that host and device versions match still applies.
+   exist (the 3.8.0 archive's fatbin paired with a 3.8.0 host library). NVSHMEM's own `nvshmemx_cumodule_init` check
+   that host and device versions match applies as for any other library.
 2. The directory of the loaded `libnvshmem_host.so`, found with `dladdr` on a symbol resolved through the
    `RTLD_NOLOAD` handle. The wheel, the Debian packages, and the archives all place `libnvshmem_device.ltoir.fatbin`
    next to the host library.
@@ -347,12 +370,32 @@ The device library must come from the same NVSHMEM installation as the host libr
    ahead-of-time compilation works on machines that never initialize NVSHMEM.
 4. Otherwise compilation fails with an error that names the paths tried and states the NVSHMEM 3.9 requirement.
 
-The selected file's identity (path, kind, source, distribution version, and SHA-256 digest) is recorded in the module
-metadata as the `nvshmem` record; its presence is what marks a cached module as one that uses NVSHMEM. On a cache
-hit, a different installed device library is
-treated as a cache miss, so upgrading the NVSHMEM package recompiles affected modules instead of running device code
-from the previous version. NVSHMEM accepts an older device library with a newer host library, so without this check
-the stale cubin would load and run silently.
+The device library is part of the name of a module's cache entry. The module hash covers the generated code, and the
+kernel cache is keyed by Warp version, so neither changes when the NVSHMEM package is upgraded, and NVSHMEM accepts an
+older device library with a newer host library: a cubin linked against the previous release would load and run
+silently. For a module that refers to NVSHMEM built-ins, `Module.get_module_identifier()` therefore folds the SHA-256
+digest of the device library found at that moment into the hash that names the cache directory and its files. A
+different library is a different cache entry and an ordinary cache miss, the entry for the previous library stays
+valid, and a copy of the same bytes at another path is the same entry. Module load messages report this hash, so they
+match the directory name.
+
+Three details of that rule:
+
+- **Which modules.** The reference scan that hashes a module (`Adjoint.get_references()`) already resolves built-in
+  call targets, and NVSHMEM built-ins are among those it reports to `ModuleHasher`, which notes that the module
+  refers to them. The scan is source-level, so a call that `wp.static` removes still counts. That is harmless for a
+  cache name. It is not used to decide linking or registration, which follow the exact `uses_nvshmem` flag from code
+  generation (see [Module Registration](#module-registration)): a module with an optional NVSHMEM path must not need
+  NVSHMEM when the path is compiled out.
+- **When the library is looked up.** At every naming, not when the module is hashed. A `module="unique"` kernel is
+  hashed when it is defined, which can be before the application loads the host library that discovery step 2
+  depends on, and hashes are cached across launches. Naming happens when a module is loaded or compiled, next to the
+  lookup that selects the library to link, so the name and the linked library agree.
+- **No library found.** The name folds in nothing, and compilation reports the discovery error if the module turns
+  out to call the built-ins.
+
+Ahead-of-time artifacts are named the same way, so `wp.load_aot_module` finds them only on a machine with the same
+device library, unless `strip_hash` is set.
 
 #### Module Registration
 
@@ -364,31 +407,35 @@ This populates the `__constant__` symbols in the cubin that the NVSHMEM runtime 
 
 Loading fails with a `RuntimeError` that names the cause and how to fix it:
 
-- Before the CUDA module is loaded: no NVSHMEM host library is loaded in the process, or the loaded host library is
-  older than 3.9 and the module was not linked with an explicit override.
+- Before the CUDA module is loaded: no NVSHMEM host library is loaded in the process.
 - After the CUDA module is loaded: `nvshmemx_cumodule_init` fails, most often because NVSHMEM is not
   initialized (native code checks `nvshmemx_init_status() >= 2`), or because the device library does not match the
   host library, which NVSHMEM checks itself through `nvshmemi_device_lib_version_d`. Warp unloads the CUDA module
-  before raising.
+  before raising. For a failure that NVSHMEM reports, the error gives NVSHMEM's return code, the version of the
+  loaded host library, and the path of the device library the module was linked with, and states the version rule.
 
 Nothing is cached on failure, so loading again after NVSHMEM initialization succeeds. An earlier
 prototype only warned and kept the module; kernels then ran against uninitialized NVSHMEM device state
 and silently returned wrong values (for example, `nvshmem_n_pes()` returned 0), and the module stayed
 unregistered for the rest of the process.
 
-Warp has no version rule of its own beyond the 3.9 minimum. The prototype compared the loaded host library against
-the version compiled into `warp.so` because the embedded device library fixed one side of the pair; with both halves
-coming from one installation that comparison has nothing to check.
+Warp has no version rule of its own (see [Decision: No Host Version Check](#decision-no-host-version-check)). The
+prototype compared the loaded host library against the version compiled into `warp.so` because the embedded device
+library fixed one side of the pair; with both halves coming from one installation that comparison has nothing to
+check.
 
 Before a registered CUDA module is unloaded, `ModuleExec` calls `nvshmemx_cumodule_finalize` to
 unregister it. Both calls are local to the PE, not collectives, so the destructor can make them. If
 NVSHMEM is already finalized, the native wrapper skips the call.
 
 `ModuleBuilder.uses_nvshmem` must also survive a cache hit in a fresh process. Codegen does not run
-on that path, so cache identity alone cannot reconstruct the in-memory flag. The `nvshmem` record in the module
-metadata (see [Device Library Discovery](#device-library-discovery)) is that flag: a cached module whose metadata
-carries it is registered with `nvshmemx_cumodule_init` after loading. Metadata written by the prototype carried only
-a `__uses_nvshmem__` flag; a module with that key is rebuilt rather than loaded.
+on that path, so cache identity alone cannot reconstruct the in-memory flag. `ModuleBuilder.build_meta()` writes it
+to the module metadata as `uses_nvshmem`, and both the compile step and the load read it from there: a module whose
+metadata carries it is linked with the device library and registered with `nvshmemx_cumodule_init` after loading.
+`Module` keeps no copy, because one module has several block-size variants and devices; the loaded `ModuleExec` keeps
+one so that it can unregister itself. The compile step also writes the path of the device library it linked to the
+metadata as `nvshmem_device_library`, for the load error above: a cached module can be loaded by a later process, and
+a module compiled ahead of time with `strip_hash` can be loaded where a different device library is installed.
 
 #### Symmetric Memory
 
@@ -409,13 +456,13 @@ programming model. The wrapping array must not be used after `free()`.
 
 #### Host Library Loading
 
-Warp never loads `libnvshmem_host.so` itself. The application loads and initializes it, typically
-through nvshmem4py, and Warp uses `dlopen(RTLD_NOLOAD)` to reuse that exact loaded library. It then
-resolves `nvshmemx_cumodule_init`, `nvshmemx_cumodule_finalize`, `nvshmemx_init_status`, and
-`nvshmemx_vendor_get_version_info` with `dlsym`, and uses `dladdr` on one of them to find the library's directory
-for device library discovery. The functions are forward-declared in `nvshmem.cpp` because the NVSHMEM headers cannot
-be included by g++ (they pull in CCCL/CUDA C++ headers); with no embedded library there is no other reason to have
-the headers at build time.
+Warp never loads `libnvshmem_host.so` itself. The application loads and initializes it, typically through nvshmem4py,
+and Warp uses `dlopen(RTLD_NOLOAD)` to reuse that exact loaded library. It then resolves `nvshmemx_cumodule_init`,
+`nvshmemx_cumodule_finalize`, `nvshmemx_init_status`, and `nvshmemx_vendor_get_version_info` with `dlsym`, and uses
+`dladdr` on one of them to find the library's directory for device library discovery. `nvshmem_ptr` and
+`nvshmem_my_pe` are resolved as well, as optional symbols, for the symmetric-gradient check of the autodiff design.
+The functions are forward-declared in `nvshmem.cpp` because the NVSHMEM headers cannot be included by g++ (they pull
+in CCCL/CUDA C++ headers); with no embedded library there is no other reason to have the headers at build time.
 
 The host library's soname is `libnvshmem_host.so.<major>`; the `devel` branch keeps it at the project major version,
 so `libnvshmem_host.so.3` remains correct for 3.9.
@@ -454,39 +501,39 @@ The first version of the branch implemented the embedded design. Moving to the d
 - In `build_lib.py`: `--use-nvshmem`, `--nvshmem-ltoir`, `--nvshmem-fatbin`, NVSHMEM discovery and validation, the
   `.incbin` assembly generation, legacy sidecar cleanup, the producer-toolkit check, and the post-link byte
   verification
-- In `build_dll.py`: NVSHMEM include paths, `WP_ENABLE_NVSHMEM`, and `WP_NVSHMEM_DEVICE_LIBRARY_KIND`; nvJitLink is
-  linked for every Linux CUDA build
+- In `build_dll.py`: NVSHMEM include paths and `WP_NVSHMEM_DEVICE_LIBRARY_KIND`; `WP_ENABLE_NVSHMEM` is no longer
+  set by a build option but defined for every Linux CUDA build, and nvJitLink is linked for those builds
 - In `nvshmem.cpp`: the `nvshmem_version.h` include, `wp_nvshmem_get_build_version`, the embedded-library accessor,
   and the host-version comparison
 - In `warp.cu`: the `link_nvshmem` parameter and the embedded-library branch of `wp_cuda_compile_program`; the device
   library arrives through the existing link-input arrays
 - In `context.py`: `_validate_nvshmem_version` and the tests that exercise it
 
-It added `warp/_src/nvshmem.py` (device library discovery and the override), the metadata record of the linked
-library, the 3.9 minimum check at load, and the `requires_nvshmem` attribute on `add_builtin` in place of the
-name-prefix check. The builtins, module registration, unload handling, multi-PE tests, and examples carried over
-unchanged.
+It added `warp/_src/nvshmem.py` (device library discovery and the override), the device library in the cache name,
+and the `requires_nvshmem` attribute on `add_builtin` in place of the name-prefix check. The builtins, module
+registration, unload handling, multi-PE tests, and examples carried over unchanged.
 
 ## Coverage Plan
 
 Decided 2026-10-30 from a survey of the NVSHMEM 3.8.0 device API and of the device functions that NVSHMEM's own
-examples and performance tests call. Two prerequisites land before any new builtin, because each addition would
-otherwise extend mechanisms the transition replaces: the explicit "requires NVSHMEM" attribute on `add_builtin` in
-place of name-prefix detection, and routing the device library through the link-input arrays.
+examples and performance tests call. Two prerequisites for new builtins are in place, because each addition would
+otherwise have extended mechanisms the transition replaced: the explicit "requires NVSHMEM" attribute on
+`add_builtin` in place of name-prefix detection, and routing the device library through the link-input arrays.
 
 ### Initial Set
 
 The twelve builtins cover the point-to-point core. The device functions NVSHMEM's examples and perftests call most
 often are, in order, `nvshmem_barrier_all`, `nvshmem_n_pes`, `nvshmem_my_pe`, `nvshmem_quiet`, typed `wait_until`,
 typed `p`, `nvshmemx_signal_op`, typed `put_nbi`, typed `put`, `nvshmem_fence`, block-scope `put_nbi`, and typed `g`.
-Of those, only typed `wait_until` and the non-blocking forms are missing. Two fixes apply to the initial set itself:
+Of those, only typed `wait_until` and the non-blocking forms are missing. Of two fixes to the initial set itself,
+the first is open and the second is done:
 
 - **Thread-scope calls replicate in tiled kernels.** With `wp.launch_tiled`, every thread in the block executes the
   kernel body with the same `wp.tid()`, so a thread-scope builtin runs once per thread: `wp.nvshmem_p` issues
   `block_dim` identical puts, which is wasteful but benign, and an atomic would be wrong by a factor of `block_dim`.
   The rule is that thread-scope `nvshmem_*` builtins are for `wp.launch` kernels and `tile_nvshmem_*` builtins for
-  tiled launches. Codegen can warn when a thread-scope NVSHMEM builtin appears in a module compiled with a
-  `block_dim` above one.
+  tiled launches. Neither the user guide nor code generation says so yet: codegen can warn when a thread-scope
+  NVSHMEM builtin appears in a module compiled with a `block_dim` above one.
 - The `iput` and `iget` stride parameters are declared with the header's `ptrdiff_t`.
 
 ### Batches
@@ -599,7 +646,9 @@ the rule moot for ordinary use; it still applies when the override points at a d
 installation. Observed on 2026-10-30 with the 3.4.5 host library and the 3.8.0 fatbin: the module compiles and
 links, `nvshmemx_cumodule_init` prints "NVSHMEM version in CUmodule or CUlibrary does not match with NVSHMEM host
 library version" and returns 7, and Warp unloads the module and raises
-`nvshmemx_cumodule_init failed (7)`. The failure is loud and the process continues.
+`nvshmemx_cumodule_init failed (7)`. The failure is loud and the process continues. Repeated on 2026-11-27 with the
+same pair: the error now goes on to name the loaded host library as NVSHMEM 3.4.5 and the linked device library by
+its path.
 
 ### Multiple `libnvshmem_host.so` Versions on the System
 
@@ -768,16 +817,18 @@ load a cached NVSHMEM cubin without calling `nvshmemx_cumodule_init`, and its ke
 state. `TestNVSHMEMMultiPE.test_cached_module_in_new_process` runs the same program twice against one
 kernel cache and checks that the cached second run still returns correct NVSHMEM values.
 
-The same gap applies to the device library itself: the module hash is computed before codegen knows that a module
-uses NVSHMEM, and the kernel cache is keyed by Warp version, so a cubin linked against one NVSHMEM device library is
-otherwise reused after the NVSHMEM package is upgraded. Recording the linked library in the metadata (see
+The same gap applies to the device library itself: the module hash covers generated code, and the kernel cache is
+keyed by Warp version, so a cubin linked against one NVSHMEM device library is otherwise reused after the NVSHMEM
+package is upgraded. Making the library part of the cache name (see
 [Device Library Discovery](#device-library-discovery)) closes it.
 
-Forcing the rebuild was not enough on its own. When the cache directory already exists, `Module._compile` only
-installs its outputs if the cached binary and metadata are missing, on the assumption that another process won the
-race with identical outputs. The first implementation of the check recompiled against the new library and then loaded
-the stale binary. A rebuild caused by a changed device library now replaces the cached files; the test that caught it
-compares the digest recorded in the cache with the library in use rather than trusting the "(compiled)" message.
+The first fix validated the cache entry after the lookup instead: the metadata recorded the digest of the linked
+library, every cached load compared it with the library in use, and a mismatch forced a rebuild. That was not enough
+on its own. When the cache directory already exists, `Module._compile` only installs its outputs if the cached binary
+and metadata are missing, on the assumption that another process won the race with identical outputs, so the first
+version recompiled against the new library and then loaded the stale binary. The fix had to overwrite a cache entry
+in place, which nothing else in the cache does, and the check parsed the metadata of every cached module a second
+time, NVSHMEM or not. A link input that changes the binary belongs in the cache name.
 
 ## Testing Strategy
 
@@ -794,12 +845,14 @@ rather than mocking Warp's module-loading internals, so they survive refactoring
 - The error-message test for unusable runtimes patches Warp's native bindings, because it needs failure codes a test
   machine cannot produce. The prototype's version-rule tests go away with the rule.
 - Discovery tests run without a GPU against temporary directories: the override path, the library next to a host
-  library, a fake installed distribution, and the error when nothing is found. A multi-PE test switches the override
-  between the archive's fatbin and a raw per-architecture LTOIR and checks that the cached module is rebuilt and that
-  the recorded digest follows the library in use.
-- A CI-only declaration check, outside `warp/tests`: generate `static_assert`s from the `extern "C"` block of
-  `nvshmem_device.h` and compile them with `nvcc` against the installed NVSHMEM wheel's headers (see
-  [Decision: Hand-Written Device Declarations](#decision-hand-written-device-declarations)).
+  library, a fake installed distribution, the error when nothing is found, and the cache name of a module, which
+  follows the device library's bytes only if the module refers to NVSHMEM built-ins. A multi-PE test switches the
+  override between the archive's fatbin and a raw per-architecture LTOIR and checks that each library gets its own
+  cache entry and that switching back loads the first entry from the cache. Another compiles without any device
+  library and checks that the error names the requirement.
+- Planned, not yet written: a CI-only declaration check, outside `warp/tests`, that generates `static_assert`s from
+  the `extern "C"` block of `nvshmem_device.h` and compiles them with `nvcc` against the installed NVSHMEM wheel's
+  headers (see [Decision: Hand-Written Device Declarations](#decision-hand-written-device-declarations)).
 
 Run the NVSHMEM tests with an NVSHMEM wheel that ships the device library (3.9 or newer):
 
@@ -871,12 +924,14 @@ To raise with the NVSHMEM team:
 For Warp:
 
 - Add the CI declaration check that compiles the hand-written declarations against the installed wheel's headers.
-- Decide the public capability query. `wp.is_nvshmem_enabled()` reported the build flag; without a flag the useful
-  question is whether a device library was found.
+- Decide the public capability query. None is public yet: `wp.is_nvshmem_enabled()` reported whether the build can
+  link NVSHMEM device code, which is true of every Linux CUDA build, and the useful question is whether a device
+  library was found.
 - Add a CI job that runs the single-process tests, and the multi-PE tests on a two-GPU runner.
 - Handle CUDA 12, where the per-architecture raw LTOIR must be selected; validate aarch64 and multi-node runs with a
   network transport. Validation so far covers CUDA 13 on x86_64 with GPUs in a single node.
-- Expand builtin coverage in the order of the [Coverage Plan](#coverage-plan), starting with the two prerequisites it
-  names.
+- Expand builtin coverage in the order of the [Coverage Plan](#coverage-plan), and document or warn about
+  thread-scope builtins in tiled kernels.
 - Add a cooperative launch option to `wp.launch` before the collectives batch.
-- Differentiate the built-ins; see [NVSHMEM Automatic Differentiation](nvshmem-autodiff.md).
+- Differentiate the pull built-ins, `nvshmem_g` and `nvshmem_get`. The push built-ins are differentiable; see
+  [NVSHMEM Automatic Differentiation](nvshmem-autodiff.md), whose Future Work section sketches the pull adjoint.

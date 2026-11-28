@@ -4,7 +4,6 @@
 import glob
 import hashlib
 import importlib.util
-import json
 import os
 import re
 import shutil
@@ -13,7 +12,6 @@ import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
-from typing import ClassVar
 from unittest import mock
 
 import numpy as np
@@ -36,8 +34,11 @@ def _is_module_installed(name):
     return importlib.util.find_spec(name) is not None
 
 
-def _is_nvshmem_device_library_available():
-    """Whether compiling an NVSHMEM module would find a device library (override, host library, or wheel)."""
+def _can_compile_nvshmem_modules():
+    """Whether this build links NVSHMEM device code and finds a device library (override, host library, or wheel)."""
+    wp.init()
+    if not warp_context.runtime.core.wp_is_nvshmem_enabled():
+        return False
     toolkit_version = warp_context.runtime.toolkit_version
     cuda_major = toolkit_version[0] if toolkit_version else 13
     try:
@@ -87,14 +88,6 @@ class TestNVSHMEMCodegen(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, r"only supported on CUDA devices"):
             wp.load_module(cpu_kernel.module, device="cpu")
 
-    _HOST_RECORD: ClassVar[dict] = {
-        "path": "/opt/nvshmem/lib/libnvshmem_device.ltoir.fatbin",
-        "kind": "fatbin",
-        "source": "host",
-        "version": None,
-        "sha256": "0" * 64,
-    }
-    _OVERRIDE_RECORD: ClassVar[dict] = {**_HOST_RECORD, "source": "override"}
     _LOADED_3_8_0 = (3 << 16) | (8 << 8)
 
     @classmethod
@@ -111,42 +104,32 @@ class TestNVSHMEMCodegen(unittest.TestCase):
     def test_nvshmem_runtime_errors(self):
         """Loading an NVSHMEM module should explain why the NVSHMEM runtime is unusable."""
         cases = (
-            ("not enabled", {"wp_is_nvshmem_enabled": 0}, self._HOST_RECORD, None, r"Linux CUDA builds"),
-            ("not loaded", {"wp_nvshmem_get_loaded_version": 0}, self._HOST_RECORD, None, r"no NVSHMEM host library"),
+            ("not enabled", {"wp_is_nvshmem_enabled": 0}, None, r"Linux CUDA builds"),
+            ("not loaded", {"wp_nvshmem_get_loaded_version": 0}, None, r"no NVSHMEM host library"),
+            ("not initialized", {}, -1, r"NVSHMEM is not initialized"),
             (
-                "too old",
+                "init failure",
                 {},
-                self._HOST_RECORD,
-                None,
-                r"requires NVSHMEM 3\.9 or newer, but the loaded host library is NVSHMEM 3\.8\.0",
+                7,
+                r"nvshmemx_cumodule_init failed \(7\)\. The loaded host library is NVSHMEM 3\.8\.0, and the module "
+                r"was linked with the device library '/opt/nvshmem/lib/libnvshmem_device\.ltoir\.fatbin'",
             ),
-            ("not initialized", {}, self._OVERRIDE_RECORD, -1, r"NVSHMEM is not initialized"),
-            ("init failure", {}, self._OVERRIDE_RECORD, 7, r"nvshmemx_cumodule_init failed \(7\)"),
         )
-        for name, overrides, record, init_result, message in cases:
+        for name, overrides, init_result, message in cases:
             fake_core, patched = self._fake_runtime(init_result, **overrides)
             with self.subTest(name), patched, self.assertRaisesRegex(RuntimeError, message):
-                warp_context._check_nvshmem_host_runtime(record)
-                warp_context._init_nvshmem_module(123)
+                warp_context._check_nvshmem_host_runtime()
+                warp_context._init_nvshmem_module(123, "/opt/nvshmem/lib/libnvshmem_device.ltoir.fatbin")
             # Only a failure reported by NVSHMEM itself may have registered the module.
             if init_result is not None and init_result > 0:
                 fake_core.wp_nvshmem_cumodule_finalize.assert_called_once_with(123)
             else:
                 fake_core.wp_nvshmem_cumodule_finalize.assert_not_called()
 
-    def test_override_skips_host_version_floor(self):
-        """An explicit device library override is trusted with a host library older than 3.9."""
-        _, patched = self._fake_runtime(0)
-        with patched:
-            warp_context._check_nvshmem_host_runtime(self._OVERRIDE_RECORD)
-            warp_context._init_nvshmem_module(123)
-
     def test_nvshmem_kernel_compiles(self):
         """A kernel using NVSHMEM builtins should compile without nvshmem4py or an NVSHMEM runtime."""
-        if not wp.is_nvshmem_enabled():
-            self.skipTest("NVSHMEM not enabled in this build.")
-        if not _is_nvshmem_device_library_available():
-            self.skipTest("NVSHMEM device library not embedded in this build.")
+        if not _can_compile_nvshmem_modules():
+            self.skipTest("NVSHMEM modules need a Linux CUDA build and an NVSHMEM device library.")
 
         @wp.kernel(module="unique")
         def nvshmem_kernel(out_pe: wp.array[wp.int32], out_npes: wp.array[wp.int32]):
@@ -160,10 +143,8 @@ class TestNVSHMEMCodegen(unittest.TestCase):
 
     def test_loading_without_nvshmem_runtime_raises(self):
         """Loading an NVSHMEM module without an NVSHMEM runtime should raise, and retrying should raise again."""
-        if not wp.is_nvshmem_enabled():
-            self.skipTest("NVSHMEM not enabled in this build.")
-        if not _is_nvshmem_device_library_available():
-            self.skipTest("NVSHMEM device library not embedded in this build.")
+        if not _can_compile_nvshmem_modules():
+            self.skipTest("NVSHMEM modules need a Linux CUDA build and an NVSHMEM device library.")
         if warp_context.runtime.core.wp_nvshmem_get_loaded_version() != 0:
             self.skipTest("An NVSHMEM host library is already loaded in this process.")
 
@@ -214,7 +195,7 @@ class TestNVSHMEMDeviceLibrary(unittest.TestCase):
                 path = self._write(filename)
                 os.environ[self.support.DEVICE_LIBRARY_ENV] = path
                 lib = self.support.find_device_library(None, 13, search_path=[])
-                self.assertEqual((lib.path, lib.kind, lib.source), (path, kind, "override"))
+                self.assertEqual(lib, (path, kind))
 
     def test_override_missing_file_raises(self):
         """An override that names a missing file fails with the path in the message."""
@@ -227,14 +208,14 @@ class TestNVSHMEMDeviceLibrary(unittest.TestCase):
         """The device library next to the loaded host library is used when no override is set."""
         path = self._write(self.support.DEVICE_LIBRARY_FILENAME)
         lib = self.support.find_device_library(self.root, 13, search_path=[])
-        self.assertEqual((lib.path, lib.kind, lib.source), (path, "fatbin", "host"))
+        self.assertEqual(lib, (path, "fatbin"))
 
     def test_distribution_lookup(self):
         """Without a loaded host library, the installed nvidia-nvshmem wheel for the CUDA major version is used."""
         site = self._fake_distribution("nvidia-nvshmem-cu13", "3.9.0")
         lib = self.support.find_device_library(None, 13, search_path=[site])
         expected = os.path.join(site, "nvidia", "nvshmem", "lib", self.support.DEVICE_LIBRARY_FILENAME)
-        self.assertEqual((lib.path, lib.kind, lib.source, lib.version), (expected, "fatbin", "distribution", "3.9.0"))
+        self.assertEqual(lib, (expected, "fatbin"))
 
     def test_no_device_library_raises(self):
         """The error names every location tried and the NVSHMEM version requirement."""
@@ -246,8 +227,8 @@ class TestNVSHMEMDeviceLibrary(unittest.TestCase):
         self.assertIn(os.path.join(host_dir, self.support.DEVICE_LIBRARY_FILENAME), str(raised.exception))
         self.assertIn("nvidia-nvshmem-cu13", str(raised.exception))
 
-    def test_record_and_hash(self):
-        """Reading the library returns its bytes and digest, and the record carries the identity fields."""
+    def test_read_returns_bytes_and_digest(self):
+        """Verify that reading the library returns its bytes and their SHA-256 digest."""
         data = b"\x7fNCE" + bytes(range(64))
         path = self._write("z.ltoir", data)
         os.environ[self.support.DEVICE_LIBRARY_ENV] = path
@@ -255,9 +236,29 @@ class TestNVSHMEMDeviceLibrary(unittest.TestCase):
         contents, digest = self.support.read_device_library(lib)
         self.assertEqual(contents, data)
         self.assertEqual(digest, hashlib.sha256(data).hexdigest())
-        record = self.support.device_library_record(lib, digest)
-        self.assertEqual(set(record), {"path", "kind", "source", "version", "sha256"})
-        self.assertEqual((record["path"], record["kind"], record["sha256"]), (path, "ltoir", digest))
+
+    def test_module_identifier_follows_device_library(self):
+        """Verify that a module that calls NVSHMEM built-ins is cached under a name that follows the device library."""
+        wp.init()
+
+        @wp.kernel(module="unique")
+        def nvshmem_kernel(out: wp.array[wp.int32]):
+            out[0] = wp.nvshmem_my_pe()
+
+        @wp.kernel(module="unique")
+        def local_kernel(out: wp.array[wp.int32]):
+            out[0] = 1
+
+        def identifiers(library):
+            os.environ[self.support.DEVICE_LIBRARY_ENV] = library
+            return nvshmem_kernel.module.get_module_identifier(), local_kernel.module.get_module_identifier()
+
+        nvshmem_id, local_id = identifiers(self._write("first.fatbin", b"first"))
+        # The same bytes at another path are the same library.
+        self.assertEqual(identifiers(self._write("copy.fatbin", b"first")), (nvshmem_id, local_id))
+        changed_nvshmem_id, changed_local_id = identifiers(self._write("second.fatbin", b"second"))
+        self.assertNotEqual(changed_nvshmem_id, nvshmem_id)
+        self.assertEqual(changed_local_id, local_id)
 
 
 def _skip_unless_distributed(test_case):
@@ -270,10 +271,8 @@ def _skip_unless_distributed(test_case):
     if mpirun is None:
         test_case.skipTest("mpirun not found in PATH")
 
-    if not wp.is_nvshmem_enabled():
-        test_case.skipTest("NVSHMEM not enabled in this build.")
-    if not _is_nvshmem_device_library_available():
-        test_case.skipTest("NVSHMEM device library not embedded in this build.")
+    if not _can_compile_nvshmem_modules():
+        test_case.skipTest("NVSHMEM modules need a Linux CUDA build and an NVSHMEM device library.")
     if not _is_module_installed("nvshmem") or not _is_module_installed("mpi4py"):
         test_case.skipTest("nvshmem4py and mpi4py are required.")
     return mpirun
@@ -335,10 +334,8 @@ class TestNVSHMEMMultiPE(unittest.TestCase):
 
     def _run_uid_distributed(self, script_name, n_pes=2):
         """Run a local P2P test through NVSHMEM's Hydra launcher and UID bootstrap."""
-        if not wp.is_nvshmem_enabled():
-            self.skipTest("NVSHMEM not enabled in this build.")
-        if not _is_nvshmem_device_library_available():
-            self.skipTest("NVSHMEM device library not embedded in this build.")
+        if not _can_compile_nvshmem_modules():
+            self.skipTest("NVSHMEM modules need a Linux CUDA build and an NVSHMEM device library.")
         if wp.get_cuda_device_count() < n_pes:
             self.skipTest(f"Test requires {n_pes} CUDA devices.")
         if not _is_module_installed("nvshmem"):
@@ -404,7 +401,7 @@ class TestNVSHMEMMultiPE(unittest.TestCase):
             self.assertIn("PE 0 query: [0, 1]", output)
 
     def test_device_library_change_invalidates_cache(self):
-        """A cached module linked against one device library is recompiled when the library changes."""
+        """Verify that a module is compiled and cached once for each device library it is linked against."""
         override = os.environ.get(nvshmem_support.DEVICE_LIBRARY_ENV)
         if not override:
             self.skipTest(f"{nvshmem_support.DEVICE_LIBRARY_ENV} is not set.")
@@ -422,24 +419,28 @@ class TestNVSHMEMMultiPE(unittest.TestCase):
 
         with tempfile.TemporaryDirectory(prefix="wp_nvshmem_cache_") as cache_dir:
             copied = shutil.copy(override, os.path.join(cache_dir, "copy.fatbin"))
-            runs = ((override, "(compiled)"), (override, "(cached)"), (copied, "(cached)"), (alternate, "(compiled)"))
-            for library, expected in runs:
+            # (device library, how the module loads, number of cached modules afterwards)
+            runs = (
+                (override, "(compiled)", 1),
+                (override, "(cached)", 1),
+                (copied, "(cached)", 1),
+                (alternate, "(compiled)", 2),
+                (override, "(cached)", 2),
+            )
+            for library, expected, cached_modules in runs:
                 env = os.environ | {"WARP_CACHE_PATH": cache_dir, nvshmem_support.DEVICE_LIBRARY_ENV: library}
                 output = self._run_distributed("aux_nvshmem_cache.py", n_pes=1, env=env)
                 with self.subTest(library=os.path.basename(library), expected=expected):
                     self.assertIn(expected, output)
                     self.assertIn("PE 0 query: [0, 1]", output)
-                    # The cached binary must now be the one linked against this library's bytes.
-                    (meta_path,) = glob.glob(os.path.join(cache_dir, "*", "wp___main___*", "*.meta"))
-                    with open(meta_path) as meta_file:
-                        record = json.load(meta_file)["nvshmem"]
-                    with open(library, "rb") as library_file:
-                        self.assertEqual(record["sha256"], hashlib.sha256(library_file.read()).hexdigest())
+                    # Each library has its own cache entry, so a module never loads a binary linked against another.
+                    meta_paths = glob.glob(os.path.join(cache_dir, "*", "wp___main___*", "*.meta"))
+                    self.assertEqual(len(meta_paths), cached_modules)
 
-    def test_host_too_old_without_override(self):
-        """A host library older than 3.9 with no override fails at compile, naming the requirement."""
+    def test_missing_device_library_fails_at_compile(self):
+        """Verify that compiling without a device library fails with an error that names the NVSHMEM requirement."""
         env = {key: value for key, value in os.environ.items() if key != nvshmem_support.DEVICE_LIBRARY_ENV}
-        output = self._run_distributed("aux_nvshmem_too_old.py", n_pes=1, env=env)
+        output = self._run_distributed("aux_nvshmem_no_device_library.py", n_pes=1, env=env)
         if "SKIPPED" in output:
             self.skipTest(output.strip().splitlines()[-1])
         self.assertIn("PASSED", output)

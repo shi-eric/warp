@@ -102,13 +102,27 @@ def _resolve_nvshmem_device_library() -> tuple[warp._src.nvshmem.DeviceLibrary, 
     return library, contents, sha256
 
 
-def _check_nvshmem_host_runtime(record: dict) -> None:
-    """Raise if this process has no usable NVSHMEM host runtime for a module linked against ``record``.
+def _nvshmem_device_library_digest() -> bytes:
+    """Return the SHA-256 digest of the NVSHMEM device library found now, or no bytes when none is found.
+
+    The library cannot be looked up before the runtime exists; :func:`init` rehashes every module anyway.
+    A missing library is reported when a module that needs it is compiled.
+    """
+    if runtime is None:
+        return b""
+    try:
+        _, _, sha256 = _resolve_nvshmem_device_library()
+    except RuntimeError:
+        return b""
+    return bytes.fromhex(sha256)
+
+
+def _check_nvshmem_host_runtime() -> None:
+    """Raise if this process has no NVSHMEM host library to register a module with.
 
     Warp does not load NVSHMEM itself. It uses the host library that the application already loaded,
-    whether through nvshmem4py or another library. The host library must be at least NVSHMEM 3.9, the
-    first release whose wheels ship the device library, unless the module was linked with an explicit
-    override; NVSHMEM's own ``nvshmemx_cumodule_init`` check still applies in that case.
+    whether through nvshmem4py or another library. Whether that library accepts the device library a
+    module was linked with is NVSHMEM's own check in ``nvshmemx_cumodule_init``.
     """
     if not runtime.core.wp_is_nvshmem_enabled():
         raise RuntimeError(f"Cannot load a module that uses NVSHMEM built-ins. {_NVSHMEM_BUILD_HINT}")
@@ -118,19 +132,10 @@ def _check_nvshmem_host_runtime(record: dict) -> None:
             "Cannot load a module that uses NVSHMEM built-ins because no NVSHMEM host library is loaded "
             f"in this process. {_NVSHMEM_INIT_HINT}"
         )
-    if record.get("source") != "override":
-        loaded_version = warp._src.nvshmem.decode_version(loaded)
-        if loaded_version < warp._src.nvshmem.MIN_HOST_VERSION:
-            minimum = ".".join(str(part) for part in warp._src.nvshmem.MIN_HOST_VERSION[:2])
-            raise RuntimeError(
-                f"Warp requires NVSHMEM {minimum} or newer, but the loaded host library is NVSHMEM "
-                f"{'.'.join(str(part) for part in loaded_version)}. Install a newer nvidia-nvshmem wheel, or set "
-                f"{warp._src.nvshmem.DEVICE_LIBRARY_ENV} to a device library that matches the loaded host library."
-            )
 
 
-def _init_nvshmem_module(cuda_module: int) -> None:
-    """Register a loaded CUDA module with the NVSHMEM runtime."""
+def _init_nvshmem_module(cuda_module: int, device_library: str) -> None:
+    """Register a loaded CUDA module, linked with the device library at ``device_library``, with the NVSHMEM runtime."""
     ret = runtime.core.wp_nvshmem_cumodule_init(cuda_module)
     if ret == -1:
         raise RuntimeError(
@@ -139,7 +144,14 @@ def _init_nvshmem_module(cuda_module: int) -> None:
     if ret != 0:
         # NVSHMEM can fail after registering the module, so unregister it before the caller unloads it.
         runtime.core.wp_nvshmem_cumodule_finalize(cuda_module)
-        raise RuntimeError(f"Cannot load a module that uses NVSHMEM built-ins: nvshmemx_cumodule_init failed ({ret}).")
+        # The usual cause is a host library that does not accept the device library, so name both.
+        loaded = runtime.core.wp_nvshmem_get_loaded_version()
+        raise RuntimeError(
+            f"Cannot load a module that uses NVSHMEM built-ins: nvshmemx_cumodule_init failed ({ret}). "
+            f"The loaded host library is NVSHMEM {loaded >> 16}.{(loaded >> 8) & 0xFF}.{loaded & 0xFF}, and the "
+            f"module was linked with the device library '{device_library}'. NVSHMEM requires a host library "
+            "that is at least as new as the device library and has the same major version."
+        )
 
 
 class CudaMemcpyKind(enum.IntEnum):
@@ -3281,6 +3293,10 @@ class ModuleHasher:
         # all unique kernels for codegen, filtered by hash
         self.unique_kernels = {}  # (hash: kernel)
 
+        # Whether the hashed code refers to NVSHMEM built-ins. Such a module may link the NVSHMEM
+        # device library, which then names its cache entry (see Module._get_cache_hash()).
+        self.references_nvshmem = False
+
         # start hashing the module
         ch = hashlib.sha256()
 
@@ -3511,6 +3527,7 @@ class ModuleHasher:
             if isinstance(v, Function):
                 if v.is_builtin():
                     ch.update(self.hash_builtin_function(v))
+                    self.references_nvshmem |= v.requires_nvshmem
                 elif v not in self.functions_in_progress:
                     ch.update(self.hash_function(v))
             else:
@@ -3525,6 +3542,7 @@ class ModuleHasher:
             if f not in self.functions_in_progress:
                 if f.is_builtin():
                     ch.update(self.hash_builtin_function(f))
+                    self.references_nvshmem |= f.requires_nvshmem
                 else:
                     ch.update(self.hash_function(f))
 
@@ -3920,6 +3938,11 @@ class ModuleBuilder:
                         "pull_builtins": sorted(kernel.adj.nvshmem_pull_builtins),
                         "fused_shape": kernel.adj.nvshmem_fused_shape,
                     }
+
+        # Persisted because a module loaded from the cache skips code generation, and it must
+        # still be registered with the NVSHMEM runtime.
+        if self.uses_nvshmem:
+            meta["uses_nvshmem"] = True
 
         return meta
 
@@ -4478,9 +4501,6 @@ class Module:
         # runs only if the module is kept, so a duplicate never creates edges to detach.
         self.defer_reference_scan = False
 
-        # Indicates whether the module uses NVSHMEM builtins.
-        self.uses_nvshmem = False
-
         self.options = {
             "max_unroll": warp.config.max_unroll,
             "enable_backward": warp.config.enable_backward,
@@ -4916,10 +4936,23 @@ class Module:
         if self.options["strip_hash"]:
             module_name_short = f"wp_{self.name}"
         else:
-            module_hash = self.get_module_hash(block_dim)
-            module_name_short = f"wp_{self.name}_{module_hash.hex()[:7]}"
+            module_name_short = f"wp_{self.name}_{self._get_cache_hash(block_dim).hex()[:7]}"
 
         return module_name_short
+
+    def _get_cache_hash(self, block_dim: int | None = None) -> bytes:
+        """Get the hash that names this module's directory and files in the cache.
+
+        This is the module hash, except for a module that refers to NVSHMEM built-ins, which also
+        folds in the NVSHMEM device library found now. Such a module is linked with that library,
+        so a different library, as after an NVSHMEM upgrade, is a different cache entry. The
+        library is looked up on every call rather than when the module is hashed, because a
+        module can be hashed before the application loads the NVSHMEM host library that locates it.
+        """
+        module_hash = self.get_module_hash(block_dim)
+        if self.hashers[self.options["block_dim"] if block_dim is None else block_dim].references_nvshmem:
+            module_hash = hashlib.sha256(module_hash + _nvshmem_device_library_digest()).digest()
+        return module_hash
 
     def _get_compile_arch(self, device: Device | None = None) -> int | None:
         if device is None:
@@ -4992,27 +5025,6 @@ class Module:
 
         return output_name
 
-    def _nvshmem_device_library_changed(self, meta_path: str) -> bool:
-        """Whether a cached binary was linked against an NVSHMEM device library other than the current one.
-
-        The module hash is computed before codegen knows that a module uses NVSHMEM, and NVSHMEM accepts an
-        older device library with a newer host library, so without this check a cubin linked against the
-        previous NVSHMEM release would load silently after the package is upgraded. A module that cannot
-        find a device library now is treated as changed so that recompiling reports the discovery error.
-        """
-        with open(meta_path) as meta_file:
-            meta = json.load(meta_file)
-        record = meta.get("nvshmem")
-        if record is None:
-            # Binaries written before the device library was recorded carry only a flag; rebuild them
-            # so that they are linked and registered like any other NVSHMEM module.
-            return bool(meta.get("__uses_nvshmem__", False))
-        try:
-            _, _, sha256 = _resolve_nvshmem_device_library()
-        except RuntimeError:
-            return True
-        return sha256 != record.get("sha256")
-
     def _get_meta_name(self, block_dim: int | None = None) -> str:
         """Get the filename to use for the module metadata file.
 
@@ -5077,8 +5089,7 @@ class Module:
 
         Returns ``(source, ext, meta, ltoirs, fatbins)``: the emitted C++/CUDA
         source, its file extension, the metadata dict, and snapshots of the
-        builder's LTO-IR and fatbin collections. Also records whether the
-        source uses NVSHMEM builtins in ``self.uses_nvshmem``.
+        builder's LTO-IR and fatbin collections.
 
         Held under ``_codegen_lock`` so concurrent ``Module._compile`` callers
         cannot interleave ``adj.build`` writes and ``codegen()`` reads on a
@@ -5100,7 +5111,6 @@ class Module:
             source = builder.codegen("cuda")
         meta = builder.build_meta()
         ltoirs, fatbins = builder.get_link_inputs()
-        self.uses_nvshmem = builder.uses_nvshmem
         return source, ext, meta, ltoirs, fatbins
 
     def _compile(
@@ -5206,19 +5216,13 @@ class Module:
             output_dir = os.fspath(output_dir)
 
         # Skip compilation if the binary and metadata are already cached
-        # (forced rebuild when verifying autograd array access, or when the
-        # NVSHMEM device library a cached binary was linked against has changed)
-        cached_meta_path = os.path.join(output_dir, self._get_meta_name(block_dim=active_block_dim))
-        cached = (
+        # (forced rebuild when verifying autograd array access)
+        if (
             warp.config.cache_kernels
             and not options.get("verify_autograd_array_access", False)
             and os.path.exists(os.path.join(output_dir, output_name))
-            and os.path.exists(cached_meta_path)
-        )
-        # A cached binary linked against another NVSHMEM device library is rebuilt, and the rebuild
-        # replaces the cached files instead of deferring to them as a concurrent writer would.
-        replace_cached = cached and self._nvshmem_device_library_changed(cached_meta_path)
-        if cached and not replace_cached:
+            and os.path.exists(os.path.join(output_dir, self._get_meta_name(block_dim=active_block_dim)))
+        ):
             return False
 
         # Python codegen window -- runs serialised under ``_codegen_lock``
@@ -5237,9 +5241,7 @@ class Module:
             self._record_build_failure(device, is_cpu, active_block_dim, e)
             raise
 
-        uses_nvshmem = self.uses_nvshmem
-
-        if uses_nvshmem:
+        if meta.get("uses_nvshmem", False):
             if is_cpu:
                 nvshmem_error = RuntimeError("NVSHMEM built-ins are only supported on CUDA devices.")
             elif options["llvm_cuda"]:
@@ -5253,14 +5255,15 @@ class Module:
                 raise nvshmem_error
 
             # Link the device library of the installed NVSHMEM through the same inputs that carry
-            # libmathdx LTOIR, and record which library this binary was built against.
+            # libmathdx LTOIR.
             try:
-                nvshmem_library, nvshmem_contents, nvshmem_sha256 = _resolve_nvshmem_device_library()
+                nvshmem_library, nvshmem_contents, _ = _resolve_nvshmem_device_library()
             except RuntimeError as e:
                 self._record_build_failure(device, is_cpu, active_block_dim, e)
                 raise
             (fatbin_values if nvshmem_library.kind == "fatbin" else ltoir_values).append(nvshmem_contents)
-            meta["nvshmem"] = warp._src.nvshmem.device_library_record(nvshmem_library, nvshmem_sha256)
+            # Named in the error when NVSHMEM rejects the module at load.
+            meta["nvshmem_device_library"] = os.path.abspath(nvshmem_library.path)
 
         meta_path = os.path.join(output_dir, self._get_meta_name(block_dim=active_block_dim))
 
@@ -5387,7 +5390,7 @@ class Module:
             # final object binary path
             binary_path = os.path.join(output_dir, output_name)
 
-            if not os.path.exists(binary_path) or self.options["strip_hash"] or replace_cached:
+            if not os.path.exists(binary_path) or self.options["strip_hash"]:
                 # copy our output file to the destination module
                 # this is necessary in case different processes
                 # have different GPU architectures / devices
@@ -5397,7 +5400,7 @@ class Module:
                     # another process likely updated the module dir first
                     pass
 
-            if not os.path.exists(meta_path) or self.options["strip_hash"] or replace_cached:
+            if not os.path.exists(meta_path) or self.options["strip_hash"]:
                 # copy our output file to the destination module
                 # this is necessary in case different processes
                 # have different GPU architectures / devices
@@ -5409,7 +5412,7 @@ class Module:
 
             try:
                 final_source_path = os.path.join(output_dir, os.path.basename(source_code_path))
-                if not os.path.exists(final_source_path) or self.options["strip_hash"] or replace_cached:
+                if not os.path.exists(final_source_path) or self.options["strip_hash"]:
                     os.replace(source_code_path, final_source_path)
             except OSError:
                 # another process likely updated the module dir first
@@ -5464,14 +5467,15 @@ class Module:
         # use a unique module path using the module short hash
         module_name_short = self.get_module_identifier(active_block_dim)
 
+        # report the hash that names the module in the cache
+        cache_hash = self._get_cache_hash(active_block_dim).hex()[:7]
+
         module_load_timer_name = (
-            f"Module {self.name} {module_hash.hex()[:7]} load on device '{device}'"
+            f"Module {self.name} {cache_hash} load on device '{device}'"
             if self.options["strip_hash"] is False
             else f"Module {self.name} load on device '{device}'"
         )
-        module_load_diagnostics = (
-            f"device='{device}', block_dim={active_block_dim}, module_hash={module_hash.hex()[:7]}"
-        )
+        module_load_diagnostics = f"device='{device}', block_dim={active_block_dim}, module_hash={cache_hash}"
 
         if warp.config.log_level <= warp.LOG_DEBUG:
             module_load_timer_name += f" (block_dim={active_block_dim})"
@@ -5527,9 +5531,8 @@ class Module:
             else:
                 raise FileNotFoundError(f"Module metadata file {meta_path} was not found in the cache")
 
-            # Modules linked with the NVSHMEM device library record it in their metadata.
-            nvshmem_record = meta.get("nvshmem")
-            self.uses_nvshmem = nvshmem_record is not None
+            # Modules linked with the NVSHMEM device library are registered with the NVSHMEM runtime.
+            uses_nvshmem = meta.get("uses_nvshmem", False)
 
             cuda_compile_artifact = None
             if device.is_cuda:
@@ -5562,14 +5565,14 @@ class Module:
                 self.execs[(None, active_block_dim)] = module_exec
 
             elif device.is_cuda:
-                if self.uses_nvshmem:
-                    _check_nvshmem_host_runtime(nvshmem_record)
+                if uses_nvshmem:
+                    _check_nvshmem_host_runtime()
                 cuda_module = warp._src.build.load_cuda(binary_path, device)
                 if cuda_module is not None:
-                    if self.uses_nvshmem:
+                    if uses_nvshmem:
                         # Nothing is cached on failure, so loading again after NVSHMEM initialization succeeds.
                         try:
-                            _init_nvshmem_module(cuda_module)
+                            _init_nvshmem_module(cuda_module, meta["nvshmem_device_library"])
                         except RuntimeError:
                             module_load_timer.extra_msg = " (error)"
                             runtime.core.wp_cuda_unload_module(device.context, cuda_module)
@@ -5585,7 +5588,7 @@ class Module:
                         self.hashers[active_block_dim].kernel_hashes,
                         binary_path=binary_path,
                         cuda_compile_artifact=cuda_compile_artifact,
-                        uses_nvshmem=self.uses_nvshmem,
+                        uses_nvshmem=uses_nvshmem,
                     )
                     self.execs[(device.context, active_block_dim)] = module_exec
                 else:
@@ -9652,23 +9655,6 @@ def is_cuda_available() -> bool:
         :func:`is_cpu_available`, :func:`is_device_available`, :func:`get_cuda_device_count`
     """
     return get_cuda_device_count() > 0
-
-
-def is_nvshmem_enabled() -> bool:
-    """Check whether this Warp build can link NVSHMEM device code into kernels.
-
-    This is the case for Linux CUDA builds. Compiling a module that uses the
-    ``wp.nvshmem_*`` built-ins additionally needs the NVSHMEM device library,
-    which NVSHMEM 3.9 and newer wheels install next to the host library.
-
-    Returns:
-        ``True`` if NVSHMEM built-ins can be compiled with this build, ``False`` otherwise.
-
-    See Also:
-        :func:`is_cuda_available`
-    """
-    init()
-    return bool(runtime.core.wp_is_nvshmem_enabled())
 
 
 def is_device_available(device: Device) -> bool:

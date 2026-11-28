@@ -264,7 +264,6 @@ Runtime
    is_cpu_available
    is_cubql_available
    is_cuda_available
-   is_nvshmem_enabled
    print_diagnostics
 
 Kernel Programming

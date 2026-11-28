@@ -9,7 +9,7 @@ import unittest
 
 import warp as wp
 import warp._src.codegen
-from warp.tests.distributed.test_nvshmem import _is_nvshmem_device_library_available, run_distributed_script
+from warp.tests.distributed.test_nvshmem import _can_compile_nvshmem_modules, run_distributed_script
 
 
 class TestNVSHMEMAutodiff(unittest.TestCase):
@@ -68,10 +68,8 @@ class TestNVSHMEMAutodiff(unittest.TestCase):
 
     def test_codegen_records(self):
         """Verify that module metadata records the NVSHMEM traffic of each kernel's adjoint."""
-        if not wp.is_nvshmem_enabled():
-            self.skipTest("NVSHMEM not enabled in this build.")
-        if not _is_nvshmem_device_library_available():
-            self.skipTest("NVSHMEM device library not embedded in this build.")
+        if not _can_compile_nvshmem_modules():
+            self.skipTest("NVSHMEM modules need a Linux CUDA build and an NVSHMEM device library.")
 
         # Importing the kernels registers an NVSHMEM module with Warp, which every later load of all
         # modules (such as the one at the start of a graph capture) would then try to load.
