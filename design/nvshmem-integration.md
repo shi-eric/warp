@@ -60,7 +60,7 @@ and version queries) call into `libnvshmem_host.so` through `dlopen(RTLD_NOLOAD)
 application loaded, typically through nvshmem4py.
 
 Warp ships no NVSHMEM code, needs no NVSHMEM headers or archives to build, and has no NVSHMEM-specific build option:
-`WP_ENABLE_NVSHMEM` is defined for every Linux CUDA build, and all of them link nvJitLink.
+a native header defines `WP_ENABLE_NVSHMEM` for every Linux CUDA build, and all of them link nvJitLink.
 
 ### Decision: Link the Installed Device Library and Require NVSHMEM 3.9
 
@@ -282,9 +282,10 @@ the process, and allocating with a device other than the PE's device produced an
 
 #### Build System
 
-Warp's build needs nothing from NVSHMEM. It compiles `warp/native/nvshmem.cpp`, defines `WP_ENABLE_NVSHMEM` for
-Linux CUDA builds, and links nvJitLink for those builds, not only when libmathdx is enabled. In other builds
-`nvshmem.cpp` reduces to stubs. The nvJitLink helper in `warp.cu` and the `-dlto` and
+Warp's build needs nothing from NVSHMEM and passes no NVSHMEM definition to the compilers. It compiles
+`warp/native/nvshmem.cpp` and links nvJitLink for Linux CUDA builds, not only when libmathdx is enabled.
+`nvshmem.h` defines `WP_ENABLE_NVSHMEM` as 1 for those builds and as 0 for all others, where `nvshmem.cpp` reduces to
+stubs. The nvJitLink helper in `warp.cu` and the `-dlto` and
 `--relocatable-device-code=true` NVRTC options are used whenever a module has link inputs, whether they come from
 libmathdx or from NVSHMEM.
 
@@ -501,8 +502,9 @@ The first version of the branch implemented the embedded design. Moving to the d
 - In `build_lib.py`: `--use-nvshmem`, `--nvshmem-ltoir`, `--nvshmem-fatbin`, NVSHMEM discovery and validation, the
   `.incbin` assembly generation, legacy sidecar cleanup, the producer-toolkit check, and the post-link byte
   verification
-- In `build_dll.py`: NVSHMEM include paths and `WP_NVSHMEM_DEVICE_LIBRARY_KIND`; `WP_ENABLE_NVSHMEM` is no longer
-  set by a build option but defined for every Linux CUDA build, and nvJitLink is linked for those builds
+- In `build_dll.py`: NVSHMEM include paths, the `WP_ENABLE_NVSHMEM` definition, and
+  `WP_NVSHMEM_DEVICE_LIBRARY_KIND`; `nvshmem.h` derives `WP_ENABLE_NVSHMEM` from the platform, and nvJitLink is
+  linked for every Linux CUDA build
 - In `nvshmem.cpp`: the `nvshmem_version.h` include, `wp_nvshmem_get_build_version`, the embedded-library accessor,
   and the host-version comparison
 - In `warp.cu`: the `link_nvshmem` parameter and the embedded-library branch of `wp_cuda_compile_program`; the device

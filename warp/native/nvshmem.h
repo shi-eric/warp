@@ -5,6 +5,14 @@
 
 #include "builtin.h"
 
+// NVSHMEM device code is linked into kernels at runtime from the installed NVSHMEM, which needs nvJitLink and
+// dlopen() of the host library the application loaded. Both are available in Linux CUDA builds only.
+#if WP_ENABLE_CUDA && defined(__linux__)
+#define WP_ENABLE_NVSHMEM 1
+#else
+#define WP_ENABLE_NVSHMEM 0
+#endif
+
 extern "C" {
 
 // Whether this build can link NVSHMEM device code into kernels (Linux CUDA builds).

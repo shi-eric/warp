@@ -8,6 +8,7 @@
 #include "apic_internal.h"
 #include "cuda_util.h"
 #include "error.h"
+#include "nvshmem.h"
 #include "scan.h"
 #include "sort.h"
 
