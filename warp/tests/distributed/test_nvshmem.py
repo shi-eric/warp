@@ -68,6 +68,19 @@ class TestNVSHMEMCodegen(unittest.TestCase):
             for f in [func, *getattr(func, "overloads", [])]:
                 self.assertEqual(f.requires_nvshmem, key.startswith("nvshmem_"), key)
 
+    def test_adjoint_classification(self):
+        """Verify that the built-ins a kernel calls, in source order, decide the checks of its adjoint launches."""
+        classify = nvshmem_support.classify_adjoint
+        # (remote_access, pull_builtins, fused_shape)
+        self.assertEqual(classify([]), (False, (), False))
+        self.assertEqual(classify(["nvshmem_put"]), (True, (), False))
+        self.assertEqual(classify(["nvshmem_get", "nvshmem_g"]), (True, ("nvshmem_g", "nvshmem_get"), False))
+        # A pull that is not replayed leaves no remote access in the adjoint.
+        self.assertEqual(classify(["nvshmem_get"]), (False, ("nvshmem_get",), False))
+        # A wait after a remote write is the fused shape; a wait before it is not.
+        self.assertEqual(classify(["nvshmem_signal_op", "nvshmem_signal_wait_until"]), (False, (), True))
+        self.assertEqual(classify(["nvshmem_signal_wait_until", "nvshmem_put_signal"]), (True, (), False))
+
     def test_nvshmem_p_rejects_mismatched_value_type(self):
         """nvshmem_p() should require the value type to match the array dtype."""
 

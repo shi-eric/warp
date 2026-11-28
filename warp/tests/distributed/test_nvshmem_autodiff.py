@@ -9,6 +9,7 @@ import unittest
 
 import warp as wp
 import warp._src.codegen
+import warp._src.nvshmem as nvshmem_support
 from warp.tests.distributed.test_nvshmem import _can_compile_nvshmem_modules, run_distributed_script
 
 
@@ -67,7 +68,7 @@ class TestNVSHMEMAutodiff(unittest.TestCase):
         self.assertIn("PE 0: empty PE participates: PASSED", output)
 
     def test_codegen_records(self):
-        """Verify that module metadata records the NVSHMEM traffic of each kernel's adjoint."""
+        """Verify that module metadata records the NVSHMEM built-ins that each kernel calls, in source order."""
         if not _can_compile_nvshmem_modules():
             self.skipTest("NVSHMEM modules need a Linux CUDA build and an NVSHMEM device library.")
 
@@ -75,19 +76,19 @@ class TestNVSHMEMAutodiff(unittest.TestCase):
         # modules (such as the one at the start of a graph capture) would then try to load.
         from warp.tests.distributed import aux_nvshmem_record_kernels as record_kernels  # noqa: PLC0415
 
-        # kernel: (remote_access, pull_builtins, fused_shape)
+        # kernel: (built-ins called, (remote_access, pull_builtins, fused_shape) of its adjoint launches)
         expected = {
-            record_kernels.push_kernel: (True, [], False),
-            record_kernels.via_func_kernel: (True, [], False),
-            record_kernels.pull_kernel: (True, ["nvshmem_g"], False),
-            record_kernels.get_only_kernel: (False, ["nvshmem_get"], False),
-            record_kernels.fused_kernel: (True, [], True),
-            record_kernels.pipelined_kernel: (True, [], False),
-            record_kernels.local_kernel: (False, [], False),
+            record_kernels.push_kernel: (["nvshmem_p"], (True, (), False)),
+            record_kernels.via_func_kernel: (["nvshmem_p"], (True, (), False)),
+            record_kernels.pull_kernel: (["nvshmem_g"], (True, ("nvshmem_g",), False)),
+            record_kernels.get_only_kernel: (["nvshmem_get"], (False, ("nvshmem_get",), False)),
+            record_kernels.fused_kernel: (["nvshmem_put_signal", "nvshmem_signal_wait_until"], (True, (), True)),
+            record_kernels.pipelined_kernel: (["nvshmem_signal_wait_until", "nvshmem_p"], (True, (), False)),
+            record_kernels.local_kernel: ([], (False, (), False)),
         }
 
         # The second compile rebuilds the same kernel adjoints in this process, and must not inherit the
-        # records of the first build (the pipelined kernel would then look like the fused shape).
+        # records of the first build (the calls would then be listed twice).
         for compile_index in range(2):
             with tempfile.TemporaryDirectory(prefix="wp_nvshmem_records_") as module_dir:
                 wp.compile_aot_module(record_kernels, device="cuda:0", module_dir=module_dir)
@@ -96,13 +97,11 @@ class TestNVSHMEMAutodiff(unittest.TestCase):
                 with open(meta_paths[0]) as meta_file:
                     meta = json.load(meta_file)
 
-            for kernel, (remote_access, pull_builtins, fused_shape) in expected.items():
+            for kernel, (calls, adjoint_info) in expected.items():
                 with self.subTest(compile_index=compile_index, kernel=kernel.key):
-                    key = warp._src.codegen.cuda_kernel_backward_name(kernel) + "_nvshmem"
-                    self.assertEqual(
-                        meta[key],
-                        {"remote_access": remote_access, "pull_builtins": pull_builtins, "fused_shape": fused_shape},
-                    )
+                    key = warp._src.codegen.cuda_kernel_backward_name(kernel) + "_nvshmem_calls"
+                    self.assertEqual(meta[key], calls)
+                    self.assertEqual(nvshmem_support.classify_adjoint(meta[key]), adjoint_info)
 
 
 if __name__ == "__main__":

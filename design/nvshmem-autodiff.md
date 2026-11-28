@@ -365,9 +365,10 @@ make this unsafe to ship in this version.
    across launches, not within one.
 
 Decision for this version: `nvshmem_g` and `nvshmem_get` stay non-differentiable. The code generator
-records, per kernel, that the adjoint contains a call to one of them. When such a kernel is launched
-with `adjoint=True`, Warp warns once per kernel with this text, which Warp's logger prints after its
-`Warp UserWarning: ` prefix:
+records the NVSHMEM built-ins that each kernel calls (see [The per-kernel
+record](#the-per-kernel-record)), which shows whether a kernel calls one of them. When such a kernel is
+launched with `adjoint=True`, Warp warns once per kernel with this text, which Warp's logger prints after
+its `Warp UserWarning: ` prefix:
 
 ```
 gradients do not flow through wp.nvshmem_g() or wp.nvshmem_get() in kernel "fetch_halo";
@@ -570,17 +571,17 @@ candidate conditions, and all but one are either unknowable at the host or unsou
   that can violate (R) or (W), and it is the finest condition that is both sound and knowable before the
   launch.
 
-So the condition is per kernel, decided at code generation, and persisted in the module's metadata so
-that a kernel loaded from the kernel cache, where code generation does not run, still carries it. The
-flag is "the adjoint kernel contains any NVSHMEM remote access", which covers two kinds of statement:
-remote gradient accesses, which need B1 for invariant (R), and replayed remote reads of forward data
-such as `nvshmem_g`, which need B2 so that the next forward pass on another PE does not overwrite what
-the replay is still reading. One flag serves both rules; the barrier it adds before a pull-only kernel's
-adjoint is unnecessary but harmless, and such kernels are already warned about. Within the flagged set
-the barrier is unconditional: a flagged kernel's adjoint launch always gets one, whether or not this
-particular launch's threads take the branch that communicates. A barrier that turns out to be
-unnecessary costs a few microseconds; a missing one costs a silently wrong gradient, which is this
-design's anti-goal.
+So the condition is per kernel, decided from what code generation records about the kernel (see [The
+per-kernel record](#the-per-kernel-record)), which is persisted in the module's metadata so that a kernel
+loaded from the kernel cache, where code generation does not run, still carries it. The flag is "the
+adjoint kernel contains any NVSHMEM remote access", which covers two kinds of statement: remote gradient
+accesses, which need B1 for invariant (R), and replayed remote reads of forward data such as `nvshmem_g`,
+which need B2 so that the next forward pass on another PE does not overwrite what the replay is still
+reading. One flag serves both rules; the barrier it adds before a pull-only kernel's adjoint is
+unnecessary but harmless, and such kernels are already warned about. Within the flagged set the barrier
+is unconditional: a flagged kernel's adjoint launch always gets one, whether or not this particular
+launch's threads take the branch that communicates. A barrier that turns out to be unnecessary costs a
+few microseconds; a missing one costs a silently wrong gradient, which is this design's anti-goal.
 
 A configuration flag, `wp.config.nvshmem_adjoint_barrier`, defaults to on and lets programs
 that manage synchronization themselves, or that are not SPMD, turn the insertion off. The flag is read at
@@ -686,11 +687,12 @@ ghost cell read in this launch is accumulated in this same adjoint launch, so th
 pulls a value that is still changing, and the barrier schedule cannot help because the dependency is
 inside a launch.
 
-This design declares the pattern unsupported for differentiation. The code generator records when a
-kernel contains a remote write textually before a signal wait, which is the shape the fused pattern
-takes, counting `nvshmem_p`, `nvshmem_put`, `nvshmem_put_signal` and `nvshmem_signal_op` as remote writes,
-so it may also warn on a kernel that acknowledges with `nvshmem_signal_op` and then waits for data from
-an earlier launch. Warp warns once per kernel when such a kernel is launched with `adjoint=True`:
+This design declares the pattern unsupported for differentiation. Warp recognizes a kernel that
+contains a remote write textually before a signal wait, which is the shape the fused pattern takes,
+from the order of the built-ins that code generation records for the kernel. It counts `nvshmem_p`,
+`nvshmem_put`, `nvshmem_put_signal` and `nvshmem_signal_op` as remote writes, so it may also warn on a
+kernel that acknowledges with `nvshmem_signal_op` and then waits for data from an earlier launch. Warp
+warns once per kernel when such a kernel is launched with `adjoint=True`:
 
 ```
 kernel "fused_step" writes to a remote PE before waiting on a signal; a cross-PE dependency
@@ -700,8 +702,29 @@ next launch.
 
 The warning is deferred to the adjoint launch for the same reason as the pull-family warning: a
 forward-only program that runs the fused shape on a co-resident grid is legitimate and must not see an
-autodiff diagnostic on every compile. The record is persisted in module metadata next to the other
-per-kernel NVSHMEM records.
+autodiff diagnostic on every compile.
+
+### The per-kernel record
+
+The barrier condition and the two warnings above each need a fact about the kernel that only code
+generation can establish, and each has to survive a load from the kernel cache. Code generation records
+one thing for all three: the keys of the NVSHMEM built-ins that the kernel calls, in source order, with
+the list of a `@wp.func` helper spliced in at each of its call sites. Module metadata stores that list
+for every kernel of a module that uses NVSHMEM.
+
+`classify_adjoint()` in `warp/_src/nvshmem.py` interprets the list when a module is loaded and gives the
+launch paths the three answers:
+
+- whether the adjoint kernel contains a remote access, which is the case when the list contains a push
+  built-in or `nvshmem_g`;
+- which pull built-ins the kernel calls;
+- whether a remote write precedes a signal wait.
+
+Recording the calls rather than the answers keeps the code generator free of NVSHMEM rules. It appends a
+key where it emits a call to a built-in that requires NVSHMEM and knows nothing about what the built-ins
+do; which of them write, pull or wait is stated once, next to the function that uses it. The order
+matters only for the third answer, and it is why a rebuild of a kernel starts the list over instead of
+adding to it.
 
 The pipelined form, in which the wait at the start of step k + 1 consumes the data that step k pushed, is
 fully supported, and is also the form that does not need co-residency in the forward.
@@ -743,10 +766,11 @@ As implemented:
 - `warp/_src/builtins.py`: `is_differentiable=True` for `nvshmem_p`, `nvshmem_put`, `nvshmem_put_signal`.
 - `warp/native/nvshmem_device.h`: `adj_nvshmem_p` (four overloads), `adj_nvshmem_put`,
   `adj_nvshmem_put_signal`.
-- `warp/_src/codegen.py`: per-kernel records of (a) any remote access in the adjoint kernel, (b) pull
-  built-ins present, and (c) the remote-write-before-wait shape.
-- `warp/_src/context.py`: persist the per-kernel records in module metadata next to the existing
-  `uses_nvshmem` flag so cached modules carry them, and hand them to launches as
+- `warp/_src/codegen.py`: the per-kernel record of the NVSHMEM built-ins a kernel calls, in source order.
+- `warp/_src/nvshmem.py`: `classify_adjoint()`, which derives from that record (a) any remote access in
+  the adjoint kernel, (b) the pull built-ins present, and (c) the remote-write-before-wait shape.
+- `warp/_src/context.py`: persist the per-kernel record in module metadata next to the existing
+  `uses_nvshmem` flag so cached modules carry it, and hand its classification to launches as
   `KernelHooks.nvshmem_adjoint`; the calls to `before_adjoint_launch()` in `wp.launch` and `Launch.launch()`,
   the former ahead of the zero-size early return; the `Device.nvshmem_adjoint_barriers` counter that tells
   the tape whether a pass enqueued a barrier.

@@ -1,11 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Locate the NVSHMEM device library that Warp links into kernels.
+"""NVSHMEM support that needs neither CUDA, nvshmem4py, nor Warp's runtime.
 
 Kernels that call NVSHMEM built-ins are linked against ``libnvshmem_device.ltoir.fatbin`` from the NVSHMEM
-installation that owns the host library loaded in the process. This module only looks at the file system and the
-installed distributions, so it runs and can be tested without CUDA, nvshmem4py, or Warp's runtime.
+installation that owns the host library loaded in the process. This module locates that library by looking at the
+file system and the installed distributions. It also classifies the NVSHMEM built-ins that a kernel calls, which
+decides how the adjoint launches of the kernel are synchronized and checked.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 import os
+from collections.abc import Sequence
 from typing import NamedTuple
 
 DEVICE_LIBRARY_ENV = "WARP_NVSHMEM_DEVICE_LIBRARY"
@@ -131,3 +133,52 @@ def read_device_library(lib: DeviceLibrary) -> tuple[bytes, str]:
         _contents_cache.clear()
         _contents_cache[key] = cached
     return cached
+
+
+_ADJOINT_REMOTE_ACCESS = frozenset({"nvshmem_p", "nvshmem_put", "nvshmem_put_signal", "nvshmem_g"})
+"""Built-ins that leave a remote access in the adjoint kernel.
+
+The push built-ins pull the destination gradient from the remote PE, and ``nvshmem_g`` is replayed.
+"""
+
+_PULL = frozenset({"nvshmem_g", "nvshmem_get"})
+"""Built-ins that read remote memory and have no adjoint."""
+
+_REMOTE_WRITE = frozenset({"nvshmem_p", "nvshmem_put", "nvshmem_put_signal", "nvshmem_signal_op"})
+"""Built-ins that write remote memory."""
+
+_SIGNAL_WAIT = "nvshmem_signal_wait_until"
+
+
+class AdjointInfo(NamedTuple):
+    """What the adjoint launches of a kernel need to know about the NVSHMEM built-ins that the kernel calls."""
+
+    remote_access: bool
+    """Whether the adjoint kernel accesses remote memory, so its launches must be ordered against the other PEs."""
+
+    pull_builtins: tuple[str, ...]
+    """Sorted keys of the pull built-ins the kernel calls, which have no adjoint."""
+
+    fused_shape: bool
+    """Whether the kernel writes to a remote PE before waiting on a signal, which autodiff does not support."""
+
+
+def classify_adjoint(calls: Sequence[str]) -> AdjointInfo:
+    """Summarize the NVSHMEM built-ins that a kernel calls for the adjoint launches of the kernel.
+
+    Args:
+        calls: Keys of the built-ins that the kernel and its callees call, in source order, as code generation
+            records them.
+    """
+    remote_write_seen = False
+    fused_shape = False
+    for key in calls:
+        if key == _SIGNAL_WAIT:
+            fused_shape |= remote_write_seen
+        elif key in _REMOTE_WRITE:
+            remote_write_seen = True
+    return AdjointInfo(
+        remote_access=not _ADJOINT_REMOTE_ACCESS.isdisjoint(calls),
+        pull_builtins=tuple(sorted(_PULL.intersection(calls))),
+        fused_shape=fused_shape,
+    )

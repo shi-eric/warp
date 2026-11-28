@@ -1222,17 +1222,6 @@ def _smem_shortfall_clause(block_dim: int, requested: int, static: int, device_m
     )
 
 
-class NVSHMEMAdjointInfo(NamedTuple):
-    """NVSHMEM traffic of a kernel's adjoint, recorded at code generation and persisted in module metadata."""
-
-    remote_access: bool = False
-    """Whether the adjoint kernel accesses remote memory, so its launches must be ordered against the other PEs."""
-    pull_builtins: tuple[str, ...] = ()
-    """Sorted keys of the pull built-ins the kernel calls, which have no adjoint."""
-    fused_shape: bool = False
-    """Whether the kernel writes to a remote PE before waiting on a signal."""
-
-
 class KernelHooks:
     def __init__(
         self,
@@ -1244,7 +1233,7 @@ class KernelHooks:
         det_launch_meta: DeterministicMeta | None = None,
         forward_smem_shortfall: str | None = None,
         backward_smem_shortfall: str | None = None,
-        nvshmem_adjoint: NVSHMEMAdjointInfo | None = None,
+        nvshmem_adjoint: warp._src.nvshmem.AdjointInfo | None = None,
     ):
         self.forward = forward
         self.backward = backward
@@ -1268,8 +1257,8 @@ class KernelHooks:
         # codegen scratch and may describe a different variant.
         self.det_launch_meta = det_launch_meta
 
-        # NVSHMEM records of the adjoint kernel, or None when the module does not use
-        # NVSHMEM or the kernel has no backward pass.
+        # What adjoint launches need to know about the NVSHMEM built-ins the kernel calls, or
+        # None when the module does not use NVSHMEM or the kernel has no backward pass.
         self.nvshmem_adjoint = nvshmem_adjoint
 
 
@@ -3933,11 +3922,7 @@ class ModuleBuilder:
                 meta[backward_name + "_smem_bytes"] = kernel.adj.get_total_required_shared_backward()
                 # Persisted because a kernel loaded from the cache skips code generation.
                 if self.uses_nvshmem:
-                    meta[backward_name + "_nvshmem"] = {
-                        "remote_access": kernel.adj.nvshmem_remote_access,
-                        "pull_builtins": sorted(kernel.adj.nvshmem_pull_builtins),
-                        "fused_shape": kernel.adj.nvshmem_fused_shape,
-                    }
+                    meta[backward_name + "_nvshmem_calls"] = list(kernel.adj.nvshmem_calls)
 
         # Persisted because a module loaded from the cache skips code generation, and it must
         # still be registered with the NVSHMEM runtime.
@@ -4284,14 +4269,10 @@ class ModuleExec:
             forward_smem_bytes = self.meta[forward_name + "_smem_bytes"]
             backward_smem_bytes = self.meta[backward_name + "_smem_bytes"] if options["enable_backward"] else 0
 
-            # only modules that use NVSHMEM record the NVSHMEM traffic of the adjoint kernels
-            nvshmem_record = self.meta.get(backward_name + "_nvshmem") if options["enable_backward"] else None
-            if nvshmem_record is not None:
-                nvshmem_adjoint = NVSHMEMAdjointInfo(
-                    remote_access=nvshmem_record["remote_access"],
-                    pull_builtins=tuple(nvshmem_record["pull_builtins"]),
-                    fused_shape=nvshmem_record["fused_shape"],
-                )
+            # only modules that use NVSHMEM record the NVSHMEM built-ins that their kernels call
+            nvshmem_calls = self.meta.get(backward_name + "_nvshmem_calls") if options["enable_backward"] else None
+            if nvshmem_calls is not None:
+                nvshmem_adjoint = warp._src.nvshmem.classify_adjoint(nvshmem_calls)
             else:
                 nvshmem_adjoint = None
 
