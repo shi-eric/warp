@@ -1089,6 +1089,95 @@ def test_fabricarray_indexing_types(test, device):
     )
 
 
+def _make_layout_view(backing: wp.array, layout: str, offset: int, n: int) -> tuple[wp.array, np.ndarray]:
+    """Return an ``n``-element view of ``backing`` and the backing position of each view element.
+
+    The view starts at element ``offset``. ``layout`` is ``"contiguous"``, ``"strided"`` (every other
+    element), or ``"reversed"`` (a negative stride).
+    """
+    if layout == "contiguous":
+        return backing[offset : offset + n], offset + np.arange(n)
+    if layout == "strided":
+        return backing[offset : offset + 2 * n : 2], offset + 2 * np.arange(n)
+    if layout == "reversed":
+        elem_size = wp.types.type_size_in_bytes(backing.dtype)
+        last = offset + n - 1
+        view = wp.array(
+            ptr=backing.ptr + last * elem_size,
+            dtype=backing.dtype,
+            shape=(n,),
+            strides=(-elem_size,),
+            device=backing.device,
+        )
+        view._ref = backing  # keep the backing allocation alive
+        return view, last - np.arange(n)
+    raise ValueError(f"Unknown layout: {layout}")
+
+
+def test_fabricarray_copy_indexed(test, device):
+    """Copy between Fabric arrays and indexed arrays using each side's own indices and strides (GH-2465)."""
+    n = 8  # regular view length
+    guard = 16  # elements on each side of a view's span, so stray accesses stay in bounds and are detected
+    backing_size = 2 * guard + 2 * n
+    reg_idx = [6, 0, 3, 5]  # indices into the regular view
+    fab_idx = [1, 4, 7, 9]  # indices into the 10-element Fabric array, deliberately different from reg_idx
+    fab10_buckets = [3, 4, 3]
+    fab4_buckets = [1, 3]
+
+    reg_indices = wp.array(reg_idx, dtype=int, device=device)
+    fab_indices = wp.array(fab_idx, dtype=int, device=device)
+
+    def make_values(count, dtype, start):
+        # distinct non-zero values, shaped (count, length) for vector types
+        length = dtype._length_
+        values = np.arange(start, start + count * length, dtype=np.float32)
+        return values.reshape(count, length) if length > 1 else values
+
+    def make_fabric(data, bucket_sizes):
+        iface = _create_fabric_array_interface(data, "foo", bucket_sizes=bucket_sizes)
+        return wp.fabricarray(data=iface, attrib="foo")
+
+    for dtype in (wp.float32, wp.vec3):
+        reg_values = make_values(backing_size, dtype, start=1)
+        fab_values = make_values(10, dtype, start=1001)
+
+        for layout in ("contiguous", "strided", "reversed"):
+            with test.subTest(dtype=dtype.__name__, layout=layout, path="indexed->indexed_fabric"):
+                src_backing = wp.array(reg_values, dtype=dtype, device=device)
+                src_view, src_pos = _make_layout_view(src_backing, layout, guard, n)
+                dst_backing = wp.zeros(10, dtype=dtype, device=device)
+                wp.copy(make_fabric(dst_backing, fab10_buckets)[fab_indices], src_view[reg_indices])
+                expected = np.zeros_like(fab_values)
+                expected[fab_idx] = reg_values[src_pos[reg_idx]]
+                np.testing.assert_array_equal(dst_backing.numpy(), expected)
+
+            with test.subTest(dtype=dtype.__name__, layout=layout, path="indexed->fabric"):
+                src_backing = wp.array(reg_values, dtype=dtype, device=device)
+                src_view, src_pos = _make_layout_view(src_backing, layout, guard, n)
+                dst_backing = wp.zeros(4, dtype=dtype, device=device)
+                wp.copy(make_fabric(dst_backing, fab4_buckets), src_view[reg_indices])
+                expected = reg_values[src_pos[reg_idx]]
+                np.testing.assert_array_equal(dst_backing.numpy(), expected)
+
+            with test.subTest(dtype=dtype.__name__, layout=layout, path="fabric->indexed"):
+                src_data = wp.array(fab_values[:4], dtype=dtype, device=device)
+                dst_backing = wp.zeros(backing_size, dtype=dtype, device=device)
+                dst_view, dst_pos = _make_layout_view(dst_backing, layout, guard, n)
+                wp.copy(dst_view[reg_indices], make_fabric(src_data, fab4_buckets))
+                expected = np.zeros_like(reg_values)
+                expected[dst_pos[reg_idx]] = fab_values[:4]
+                np.testing.assert_array_equal(dst_backing.numpy(), expected)
+
+            with test.subTest(dtype=dtype.__name__, layout=layout, path="indexed_fabric->indexed"):
+                src_data = wp.array(fab_values, dtype=dtype, device=device)
+                dst_backing = wp.zeros(backing_size, dtype=dtype, device=device)
+                dst_view, dst_pos = _make_layout_view(dst_backing, layout, guard, n)
+                wp.copy(dst_view[reg_indices], make_fabric(src_data, fab10_buckets)[fab_indices])
+                expected = np.zeros_like(reg_values)
+                expected[dst_pos[reg_idx]] = fab_values[fab_idx]
+                np.testing.assert_array_equal(dst_backing.numpy(), expected)
+
+
 @wp.kernel
 def fa_generic_sums_kernel(a: wp.fabricarrayarray(dtype=Any), sums: wp.array[Any]):
     i = wp.tid()
@@ -1421,6 +1510,7 @@ add_function_test(TestFabricArray, "test_fabricarray_fill_scalar", test_fabricar
 add_function_test(TestFabricArray, "test_fabricarray_fill_vector", test_fabricarray_fill_vector, devices=devices)
 add_function_test(TestFabricArray, "test_fabricarray_fill_matrix", test_fabricarray_fill_matrix, devices=devices)
 add_function_test(TestFabricArray, "test_fabricarray_indexing_types", test_fabricarray_indexing_types, devices=devices)
+add_function_test(TestFabricArray, "test_fabricarray_copy_indexed", test_fabricarray_copy_indexed, devices=devices)
 
 # fabric arrays of arrays
 add_function_test(TestFabricArray, "test_fabricarrayarray", test_fabricarrayarray, devices=devices)

@@ -480,8 +480,9 @@ static void array_copy_nd(
 }
 
 
+// Keep offsets into regular arrays signed and 64-bit for reversed and large views.
 static void array_copy_to_fabric(
-    wp::fabricarray_t<void>& dst, const void* src_data, size_t src_stride, const int* src_indices, size_t elem_size
+    wp::fabricarray_t<void>& dst, const void* src_data, int64_t src_stride, const int* src_indices, size_t elem_size
 )
 {
     const int8_t* src_ptr = static_cast<const int8_t*>(src_data);
@@ -493,14 +494,14 @@ static void array_copy_to_fabric(
             int8_t* dst_ptr = static_cast<int8_t*>(bucket.ptr);
             size_t bucket_size = bucket.index_end - bucket.index_start;
             for (size_t j = 0; j < bucket_size; j++) {
-                size_t idx = *src_indices;
-                memcpy(dst_ptr, src_ptr + idx * elem_size, elem_size);
+                int idx = *src_indices;
+                memcpy(dst_ptr, src_ptr + idx * src_stride, elem_size);
                 dst_ptr += elem_size;
                 ++src_indices;
             }
         }
     } else {
-        if (src_stride == elem_size) {
+        if (src_stride == static_cast<int64_t>(elem_size)) {
             // copy from contiguous array
             for (size_t i = 0; i < dst.nbuckets; i++) {
                 const wp::fabricbucket_t& bucket = dst.buckets[i];
@@ -525,7 +526,7 @@ static void array_copy_to_fabric(
 }
 
 static void array_copy_from_fabric(
-    const wp::fabricarray_t<void>& src, void* dst_data, size_t dst_stride, const int* dst_indices, size_t elem_size
+    const wp::fabricarray_t<void>& src, void* dst_data, int64_t dst_stride, const int* dst_indices, size_t elem_size
 )
 {
     int8_t* dst_ptr = static_cast<int8_t*>(dst_data);
@@ -535,16 +536,15 @@ static void array_copy_from_fabric(
         for (size_t i = 0; i < src.nbuckets; i++) {
             const wp::fabricbucket_t& bucket = src.buckets[i];
             const int8_t* src_ptr = static_cast<const int8_t*>(bucket.ptr);
-            size_t bucket_size = bucket.index_end - bucket.index_start;
-            for (size_t j = 0; j < bucket_size; j++) {
-                int idx = *dst_indices;
-                memcpy(dst_ptr + idx * elem_size, src_ptr, elem_size);
+            // Counting down keeps dst_indices in a register with GCC on x86-64.
+            for (size_t remaining = bucket.index_end - bucket.index_start; remaining > 0; --remaining) {
+                int idx = *dst_indices++;
+                memcpy(dst_ptr + idx * dst_stride, src_ptr, elem_size);
                 src_ptr += elem_size;
-                ++dst_indices;
             }
         }
     } else {
-        if (dst_stride == elem_size) {
+        if (dst_stride == static_cast<int64_t>(elem_size)) {
             // copy to contiguous array
             for (size_t i = 0; i < src.nbuckets; i++) {
                 const wp::fabricbucket_t& bucket = src.buckets[i];
@@ -620,7 +620,7 @@ array_copy_fabric_to_fabric(wp::fabricarray_t<void>& dst, const wp::fabricarray_
 static void array_copy_to_fabric_indexed(
     wp::indexedfabricarray_t<void>& dst,
     const void* src_data,
-    size_t src_stride,
+    int64_t src_stride,
     const int* src_indices,
     size_t elem_size
 )
@@ -630,10 +630,10 @@ static void array_copy_to_fabric_indexed(
     if (src_indices) {
         // copy from indexed array
         for (size_t i = 0; i < dst.size; i++) {
-            size_t src_idx = src_indices[i];
+            int src_idx = src_indices[i];
             size_t dst_idx = dst.indices[i];
             void* dst_ptr = fabricarray_element_ptr(dst.fa, dst_idx, elem_size);
-            memcpy(dst_ptr, src_ptr + dst_idx * elem_size, elem_size);
+            memcpy(dst_ptr, src_ptr + src_idx * src_stride, elem_size);
         }
     } else {
         // copy from contiguous/strided array
@@ -720,7 +720,7 @@ static void array_copy_fabric_to_fabric_indexed(
 static void array_copy_from_fabric_indexed(
     const wp::indexedfabricarray_t<void>& src,
     void* dst_data,
-    size_t dst_stride,
+    int64_t dst_stride,
     const int* dst_indices,
     size_t elem_size
 )
@@ -733,8 +733,8 @@ static void array_copy_from_fabric_indexed(
             size_t idx = src.indices[i];
             if (idx < src.fa.size) {
                 const void* src_ptr = fabricarray_element_ptr(src.fa, idx, elem_size);
-                size_t dst_idx = dst_indices[i];
-                memcpy(dst_ptr + dst_idx * elem_size, src_ptr, elem_size);
+                int dst_idx = dst_indices[i];
+                memcpy(dst_ptr + dst_idx * dst_stride, src_ptr, elem_size);
             } else {
                 fprintf(
                     stderr, "Warp copy error: Source index %llu is out of bounds for fabric array of size %llu",
